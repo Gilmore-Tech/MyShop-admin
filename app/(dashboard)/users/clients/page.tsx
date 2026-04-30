@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
-import { Search, MoreHorizontal, UserX, Shield, RefreshCw, Users, UserPlus, RotateCcw } from 'lucide-react'
+import { Search, MoreHorizontal, UserX, Shield, RefreshCw, Users, UserPlus, RotateCcw, IdCard } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -72,6 +73,7 @@ export default function UsersPage() {
     const t = setTimeout(() => load(1), 400)
     return () => clearTimeout(t)
   }, [search, roleFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  useAutoRefresh(load)
 
   async function handleAction() {
     if (!actionDialog) return
@@ -105,9 +107,16 @@ export default function UsersPage() {
         title="User Management"
         subtitle="Manage all platform users"
         actions={
-          <Button size="sm" className="gap-2 text-white" style={{ backgroundColor: '#F5A623' }} onClick={() => setCreateOpen(true)}>
-            <UserPlus className="h-4 w-4" /> Add User
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link href="/users/clients/kyc-queue">
+              <Button size="sm" variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50">
+                <IdCard className="h-4 w-4" /> Client KYC Queue
+              </Button>
+            </Link>
+            <Button size="sm" className="gap-2 text-white" style={{ backgroundColor: '#F5A623' }} onClick={() => setCreateOpen(true)}>
+              <UserPlus className="h-4 w-4" /> Add User
+            </Button>
+          </div>
         }
       />
 
@@ -228,22 +237,24 @@ export default function UsersPage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onSelect={() => setProfileUser(u)}>View Profile</DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        {u.status === 'suspended' && (
-                          <DropdownMenuItem
-                            className="gap-2 text-emerald-700"
-                            onSelect={() => { setActionDialog({ user: u, type: 'reinstate' }); setReason(''); setSubmitError('') }}
-                          >
-                            <RotateCcw className="h-4 w-4" /> Reinstate
-                          </DropdownMenuItem>
-                        )}
-                        {u.status !== 'suspended' && u.status !== 'banned' && (
-                          <DropdownMenuItem
-                            className="gap-2 text-orange-600"
-                            onSelect={() => { setActionDialog({ user: u, type: 'suspend' }); setReason(''); setSubmitError('') }}
-                          >
-                            <UserX className="h-4 w-4" /> Suspend
-                          </DropdownMenuItem>
-                        )}
+                        <RoleGate permission="suspend_user">
+                          {u.status === 'suspended' && (
+                            <DropdownMenuItem
+                              className="gap-2 text-emerald-700"
+                              onSelect={() => { setActionDialog({ user: u, type: 'reinstate' }); setReason(''); setSubmitError('') }}
+                            >
+                              <RotateCcw className="h-4 w-4" /> Reinstate
+                            </DropdownMenuItem>
+                          )}
+                          {u.status !== 'suspended' && u.status !== 'banned' && (
+                            <DropdownMenuItem
+                              className="gap-2 text-orange-600"
+                              onSelect={() => { setActionDialog({ user: u, type: 'suspend' }); setReason(''); setSubmitError('') }}
+                            >
+                              <UserX className="h-4 w-4" /> Suspend
+                            </DropdownMenuItem>
+                          )}
+                        </RoleGate>
                         <RoleGate permission="ban_user">
                           {u.status !== 'banned' && (
                             <DropdownMenuItem

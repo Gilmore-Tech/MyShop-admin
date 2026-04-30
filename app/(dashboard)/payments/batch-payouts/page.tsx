@@ -1,15 +1,24 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import Link from 'next/link'
-import { Play, Clock, CheckCircle2, XCircle, AlertTriangle, Loader2 } from 'lucide-react'
+import {
+  Play, Clock, CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw,
+} from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { listBatchPayouts, forceBatchPayoutRun, type BatchPayoutRun } from '@/lib/api'
+import { ApiError } from '@/lib/api-client'
+import { useRole } from '@/hooks/use-role'
+
+const LIMIT = 20
 
 function formatGhs(pesewas: number) {
   return 'GHS ' + (pesewas / 100).toFixed(2)
@@ -23,25 +32,63 @@ function BatchStatusIcon({ status }: { status: string }) {
 }
 
 export default function BatchPayoutsPage() {
+  const { isSuper } = useRole()
+
   const [batches, setBatches] = useState<BatchPayoutRun[]>([])
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [forcing, setForcing] = useState(false)
   const [forceError, setForceError] = useState('')
+  const [forceSuccess, setForceSuccess] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
-  useEffect(() => {
-    listBatchPayouts({ limit: 30 })
-      .then(res => setBatches(res.items))
-      .catch(() => setBatches([]))
+  const load = useCallback(() => {
+    setLoading(true)
+    setError('')
+    listBatchPayouts({ page, limit: LIMIT })
+      .then(res => {
+        setBatches(res.items)
+        setTotalPages(res.totalPages || 1)
+        setTotal(res.total || res.items.length)
+      })
+      .catch(err => {
+        setBatches([])
+        setTotalPages(1)
+        setTotal(0)
+        if (err instanceof ApiError) {
+          setError(err.status === 404
+            ? 'Batch payouts endpoint is not yet available on the backend.'
+            : err.message)
+        } else {
+          setError('Failed to load batch payouts.')
+        }
+      })
       .finally(() => setLoading(false))
-  }, [])
+  }, [page])
+
+  useEffect(() => { load() }, [load])
 
   async function handleForceRun() {
     setForcing(true)
     setForceError('')
+    setForceSuccess('')
     try {
       await forceBatchPayoutRun()
-    } catch {
-      setForceError('Force run failed. Check permissions or try again.')
+      setForceSuccess('Force run triggered. New retry will appear in the table within a minute.')
+      setConfirmOpen(false)
+      // Refresh after a short delay so the new run shows up
+      setTimeout(load, 1500)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setForceError(err.status === 404
+          ? 'Force-run endpoint is not yet available on the backend.'
+          : err.message)
+      } else {
+        setForceError('Force run failed. Check permissions or try again.')
+      }
     } finally {
       setForcing(false)
     }
@@ -62,7 +109,7 @@ export default function BatchPayoutsPage() {
       </Tabs>
 
       {/* Next run banner */}
-      <div className="bg-slate-900 text-white rounded-lg p-4 mb-6 flex items-center justify-between">
+      <div className="bg-slate-900 text-white rounded-lg p-4 mb-6 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Clock className="h-5 w-5 text-orange-400" />
           <div>
@@ -70,20 +117,48 @@ export default function BatchPayoutsPage() {
             <p className="text-slate-300 text-xs">Primary: <strong className="text-white">18:00 GMT</strong> · Retries: 19:30, 20:00, 06:00 (next morning)</p>
           </div>
         </div>
-        <Button
-          size="sm"
-          className="text-white gap-2"
-          style={{ backgroundColor: '#F5A623' }}
-          disabled={forcing}
-          onClick={handleForceRun}
-        >
-          {forcing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-          Force Run (Super Admin)
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={load}
+            disabled={loading}
+            className="bg-transparent border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white gap-1.5"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          {isSuper && (
+            <Button
+              size="sm"
+              className="text-white gap-2"
+              style={{ backgroundColor: '#F5A623' }}
+              disabled={forcing}
+              onClick={() => { setForceError(''); setForceSuccess(''); setConfirmOpen(true) }}
+            >
+              {forcing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              Force Run
+            </Button>
+          )}
+        </div>
       </div>
 
       {forceError && (
         <div className="mb-4 bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3">{forceError}</div>
+      )}
+      {forceSuccess && (
+        <div className="mb-4 bg-emerald-50 text-emerald-700 text-sm rounded-lg px-4 py-3">{forceSuccess}</div>
+      )}
+
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="font-medium">Couldn&apos;t load batch payouts</p>
+            <p className="text-xs mt-0.5">{error}</p>
+          </div>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={load}>Retry</Button>
+        </div>
       )}
 
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
@@ -110,7 +185,9 @@ export default function BatchPayoutsPage() {
               ))
             ) : batches.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-gray-400 text-sm">No batch payout history</TableCell>
+                <TableCell colSpan={7} className="text-center py-12 text-gray-400 text-sm">
+                  {error ? 'No batch payouts to display while the endpoint is unavailable.' : 'No batch payout history'}
+                </TableCell>
               </TableRow>
             ) : (
               batches.map(batch => (
@@ -148,7 +225,40 @@ export default function BatchPayoutsPage() {
             )}
           </TableBody>
         </Table>
+        <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
+          <p className="text-xs text-gray-500">
+            {loading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : `Page ${page} of ${totalPages} (${total} run${total === 1 ? '' : 's'})`}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage(p => p - 1)}>Previous</Button>
+            <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage(p => p + 1)}>Next</Button>
+          </div>
+        </div>
       </div>
+
+      <Dialog open={confirmOpen} onOpenChange={open => !forcing && setConfirmOpen(open)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Trigger batch payout run?</DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-gray-600 space-y-2">
+            <p>This forces an immediate batch payout run outside the scheduled 18:00 GMT cycle.</p>
+            <p>All eligible providers will be paid out now. Use only when the scheduled run failed and retries didn&apos;t recover.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={forcing}>Cancel</Button>
+            <Button
+              onClick={handleForceRun}
+              disabled={forcing}
+              className="text-white gap-2"
+              style={{ backgroundColor: '#F5A623' }}
+            >
+              {forcing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              Yes, run now
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   </PageGuard>
   )

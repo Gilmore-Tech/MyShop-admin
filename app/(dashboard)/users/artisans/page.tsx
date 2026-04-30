@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, MoreHorizontal, Loader2, UserPlus, RotateCcw, RefreshCw } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
@@ -33,11 +34,12 @@ type ActionType = 'suspend' | 'ban' | 'reinstate'
 
 export default function ArtisansPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [users, setUsers] = useState<PlatformUser[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => searchParams.get('search') ?? '')
   const [statusFilter, setStatusFilter] = useState('all')
   const [loading, setLoading] = useState(true)
 
@@ -72,6 +74,7 @@ export default function ArtisansPage() {
   }, [statusFilter, search, page])
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
+  useAutoRefresh(fetchUsers)
   useEffect(() => { setPage(1) }, [statusFilter, search])
 
   function openAction(user: PlatformUser, type: ActionType) {
@@ -228,16 +231,18 @@ export default function ArtisansPage() {
                           Trigger Re-verification
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        {user.status === 'suspended' && (
-                          <DropdownMenuItem className="text-emerald-700 gap-2" onSelect={() => openAction(user, 'reinstate')}>
-                            <RotateCcw className="h-4 w-4" /> Reinstate
-                          </DropdownMenuItem>
-                        )}
-                        {user.status !== 'suspended' && user.status !== 'banned' && (
-                          <DropdownMenuItem className="text-orange-600" onSelect={() => openAction(user, 'suspend')}>
-                            Suspend
-                          </DropdownMenuItem>
-                        )}
+                        <RoleGate permission="suspend_user">
+                          {user.status === 'suspended' && (
+                            <DropdownMenuItem className="text-emerald-700 gap-2" onSelect={() => openAction(user, 'reinstate')}>
+                              <RotateCcw className="h-4 w-4" /> Reinstate
+                            </DropdownMenuItem>
+                          )}
+                          {user.status !== 'suspended' && user.status !== 'banned' && (
+                            <DropdownMenuItem className="text-orange-600" onSelect={() => openAction(user, 'suspend')}>
+                              Suspend
+                            </DropdownMenuItem>
+                          )}
+                        </RoleGate>
                         <RoleGate permission="ban_user">
                           {user.status !== 'banned' && (
                             <DropdownMenuItem className="text-red-600" onSelect={() => openAction(user, 'ban')}>

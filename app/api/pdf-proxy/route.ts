@@ -43,13 +43,14 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const contentType = upstream.headers.get('content-type') ?? 'application/octet-stream'
   const buffer = await upstream.arrayBuffer()
 
+  // Cloudinary serves raw files with application/octet-stream by default which causes
+  // browsers to download instead of render. Force application/pdf so the iframe displays it.
   return new NextResponse(buffer, {
     status: 200,
     headers: {
-      'Content-Type': contentType,
+      'Content-Type': 'application/pdf',
       'Content-Disposition': 'inline',
       'Cache-Control': 'private, max-age=3600',
     },

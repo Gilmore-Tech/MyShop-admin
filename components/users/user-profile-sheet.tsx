@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Mail, Phone, Calendar, Star, Pencil, Check, X, Loader2, RotateCcw, ShieldOff, UserX, FileText, ExternalLink, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { Mail, Phone, Calendar, Star, Pencil, Check, X, Loader2, RotateCcw, ShieldOff, UserX, FileText, ExternalLink, CheckCircle, XCircle, ChevronDown, ChevronUp, Car, Tag, TrendingUp, XOctagon, IdCard, Lock, Unlock } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -9,9 +9,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
-import { updateUser, reinstateUser, suspendUser, banUser, getProviderDocuments, type PlatformUser, type UserProviderDocument } from '@/lib/api'
+import { updateUser, reinstateUser, suspendUser, banUser, getProviderDocuments, reviewVerification, reviewClientKyc, getUser, unlockPayoutMethod, type PlatformUser, type UserProviderDocument, type UserProviderGroup } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { VerifyClientKycDialog, clientKycBadge } from './verify-client-kyc-dialog'
+import { useRole } from '@/hooks/use-role'
 
 function initials(name: string | null | undefined) {
   if (!name) return '?'
@@ -46,8 +48,6 @@ function docStatusBadge(status: string) {
 
 function DocumentCard({ doc }: { doc: UserProviderDocument }) {
   const lower = doc.fileUrl.toLowerCase()
-  // Prefer mimeType from DB; fall back to URL pattern (Cloudinary strips extension from public_id,
-  // so PDFs land at /raw/upload/... with no .pdf in the URL)
   const isPdf = doc.mimeType === 'application/pdf'
     || lower.includes('.pdf') || lower.includes('/raw/upload/')
   const isImage = !isPdf && (
@@ -55,7 +55,6 @@ function DocumentCard({ doc }: { doc: UserProviderDocument }) {
     || lower.match(/\.(jpe?g|png|webp|gif|avif)/) != null
     || lower.includes('/image/upload/')
   )
-  // fileUrl is only a real URL after confirmDocumentUpload — status 'uploaded' stores a storage key path
   const hasFile = doc.fileUrl.startsWith('http')
   const [previewOpen, setPreviewOpen] = useState(false)
 
@@ -140,49 +139,14 @@ function DocumentCard({ doc }: { doc: UserProviderDocument }) {
   )
 }
 
-function DocumentsSection({ userId }: { userId: string }) {
-  const [data, setData] = useState<UserProviderDocument[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+function ProviderDocumentGroup({ group }: { group: UserProviderGroup }) {
   const [showHistory, setShowHistory] = useState(false)
-
-  useEffect(() => {
-    setLoading(true)
-    setError('')
-    getProviderDocuments(userId)
-      .then(res => setData(res.documents))
-      .catch(err => setError(err instanceof ApiError ? err.message : 'Failed to load documents.'))
-      .finally(() => setLoading(false))
-  }, [userId])
-
-  if (loading) {
-    return (
-      <div className="space-y-2">
-        {[1, 2].map(i => <div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />)}
-      </div>
-    )
-  }
-
-  if (error) {
-    return <p className="text-xs text-red-500">{error}</p>
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-1.5 py-6 text-center">
-        <FileText className="h-7 w-7 text-gray-200" />
-        <p className="text-sm text-gray-400">No documents uploaded yet</p>
-      </div>
-    )
-  }
-
-  const current = data.filter(d => d.isCurrent)
-  const history = data.filter(d => !d.isCurrent)
+  const current = group.documents.filter(d => d.isCurrent)
+  const history = group.documents.filter(d => !d.isCurrent)
 
   return (
     <div className="space-y-2">
       {current.map(doc => <DocumentCard key={doc.id} doc={doc} />)}
-
       {history.length > 0 && (
         <div>
           <button
@@ -203,6 +167,274 @@ function DocumentsSection({ userId }: { userId: string }) {
   )
 }
 
+function DocumentsSection({ userId }: { userId: string }) {
+  const [groups, setGroups] = useState<UserProviderGroup[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setLoading(true)
+    setError('')
+    getProviderDocuments(userId)
+      .then(res => setGroups(res.providers))
+      .catch(err => setError(err instanceof ApiError ? err.message : 'Failed to load documents.'))
+      .finally(() => setLoading(false))
+  }, [userId])
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {[1, 2].map(i => <div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />)}
+      </div>
+    )
+  }
+
+  if (error) {
+    return <p className="text-xs text-red-500">{error}</p>
+  }
+
+  const totalDocs = groups.reduce((sum, g) => sum + g.documents.length, 0)
+
+  if (totalDocs === 0) {
+    return (
+      <div className="flex flex-col items-center gap-1.5 py-6 text-center">
+        <FileText className="h-7 w-7 text-gray-200" />
+        <p className="text-sm text-gray-400">No documents uploaded yet</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map(group => (
+        <div key={group.providerId}>
+          {groups.length > 1 && (
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2 capitalize">
+              {group.providerType} Documents
+            </p>
+          )}
+          <ProviderDocumentGroup group={group} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Verify Provider Dialog ────────────────────────────────────────────────────
+
+function VerifyProviderDialog({
+  open, user, providerId, providerType, action, reason, loading, error,
+  onActionChange, onReasonChange, onConfirm, onClose,
+}: {
+  open: boolean
+  user: PlatformUser | null
+  providerId: string | null
+  providerType: 'driver' | 'artisan' | null
+  action: 'approve' | 'reject'
+  reason: string
+  loading: boolean
+  error: string
+  onActionChange: (a: 'approve' | 'reject') => void
+  onReasonChange: (r: string) => void
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  const [docs, setDocs] = useState<UserProviderDocument[]>([])
+  const [docsLoading, setDocsLoading] = useState(false)
+
+  useEffect(() => {
+    if (!open || !user) return
+    setDocsLoading(true)
+    getProviderDocuments(user.id)
+      .then(res => {
+        const group = res.providers.find(p => p.providerType === providerType)
+        setDocs(group?.documents.filter(d => d.isCurrent) ?? [])
+      })
+      .catch(() => setDocs([]))
+      .finally(() => setDocsLoading(false))
+  }, [open, user, providerType])
+
+  const driver = providerType === 'driver' ? user?.driver : null
+  const artisan = providerType === 'artisan' ? user?.artisan : null
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
+        {/* Header */}
+        <DialogHeader className="px-6 pt-5 pb-4 border-b border-gray-100 shrink-0">
+          <DialogTitle className="text-base font-semibold text-gray-900 capitalize">
+            Review {providerType} — {user?.fullName}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-gray-400">
+            Review the provider details and documents before making a decision.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+
+          {/* Provider details */}
+          {driver && (
+            <div className="space-y-3">
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Vehicle</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Make & Model', value: [driver.vehicleMake, driver.vehicleModel].filter(Boolean).join(' ') || '—' },
+                    { label: 'Year', value: driver.vehicleYear ?? '—' },
+                    { label: 'Plate Number', value: driver.vehiclePlate ?? '—' },
+                    { label: 'Color', value: driver.vehicleColor ?? '—' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+                      <p className="text-sm text-gray-900 mt-0.5">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Licence</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Licence Number', value: driver.licenceNumber ?? '—' },
+                    { label: 'Expiry', value: driver.licenceExpiry ? new Date(driver.licenceExpiry).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+                      <p className="text-sm text-gray-900 mt-0.5">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Payout</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Preference', value: driver.payoutPreference ?? '—' },
+                    { label: 'Method', value: driver.payoutMethod ?? '—' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+                      <p className="text-sm text-gray-900 mt-0.5 capitalize">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {artisan && (
+            <div className="space-y-3">
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Business Info</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Business Name', value: artisan.businessName ?? '—' },
+                    { label: 'Display Name', value: artisan.displayName ?? '—' },
+                    { label: 'Categories', value: artisan.categories?.join(', ') || '—' },
+                    { label: 'Service Radius', value: artisan.serviceRadius != null ? `${artisan.serviceRadius} km` : '—' },
+                    { label: 'Capacity', value: artisan.shopCapacity ?? '—' },
+                    { label: 'Max Concurrent Jobs', value: artisan.maxConcurrentJobs ?? '—' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+                      <p className="text-sm text-gray-900 mt-0.5 capitalize">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Payout</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Preference', value: artisan.payoutPreference ?? '—' },
+                    { label: 'Method', value: artisan.payoutMethod ?? '—' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+                      <p className="text-sm text-gray-900 mt-0.5 capitalize">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Documents */}
+          <div>
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Documents</p>
+            {docsLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map(i => <div key={i} className="h-14 bg-gray-100 rounded-lg animate-pulse" />)}
+              </div>
+            ) : docs.length === 0 ? (
+              <div className="flex flex-col items-center gap-1.5 py-6 text-center">
+                <FileText className="h-7 w-7 text-gray-200" />
+                <p className="text-sm text-gray-400">No documents found</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {docs.map(doc => <DocumentCard key={doc.id} doc={doc} />)}
+              </div>
+            )}
+          </div>
+
+          {/* Decision */}
+          <div>
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Decision</p>
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                {(['approve', 'reject'] as const).map(a => (
+                  <button
+                    key={a}
+                    type="button"
+                    onClick={() => onActionChange(a)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-medium border transition-colors ${
+                      action === a
+                        ? a === 'approve'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-red-50 text-red-700 border-red-200'
+                        : 'text-gray-500 border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    {a === 'approve' ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                    {a === 'approve' ? 'Approve Provider' : 'Reject Provider'}
+                  </button>
+                ))}
+              </div>
+              <div>
+                <Label className="text-xs text-gray-500">Reason <span className="text-gray-400">(min 5 chars)</span></Label>
+                <textarea
+                  className="mt-1.5 w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-20 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200"
+                  placeholder={action === 'approve' ? 'All documents reviewed and verified.' : 'Describe the reason for rejection…'}
+                  value={reason}
+                  onChange={e => onReasonChange(e.target.value)}
+                />
+              </div>
+              {error && <p className="text-xs text-red-600">{error}</p>}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 shrink-0 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            disabled={loading || reason.trim().length < 5}
+            onClick={onConfirm}
+            className={action === 'approve'
+              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+              : 'bg-red-600 hover:bg-red-700 text-white'}
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+            {loading ? 'Submitting…' : `Confirm ${action === 'approve' ? 'Approval' : 'Rejection'}`}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 type ActionDialogType = 'suspend' | 'ban' | 'reinstate'
 
 interface UserProfileSheetProps {
@@ -212,6 +444,22 @@ interface UserProfileSheetProps {
 }
 
 export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetProps) {
+  // Fetch full user detail on open — list endpoint returns minimal driver/artisan data
+  const [richUser, setRichUser] = useState<PlatformUser | null>(null)
+  const [richLoading, setRichLoading] = useState(false)
+
+  useEffect(() => {
+    if (!user) { setRichUser(null); return }
+    setRichLoading(true)
+    getUser(user.id)
+      .then(setRichUser)
+      .catch(() => setRichUser(null))
+      .finally(() => setRichLoading(false))
+  }, [user?.id])
+
+  // Use enriched data when available, fall back to list data immediately
+  const u = richUser ?? user
+
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({ fullName: '', email: '' })
   const [saveLoading, setSaveLoading] = useState(false)
@@ -222,9 +470,31 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState('')
 
+  const [verifyDialog, setVerifyDialog] = useState<{ providerId: string; providerType: 'driver' | 'artisan' } | null>(null)
+  const [verifyAction, setVerifyAction] = useState<'approve' | 'reject'>('approve')
+  const [verifyReason, setVerifyReason] = useState('')
+  const [verifyLoading, setVerifyLoading] = useState(false)
+  const [verifyError, setVerifyError] = useState('')
+
+  const [kycDialogOpen, setKycDialogOpen] = useState(false)
+  const [kycAction, setKycAction] = useState<'approve' | 'reject'>('approve')
+  const [kycReason, setKycReason] = useState('')
+  const [kycLoading, setKycLoading] = useState(false)
+  const [kycError, setKycError] = useState('')
+
+  const [unlockDialogOpen, setUnlockDialogOpen] = useState(false)
+  const [unlockReason, setUnlockReason] = useState('')
+  const [unlockLoading, setUnlockLoading] = useState(false)
+  const [unlockError, setUnlockError] = useState('')
+
+  const { can } = useRole()
+  const canUnlockPayout = can('unlock_payout_method')
+  const canSuspend = can('suspend_user')
+  const canBan = can('ban_user')
+
   function startEdit() {
-    if (!user) return
-    setEditForm({ fullName: user.fullName, email: user.email ?? '' })
+    if (!u) return
+    setEditForm({ fullName: u.fullName, email: u.email ?? '' })
     setSaveError('')
     setEditing(true)
   }
@@ -235,11 +505,11 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
   }
 
   async function handleSave() {
-    if (!user) return
+    if (!u) return
     setSaveLoading(true)
     setSaveError('')
     try {
-      const updated = await updateUser(user.id, {
+      const updated = await updateUser(u.id, {
         fullName: editForm.fullName.trim() || undefined,
         email: editForm.email.trim() || undefined,
       })
@@ -259,7 +529,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
   }
 
   async function handleActionConfirm() {
-    if (!user || !actionDialog) return
+    if (!u || !actionDialog) return
     if (actionDialog !== 'reinstate' && actionReason.trim().length < 10) {
       setActionError('Reason must be at least 10 characters.')
       return
@@ -268,9 +538,9 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
     setActionError('')
     try {
       let updated: PlatformUser | undefined
-      if (actionDialog === 'suspend') updated = await suspendUser(user.id, actionReason.trim()) as PlatformUser
-      else if (actionDialog === 'ban') updated = await banUser(user.id, actionReason.trim()) as PlatformUser
-      else if (actionDialog === 'reinstate') updated = await reinstateUser(user.id, actionReason.trim() || undefined) as PlatformUser
+      if (actionDialog === 'suspend') updated = await suspendUser(u.id, actionReason.trim()) as PlatformUser
+      else if (actionDialog === 'ban') updated = await banUser(u.id, actionReason.trim()) as PlatformUser
+      else if (actionDialog === 'reinstate') updated = await reinstateUser(u.id, actionReason.trim() || undefined) as PlatformUser
       setActionDialog(null)
       if (updated) onUpdate?.(updated)
     } catch (err) {
@@ -280,7 +550,108 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
     }
   }
 
-  const roles = user?.roles ?? []
+  function openVerify(providerId: string, providerType: 'driver' | 'artisan') {
+    setVerifyAction('approve')
+    setVerifyReason('')
+    setVerifyError('')
+    setVerifyDialog({ providerId, providerType })
+  }
+
+  async function handleVerifyConfirm() {
+    if (!verifyDialog) return
+    if (verifyReason.trim().length < 5) {
+      setVerifyError('Reason must be at least 5 characters.')
+      return
+    }
+    setVerifyLoading(true)
+    setVerifyError('')
+    try {
+      await reviewVerification(verifyDialog.providerId, verifyDialog.providerType, verifyAction, verifyReason.trim())
+      setVerifyDialog(null)
+      if (u) {
+        const updated: PlatformUser = {
+          ...u,
+          driver: u.driver && verifyDialog.providerType === 'driver'
+            ? { ...u.driver, verificationStatus: verifyAction === 'approve' ? 'approved' : 'rejected' }
+            : u.driver,
+          artisan: u.artisan && verifyDialog.providerType === 'artisan'
+            ? { ...u.artisan, verificationStatus: verifyAction === 'approve' ? 'approved' : 'rejected' }
+            : u.artisan,
+        }
+        onUpdate?.(updated)
+      }
+    } catch (err) {
+      setVerifyError(err instanceof ApiError ? err.message : 'Action failed.')
+    } finally {
+      setVerifyLoading(false)
+    }
+  }
+
+  function openKycReview() {
+    setKycAction('approve')
+    setKycReason('')
+    setKycError('')
+    setKycDialogOpen(true)
+  }
+
+  async function handleKycConfirm() {
+    if (!u?.client) return
+    if (kycAction === 'reject' && kycReason.trim().length < 5) {
+      setKycError('Reason must be at least 5 characters when rejecting.')
+      return
+    }
+    setKycLoading(true)
+    setKycError('')
+    try {
+      await reviewClientKyc(u.client.id, kycAction, kycAction === 'reject' ? kycReason.trim() : (kycReason.trim() || undefined))
+      setKycDialogOpen(false)
+      const updated: PlatformUser = {
+        ...u,
+        client: {
+          ...u.client,
+          kycStatus: kycAction === 'approve' ? 'verified' : 'rejected',
+          ghanaCardVerified: kycAction === 'approve',
+          kycReviewedAt: new Date().toISOString(),
+          kycRejectionReason: kycAction === 'approve' ? null : kycReason.trim(),
+        },
+      }
+      onUpdate?.(updated)
+      setRichUser(updated)
+    } catch (err) {
+      setKycError(err instanceof ApiError ? err.message : 'Action failed.')
+    } finally {
+      setKycLoading(false)
+    }
+  }
+
+  function openUnlockDialog() {
+    setUnlockReason('')
+    setUnlockError('')
+    setUnlockDialogOpen(true)
+  }
+
+  async function handleUnlockConfirm() {
+    if (!u) return
+    setUnlockLoading(true)
+    setUnlockError('')
+    try {
+      await unlockPayoutMethod(u.id, unlockReason.trim() || undefined)
+      setUnlockDialogOpen(false)
+      const updated: PlatformUser = {
+        ...u,
+        driver: u.driver ? { ...u.driver, payoutMethod: null, payoutLocked: false } : u.driver,
+        artisan: u.artisan ? { ...u.artisan, payoutMethod: null, payoutLocked: false } : u.artisan,
+      }
+      onUpdate?.(updated)
+      setRichUser(updated)
+    } catch (err) {
+      setUnlockError(err instanceof ApiError ? err.message : 'Failed to unlock payout method.')
+    } finally {
+      setUnlockLoading(false)
+    }
+  }
+
+  const roles = u?.roles ?? []
   const roleColor = roles.includes('driver')
     ? 'bg-green-100 text-green-700'
     : roles.includes('artisan')
@@ -296,13 +667,13 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
             <SheetDescription className="sr-only">View and manage user account details</SheetDescription>
           </SheetHeader>
 
-          {user && (
+          {u && (
             <div className="px-4 pb-6 space-y-5">
               {/* Hero */}
               <div className="flex items-start gap-4 pt-2">
                 <Avatar className="h-14 w-14">
                   <AvatarFallback className={`${roleColor} text-base font-bold`}>
-                    {initials(user.fullName)}
+                    {initials(u.fullName)}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
@@ -335,13 +706,14 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                   ) : (
                     <>
                       <div className="flex items-center gap-2">
-                        <h2 className="text-base font-semibold text-gray-900 truncate">{user.fullName}</h2>
+                        <h2 className="text-base font-semibold text-gray-900 truncate">{u.fullName}</h2>
+                        {richLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-300" />}
                         <button onClick={startEdit} className="text-gray-400 hover:text-gray-600 transition-colors">
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                        <StatusBadge status={user.status} />
+                        <StatusBadge status={u.status} />
                         {roles.map(r => (
                           <span key={r} className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${
                             r === 'client' ? 'bg-blue-100 text-blue-700'
@@ -358,87 +730,298 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
               {/* Contact & dates */}
               {!editing && (
                 <div className="bg-gray-50 rounded-xl px-4 py-1">
-                  <InfoRow icon={Phone} label="Phone" value={<span className="font-mono">{user.phone}</span>} />
-                  <InfoRow icon={Mail} label="Email" value={user.email ?? <span className="text-gray-400 italic">Not set</span>} />
-                  <InfoRow icon={Calendar} label="Joined" value={formatDate(user.createdAt)} />
+                  <InfoRow icon={Phone} label="Phone" value={<span className="font-mono">{u.phone}</span>} />
+                  <InfoRow icon={Mail} label="Email" value={u.email ?? <span className="text-gray-400 italic">Not set</span>} />
+                  <InfoRow icon={Calendar} label="Joined" value={formatDate(u.createdAt)} />
                 </div>
               )}
 
               {/* Role-specific data */}
-              {!editing && user.client && (
+              {!editing && u.client && (
                 <div>
                   <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Client Details</p>
                   <div className="bg-gray-50 rounded-xl px-4 py-1">
                     <div className="flex items-start gap-3 py-2.5 border-b border-gray-100">
+                      <IdCard className="h-4 w-4 text-gray-400 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Ghana Card KYC</p>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          {clientKycBadge(u.client.kycStatus)}
+                          {u.client.ghanaCardImageUrl && (
+                            <button
+                              onClick={openKycReview}
+                              className="text-[11px] font-medium text-orange-500 hover:text-orange-700 underline"
+                            >
+                              {u.client.kycStatus === 'pending_review' ? 'Review Card' : 'View Card'}
+                            </button>
+                          )}
+                        </div>
+                        {u.client.kycStatus === 'rejected' && u.client.kycRejectionReason && (
+                          <p className="mt-1.5 text-[11px] text-red-600 bg-red-50 rounded px-2 py-1">
+                            {u.client.kycRejectionReason}
+                          </p>
+                        )}
+                        {u.client.kycSubmittedAt && u.client.kycStatus === 'pending_review' && (
+                          <p className="mt-1 text-[11px] text-gray-400">
+                            Submitted {new Date(u.client.kycSubmittedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3 py-2.5 border-b border-gray-100">
                       <Star className="h-4 w-4 text-gray-400 mt-0.5" />
                       <div>
                         <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Loyalty Points</p>
-                        <p className="text-sm font-semibold text-orange-600 mt-0.5">{user.client.loyaltyPointsBalance.toLocaleString()} pts</p>
+                        <p className="text-sm font-semibold text-orange-600 mt-0.5">{u.client.loyaltyPointsBalance.toLocaleString()} pts</p>
                       </div>
                     </div>
                     <div className="flex items-start gap-3 py-2.5">
                       <div className="h-4 w-4 shrink-0" />
                       <div>
                         <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Preferred Payment</p>
-                        <p className="text-sm text-gray-900 mt-0.5">{user.client.preferredPaymentMethod ?? <span className="text-gray-400 italic">Not set</span>}</p>
+                        <p className="text-sm text-gray-900 mt-0.5">{u.client.preferredPaymentMethod ?? <span className="text-gray-400 italic">Not set</span>}</p>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {!editing && user.driver && (
+              {!editing && u.driver && (
                 <div>
                   <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Driver Details</p>
-                  <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
+                  <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2.5">
+                    {/* Status */}
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">Verification</span>
-                      <StatusBadge status={user.driver.verificationStatus} />
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={u.driver.verificationStatus} />
+                        {u.driver.verificationStatus === 'pending' && (
+                          <button onClick={() => openVerify(u.driver!.id, 'driver')} className="text-[11px] font-medium text-orange-500 hover:text-orange-700 underline">
+                            Review
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">Online Status</span>
-                      {user.driver.onlineStatus === 'online'
+                      {u.driver.onlineStatus === 'online'
                         ? <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Online</span>
-                        : <span className="text-xs text-gray-400">Offline</span>
-                      }
+                        : <span className="text-xs text-gray-400">Offline</span>}
+                    </div>
+
+                    <div className="border-t border-gray-200 pt-2.5 space-y-2.5">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Vehicle</p>
+                      <div className="flex items-start justify-between text-sm gap-2">
+                        <span className="text-gray-500 shrink-0">Make & Model</span>
+                        <span className="text-gray-900 text-xs text-right">
+                          {[u.driver.vehicleMake, u.driver.vehicleModel].filter(Boolean).join(' ') || <span className="text-gray-400 italic">Not set</span>}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Year</span>
+                        <span className="text-gray-900 text-xs">{u.driver.vehicleYear ?? <span className="text-gray-400 italic">Not set</span>}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Color</span>
+                        <span className="text-gray-900 text-xs capitalize">{u.driver.vehicleColor ?? <span className="text-gray-400 italic">Not set</span>}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Plate</span>
+                        {u.driver.vehiclePlate
+                          ? <span className="font-mono bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded text-[11px]">{u.driver.vehiclePlate}</span>
+                          : <span className="text-xs text-gray-400 italic">Not set</span>}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-gray-200 pt-2.5 space-y-2.5">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Licence</p>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Number</span>
+                        <span className="text-gray-900 text-xs font-mono">{u.driver.licenceNumber ?? <span className="text-gray-400 italic not-italic">Not set</span>}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Expiry</span>
+                        <span className="text-gray-900 text-xs">
+                          {u.driver.licenceExpiry
+                            ? new Date(u.driver.licenceExpiry).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                            : <span className="text-gray-400 italic">Not set</span>}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-gray-200 pt-2.5 space-y-2.5">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Payout</p>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Preference</span>
+                        <span className="text-gray-900 text-xs capitalize">{u.driver.payoutPreference ?? <span className="text-gray-400 italic">Not set</span>}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Method</span>
+                        <span className="flex items-center gap-1.5 text-gray-900 text-xs capitalize">
+                          {u.driver.payoutMethod ?? <span className="text-gray-400 italic">Not set</span>}
+                          {u.driver.payoutLocked && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                              <Lock className="h-2.5 w-2.5" />Locked
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      {u.driver.payoutLocked && canUnlockPayout && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-center gap-1.5 h-7 text-xs text-amber-700 border-amber-200 hover:bg-amber-50"
+                          onClick={openUnlockDialog}
+                        >
+                          <Unlock className="h-3 w-3" /> Unlock Payout Method
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="border-t border-gray-200 pt-2.5 space-y-2.5">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Activity</p>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500 flex items-center gap-1.5"><Star className="h-3.5 w-3.5 text-gray-400" />Rating</span>
+                        <span className="text-xs">
+                          {u.driver.avgRating != null ? <span className="font-medium text-amber-600">{u.driver.avgRating.toFixed(1)}</span> : <span className="text-gray-400">No ratings yet</span>}
+                          {u.driver.ratingCount > 0 && <span className="text-gray-400 ml-1">({u.driver.ratingCount})</span>}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500 flex items-center gap-1.5"><TrendingUp className="h-3.5 w-3.5 text-gray-400" />Completed Rides</span>
+                        <span className="text-gray-900 text-xs font-medium">{u.driver.completedRidesCount.toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500 flex items-center gap-1.5"><XOctagon className="h-3.5 w-3.5 text-gray-400" />Cancellations (30d)</span>
+                        <span className={`text-xs font-medium ${u.driver.cancellationCount30d >= 5 ? 'text-red-600' : 'text-gray-700'}`}>{u.driver.cancellationCount30d}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {!editing && user.artisan && (
+              {!editing && u.artisan && (
                 <div>
                   <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Artisan Details</p>
-                  <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2">
+                  <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2.5">
+                    {/* Status */}
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">Verification</span>
-                      <StatusBadge status={user.artisan.verificationStatus} />
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={u.artisan.verificationStatus} />
+                        {u.artisan.verificationStatus === 'pending' && (
+                          <button onClick={() => openVerify(u.artisan!.id, 'artisan')} className="text-[11px] font-medium text-orange-500 hover:text-orange-700 underline">
+                            Review
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">Online Status</span>
-                      {user.artisan.onlineStatus === 'online'
+                      {u.artisan.onlineStatus === 'online'
                         ? <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Online</span>
-                        : <span className="text-xs text-gray-400">Offline</span>
-                      }
+                        : <span className="text-xs text-gray-400">Offline</span>}
+                    </div>
+
+                    <div className="border-t border-gray-200 pt-2.5 space-y-2.5">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Business Info</p>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Business Name</span>
+                        <span className="text-gray-900 text-xs font-medium">{u.artisan.businessName ?? <span className="text-gray-400 italic">Not set</span>}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Display Name</span>
+                        <span className="text-gray-900 text-xs">{u.artisan.displayName ?? <span className="text-gray-400 italic">Not set</span>}</span>
+                      </div>
+                      <div className="flex items-start gap-2 text-sm">
+                        <span className="text-gray-500 flex items-center gap-1.5 shrink-0 mt-0.5"><Tag className="h-3.5 w-3.5 text-gray-400" />Categories</span>
+                        {(u.artisan.categories ?? []).length > 0
+                          ? <div className="flex flex-wrap gap-1 justify-end">
+                              {(u.artisan.categories ?? []).map(cat => (
+                                <span key={cat} className="text-[10px] bg-purple-50 text-purple-700 border border-purple-100 px-1.5 py-0.5 rounded-full">{cat}</span>
+                              ))}
+                            </div>
+                          : <span className="text-xs text-gray-400 italic ml-auto">Not set</span>}
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Service Radius</span>
+                        <span className="text-gray-900 text-xs">{u.artisan.serviceRadius != null ? `${u.artisan.serviceRadius} km` : <span className="text-gray-400 italic">Not set</span>}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Capacity</span>
+                        <span className="text-gray-900 text-xs capitalize">{u.artisan.shopCapacity ?? <span className="text-gray-400 italic">Not set</span>}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Max Concurrent Jobs</span>
+                        <span className="text-gray-900 text-xs">{u.artisan.maxConcurrentJobs ?? <span className="text-gray-400 italic">Not set</span>}</span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-gray-200 pt-2.5 space-y-2.5">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Payout</p>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Preference</span>
+                        <span className="text-gray-900 text-xs capitalize">{u.artisan.payoutPreference ?? <span className="text-gray-400 italic">Not set</span>}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Method</span>
+                        <span className="flex items-center gap-1.5 text-gray-900 text-xs capitalize">
+                          {u.artisan.payoutMethod ?? <span className="text-gray-400 italic">Not set</span>}
+                          {u.artisan.payoutLocked && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                              <Lock className="h-2.5 w-2.5" />Locked
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      {u.artisan.payoutLocked && canUnlockPayout && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-center gap-1.5 h-7 text-xs text-amber-700 border-amber-200 hover:bg-amber-50"
+                          onClick={openUnlockDialog}
+                        >
+                          <Unlock className="h-3 w-3" /> Unlock Payout Method
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="border-t border-gray-200 pt-2.5 space-y-2.5">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Activity</p>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500 flex items-center gap-1.5"><Star className="h-3.5 w-3.5 text-gray-400" />Rating</span>
+                        <span className="text-xs">
+                          {u.artisan.avgRating != null ? <span className="font-medium text-amber-600">{u.artisan.avgRating.toFixed(1)}</span> : <span className="text-gray-400">No ratings yet</span>}
+                          {u.artisan.ratingCount > 0 && <span className="text-gray-400 ml-1">({u.artisan.ratingCount})</span>}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500 flex items-center gap-1.5"><TrendingUp className="h-3.5 w-3.5 text-gray-400" />Completed Jobs</span>
+                        <span className="text-gray-900 text-xs font-medium">{u.artisan.completedJobsCount.toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500 flex items-center gap-1.5"><XOctagon className="h-3.5 w-3.5 text-gray-400" />Cancellations (30d)</span>
+                        <span className={`text-xs font-medium ${u.artisan.cancellationCount30d >= 5 ? 'text-red-600' : 'text-gray-700'}`}>{u.artisan.cancellationCount30d}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
 
               {/* Documents — drivers and artisans only */}
-              {!editing && (user.driver || user.artisan) && (
+              {!editing && (u.driver || u.artisan) && (
                 <div>
                   <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Documents</p>
-                  <DocumentsSection userId={user.id} />
+                  <DocumentsSection userId={u.id} />
                 </div>
               )}
 
               {/* Account actions */}
-              {!editing && (
+              {!editing && (canSuspend || canBan) && (
                 <div>
                   <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Account Actions</p>
                   <div className="flex flex-col gap-2">
-                    {user.status === 'suspended' && (
+                    {canSuspend && u.status === 'suspended' && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -448,7 +1031,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                         <RotateCcw className="h-4 w-4" /> Reinstate Account
                       </Button>
                     )}
-                    {user.status !== 'suspended' && user.status !== 'banned' && (
+                    {canSuspend && u.status !== 'suspended' && u.status !== 'banned' && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -458,7 +1041,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                         <UserX className="h-4 w-4" /> Suspend Account
                       </Button>
                     )}
-                    {user.status !== 'banned' && (
+                    {canBan && u.status !== 'banned' && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -474,7 +1057,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
 
               {/* ID */}
               {!editing && (
-                <p className="text-[10px] text-gray-300 font-mono break-all">ID: {user.id}</p>
+                <p className="text-[10px] text-gray-300 font-mono break-all">ID: {u.id}</p>
               )}
             </div>
           )}
@@ -526,6 +1109,74 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Verify provider review dialog */}
+      <VerifyProviderDialog
+        open={!!verifyDialog}
+        user={user}
+        providerId={verifyDialog?.providerId ?? null}
+        providerType={verifyDialog?.providerType ?? null}
+        action={verifyAction}
+        reason={verifyReason}
+        loading={verifyLoading}
+        error={verifyError}
+        onActionChange={a => { setVerifyAction(a); setVerifyError('') }}
+        onReasonChange={r => { setVerifyReason(r); setVerifyError('') }}
+        onConfirm={handleVerifyConfirm}
+        onClose={() => setVerifyDialog(null)}
+      />
+
+      {/* Unlock payout method dialog */}
+      <Dialog open={unlockDialogOpen} onOpenChange={open => { if (!open) setUnlockDialogOpen(false) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-amber-700 flex items-center gap-2">
+              <Unlock className="h-4 w-4" /> Unlock Payout Method
+            </DialogTitle>
+            <DialogDescription>
+              This clears the locked payout method on every provider profile this user holds. The user will need to re-enter their MoMo number and verify a new OTP before payouts can resume.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div>
+              <Label className="text-xs text-gray-500">Reason <span className="text-gray-400">(optional)</span></Label>
+              <textarea
+                className="mt-1.5 w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-20 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200"
+                placeholder="e.g. User contacted support — lost access to MoMo number…"
+                value={unlockReason}
+                onChange={e => setUnlockReason(e.target.value)}
+              />
+            </div>
+            {unlockError && <p className="text-xs text-red-600">{unlockError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnlockDialogOpen(false)}>Cancel</Button>
+            <Button
+              disabled={unlockLoading}
+              onClick={handleUnlockConfirm}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {unlockLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm Unlock'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Verify client Ghana Card dialog */}
+      <VerifyClientKycDialog
+        open={kycDialogOpen}
+        fullName={u?.fullName ?? null}
+        ghanaCardImageUrl={u?.client?.ghanaCardImageUrl ?? null}
+        submittedAt={u?.client?.kycSubmittedAt ?? null}
+        action={kycAction}
+        reason={kycReason}
+        loading={kycLoading}
+        error={kycError}
+        onActionChange={a => { setKycAction(a); setKycError('') }}
+        onReasonChange={r => { setKycReason(r); setKycError('') }}
+        onConfirm={handleKycConfirm}
+        onClose={() => setKycDialogOpen(false)}
+      />
     </>
   )
 }

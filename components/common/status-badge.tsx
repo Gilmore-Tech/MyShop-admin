@@ -54,7 +54,8 @@ const labels: Record<string, string> = {
   ops_admin: 'Ops Admin', support_agent: 'Support Agent', inactive: 'Inactive', partial: 'Partial',
 }
 
-export function StatusBadge({ status, className }: { status: string; className?: string }) {
+export function StatusBadge({ status, className }: { status: string | null | undefined; className?: string }) {
+  if (!status) return <span className="text-gray-300">—</span>
   return (
     <span className={cn(
       'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap',

@@ -110,7 +110,6 @@ export default function ManualAssignmentPage() {
   const [loadingArtisans, setLoadingArtisans] = useState(false)
   const [artisanSearch, setArtisanSearch] = useState('')
 
-  const [pricePesewas, setPricePesewas] = useState<string>('')
   const [assigning, setAssigning] = useState<string | null>(null) // artisanId being assigned
   const [assignedJobId, setAssignedJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -157,10 +156,9 @@ export default function ManualAssignmentPage() {
     }, artisanSearch ? 400 : 0)
   }, [selectedJob, artisanSearch])
 
-  // Set default price when job changes
+  // Reset state when job changes
   useEffect(() => {
     if (selectedJob) {
-      setPricePesewas(String(selectedJob.minBidPesewas))
       setError(null)
       setAssignedJobId(null)
     }
@@ -171,15 +169,7 @@ export default function ManualAssignmentPage() {
     setError(null)
     setAssigning(artisanId)
 
-    const price = pricePesewas ? parseInt(pricePesewas, 10) : selectedJob.minBidPesewas
-    if (isNaN(price) || price < 0) {
-      setError('Enter a valid price in pesewas.')
-      setAssigning(null)
-      return
-    }
-
     try {
-      // Lock first
       await lockJob(selectedJob.id)
     } catch (e: unknown) {
       const msg = e instanceof ApiError ? e.message : ''
@@ -189,7 +179,8 @@ export default function ManualAssignmentPage() {
     }
 
     try {
-      await assignJob(selectedJob.id, { artisanId, agreedPricePesewas: price })
+      // No agreedPricePesewas — artisan submits a bid for the client to confirm
+      await assignJob(selectedJob.id, { artisanId })
       setAssignedJobId(selectedJob.id)
       const remaining = jobs.filter(j => j.id !== selectedJob.id)
       setJobs(remaining)
@@ -209,7 +200,7 @@ export default function ManualAssignmentPage() {
       <div className="space-y-4">
         <PageHeader
           title="Manual Assignment"
-          subtitle="Assign artisans to jobs that received no bids"
+          subtitle="Assign an artisan to a job — they will bid and the client confirms the price"
           actions={
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={loadJobs} disabled={loadingJobs} className="gap-1.5">
@@ -229,7 +220,7 @@ export default function ManualAssignmentPage() {
         {assignedJobId && (
           <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3">
             <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-            <p className="text-sm text-emerald-700 font-medium">Job assigned successfully. Artisan has been notified.</p>
+            <p className="text-sm text-emerald-700 font-medium">Artisan assigned. They will submit a bid for the client to review and confirm.</p>
           </div>
         )}
 
@@ -345,27 +336,16 @@ export default function ManualAssignmentPage() {
                     </div>
                   </div>
 
-                  {/* Agreed price input */}
-                  <div className="flex items-end gap-3 pt-1 border-t border-gray-50">
-                    <div className="flex-1">
-                      <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-                        Agreed Price (pesewas)
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₵</span>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={pricePesewas === '' ? '' : pricePesewas}
-                          onChange={e => setPricePesewas(e.target.value)}
-                          placeholder={String(selectedJob.minBidPesewas)}
-                          className="pl-7 text-sm"
-                        />
-                      </div>
-                      <p className="text-[11px] text-gray-400 mt-1">
-                        Min: {ghsCurrency(selectedJob.minBidPesewas)} · Displayed as {ghsCurrency(pricePesewas ? parseInt(pricePesewas) : selectedJob.minBidPesewas)}
-                      </p>
-                    </div>
+                  {/* Price note */}
+                  <div className="flex items-start gap-2 pt-3 border-t border-gray-50">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-gray-400 leading-snug">
+                      No price is set at assignment. Once assigned, the artisan will submit a bid
+                      through the app and the client will confirm before work begins.
+                      {selectedJob.minBidPesewas > 0 && (
+                        <> Client&apos;s minimum: <span className="font-semibold text-gray-600">{ghsCurrency(selectedJob.minBidPesewas)}</span>.</>
+                      )}
+                    </p>
                   </div>
                 </div>
 

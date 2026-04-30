@@ -1,18 +1,21 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Search, MoreHorizontal, AlertTriangle, Wrench, Loader2 } from 'lucide-react'
+import { Search, MoreHorizontal, AlertTriangle, Wrench, Loader2, Trash2, MapPin } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
-import { listArtisanJobs, type AdminJob } from '@/lib/api'
+import { listArtisanJobs, deleteJob, type AdminJob } from '@/lib/api'
+import { getAdminUser } from '@/lib/api-client'
 
 function formatGhs(pesewas: number) {
   return 'GHS ' + (pesewas / 100).toFixed(2)
@@ -34,22 +37,32 @@ function StalenessFlag({ hours }: { hours: number }) {
 
 export default function ArtisanJobsPage() {
   const router = useRouter()
+  const adminUser = getAdminUser()
+  const isRegional = adminUser?.role === 'regional_admin'
+  const lockedRegion = isRegional ? (adminUser?.regionScope ?? null) : null
+
   const [jobs, setJobs] = useState<AdminJob[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [regionFilter, setRegionFilter] = useState(lockedRegion ?? 'all')
   const [loading, setLoading] = useState(true)
+  const [deleteTarget, setDeleteTarget] = useState<AdminJob | null>(null)
+  const [deletingAll, setDeletingAll] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const LIMIT = 50
 
   const fetchJobs = useCallback(() => {
     setLoading(true)
+    const activeRegion = lockedRegion ?? (regionFilter === 'all' ? undefined : regionFilter)
     listArtisanJobs({
       status: statusFilter === 'all' ? undefined : statusFilter,
       search: search || undefined,
       page,
       limit: LIMIT,
+      region: activeRegion,
     })
       .then(res => {
         setJobs(res.items)
@@ -58,21 +71,52 @@ export default function ArtisanJobsPage() {
       })
       .catch(() => setJobs([]))
       .finally(() => setLoading(false))
-  }, [statusFilter, search, page])
+  }, [statusFilter, search, page, regionFilter, lockedRegion])
 
   useEffect(() => { fetchJobs() }, [fetchJobs])
-  useEffect(() => { setPage(1) }, [statusFilter, search])
+  useAutoRefresh(fetchJobs)
+  useEffect(() => { setPage(1) }, [statusFilter, search, regionFilter])
 
   const staleJobs = jobs.filter(j => j.staleHours >= 24)
   const unassignedCount = jobs.filter(j => j.status === 'queued').length
   const activeCount = jobs.filter(j => ['en_route', 'arrived', 'in_progress', 'confirmed'].includes(j.status)).length
+
+  async function handleDeleteOne() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await deleteJob(deleteTarget.id)
+      setJobs(prev => prev.filter(j => j.id !== deleteTarget.id))
+      setTotal(prev => prev - 1)
+    } catch {
+      // keep dialog open so user can retry
+    } finally {
+      setDeleting(false)
+      setDeleteTarget(null)
+    }
+  }
+
+  async function handleDeleteAllStale() {
+    setDeletingAll(true)
+    try {
+      await Promise.all(staleJobs.map(j => deleteJob(j.id)))
+      const staleIds = new Set(staleJobs.map(j => j.id))
+      setJobs(prev => prev.filter(j => !staleIds.has(j.id)))
+      setTotal(prev => prev - staleJobs.length)
+    } catch {
+      // partial failure — refresh to get real state
+      fetchJobs()
+    } finally {
+      setDeletingAll(false)
+    }
+  }
 
   return (
      <PageGuard permission="view_jobs">
     <div>
       <PageHeader
         title="Artisan Jobs"
-        subtitle="Manage all artisan service bookings"
+        subtitle={lockedRegion ? `Artisan service bookings · ${lockedRegion} region` : 'Manage all artisan service bookings'}
         actions={
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 bg-purple-50 rounded-lg px-3 py-1.5">
@@ -102,12 +146,22 @@ export default function ArtisanJobsPage() {
       />
 
       {staleJobs.length > 0 && (
-        <div className="mb-4 flex items-start gap-3 bg-red-50 rounded-xl px-4 py-3">
-          <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700">
+        <div className="mb-4 flex items-center gap-3 bg-red-50 rounded-xl px-4 py-3">
+          <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+          <p className="text-sm text-red-700 flex-1">
             <strong>{staleJobs.length} job{staleJobs.length > 1 ? 's' : ''}</strong> have been in-progress for 24+ hours and require admin attention.
             {jobs.some(j => j.staleHours >= 48) && ' Payouts are frozen on jobs over 48h.'}
           </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 border-red-300 text-red-600 hover:bg-red-100 gap-1.5 h-7 text-xs"
+            disabled={deletingAll}
+            onClick={handleDeleteAllStale}
+          >
+            {deletingAll ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+            Delete All Stale ({staleJobs.length})
+          </Button>
         </div>
       )}
 
@@ -137,6 +191,31 @@ export default function ArtisanJobsPage() {
             <SelectItem value="disputed">Disputed</SelectItem>
           </SelectContent>
         </Select>
+
+        {/* Region filter: locked for regional admins, selectable for super/ops */}
+        {lockedRegion ? (
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-purple-100 text-purple-700">
+            <MapPin className="h-3 w-3" /> {lockedRegion}
+          </span>
+        ) : (
+          <Select value={regionFilter} onValueChange={setRegionFilter}>
+            <SelectTrigger className="w-44 bg-white"><SelectValue placeholder="All Regions" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Regions</SelectItem>
+              <SelectItem value="Ashanti">Ashanti</SelectItem>
+              <SelectItem value="Greater Accra">Greater Accra</SelectItem>
+              <SelectItem value="Western">Western</SelectItem>
+              <SelectItem value="Central">Central</SelectItem>
+              <SelectItem value="Eastern">Eastern</SelectItem>
+              <SelectItem value="Northern">Northern</SelectItem>
+              <SelectItem value="Volta">Volta</SelectItem>
+              <SelectItem value="Upper East">Upper East</SelectItem>
+              <SelectItem value="Upper West">Upper West</SelectItem>
+              <SelectItem value="Brong-Ahafo">Brong-Ahafo</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+
         <div className="ml-auto text-sm text-gray-400">{total} jobs</div>
       </div>
 
@@ -149,6 +228,7 @@ export default function ArtisanJobsPage() {
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Artisan</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</TableHead>
+              {!lockedRegion && <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Region</TableHead>}
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Agreed Price</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Supplement</TableHead>
@@ -160,14 +240,14 @@ export default function ArtisanJobsPage() {
             {loading ? (
               [...Array(8)].map((_, i) => (
                 <TableRow key={i}>
-                  {[...Array(10)].map((_, j) => (
+                  {[...Array(lockedRegion ? 10 : 11)].map((_, j) => (
                     <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : jobs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-12 text-gray-400 text-sm">
+                <TableCell colSpan={lockedRegion ? 10 : 11} className="text-center py-12 text-gray-400 text-sm">
                   No jobs found
                 </TableCell>
               </TableRow>
@@ -191,6 +271,14 @@ export default function ArtisanJobsPage() {
                       {job.categoryName ?? '—'}
                     </span>
                   </TableCell>
+                  {!lockedRegion && (
+                    <TableCell>
+                      {job.region
+                        ? <span className="inline-flex items-center gap-1 text-xs text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full font-medium"><MapPin className="h-2.5 w-2.5" />{job.region}</span>
+                        : <span className="text-gray-300">—</span>
+                      }
+                    </TableCell>
+                  )}
                   <TableCell><StatusBadge status={job.status} /></TableCell>
                   <TableCell className="text-right text-sm font-semibold text-gray-800">
                     {job.agreedPricePesewas != null ? formatGhs(job.agreedPricePesewas) : '—'}
@@ -226,6 +314,17 @@ export default function ArtisanJobsPage() {
                             <Link href={`/disputes?search=${job.id}`}>Handle Dispute</Link>
                           </DropdownMenuItem>
                         )}
+                        {job.staleHours >= 24 && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-red-600 focus:text-red-600 focus:bg-red-50 gap-1.5"
+                              onClick={() => setDeleteTarget(job)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" /> Delete Stale Job
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -248,6 +347,33 @@ export default function ArtisanJobsPage() {
         </div>
       </div>
     </div>
+
+    <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null) }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-600">
+            <Trash2 className="h-5 w-5" /> Delete Stale Job
+          </DialogTitle>
+          <DialogDescription>
+            Permanently delete job{' '}
+            <strong className="font-mono">{deleteTarget?.id.slice(-8).toUpperCase()}</strong>
+            {deleteTarget?.clientName && <> for <strong>{deleteTarget.clientName}</strong></>}
+            ? This job has been inactive for <strong>{deleteTarget?.staleHours}h</strong> and cannot be recovered.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <Button
+            onClick={handleDeleteOne}
+            disabled={deleting}
+            className="bg-red-600 hover:bg-red-700 text-white gap-2"
+          >
+            {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {deleting ? 'Deleting…' : 'Delete Job'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </PageGuard>
   )
 }

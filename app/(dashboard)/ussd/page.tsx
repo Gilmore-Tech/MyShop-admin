@@ -11,11 +11,10 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { PageHeader } from '@/components/common/page-header'
 import {
-  getUssdStats, listUssdSessions, listUssdZones, toggleUssdZone, getSmsHistory,
-  type UssdStats, type UssdSession, type UssdZone, type SmsHistoryItem,
+  getUssdStats, listUssdSessions, listUssdZones, toggleUssdZone, getSmsHistory, sendSms,
+  type UssdStats, type UssdSession, type UssdZone, type SmsHistoryItem, type SmsAudience,
 } from '@/lib/api'
-import { getToken } from '@/lib/api-client'
-import type { SmsAudience } from '@/app/api/sms/route'
+import { ApiError } from '@/lib/api-client'
 
 const outcomeColors: Record<string, string> = {
   completed: 'bg-emerald-100 text-emerald-700',
@@ -133,22 +132,7 @@ export default function UssdPage() {
     setSmsSuccess('')
 
     try {
-      const token = getToken()
-      const res = await fetch('/api/sms', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ audience: smsAudience, message: `MyShop: ${smsBody.trim()}` }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        setSmsError(data?.error ?? 'Failed to send SMS.')
-        return
-      }
+      const data = await sendSms(smsAudience, `MyShop: ${smsBody.trim()}`)
 
       const label = AUDIENCES.find(a => a.value === smsAudience)?.label ?? smsAudience
       setSmsSuccess(`Sent to ${data.sent.toLocaleString()} of ${data.total.toLocaleString()} ${label} — ${data.failed} failed.`)
@@ -164,8 +148,8 @@ export default function UssdPage() {
       }, ...prev])
 
       setSmsBody('')
-    } catch {
-      setSmsError('Network error — could not reach the SMS service.')
+    } catch (err) {
+      setSmsError(err instanceof ApiError ? err.message : 'Network error — could not reach the SMS service.')
     } finally {
       setSmsSending(false)
     }

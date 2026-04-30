@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/common/page-header'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { getHighBidQueue, reviewHighBid, type FlaggedBid } from '@/lib/api'
-import { ApiError } from '@/lib/api-client'
+import { ApiError, FEATURES } from '@/lib/api-client'
 
 function formatGhs(pesewas: number) {
   return 'GHS ' + (pesewas / 100).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -49,6 +49,7 @@ export default function HighBidReviewPage() {
   const [reviewed, setReviewed] = useState<Record<string, 'approved' | 'rejected'>>({})
 
   const load = useCallback(() => {
+    if (!FEATURES.highBidReview) { setLoading(false); return }
     setLoading(true)
     setError('')
     getHighBidQueue()
@@ -64,6 +65,26 @@ export default function HighBidReviewPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  if (!FEATURES.highBidReview) {
+    return (
+      <PageGuard permission="review_bid">
+        <div>
+          <PageHeader title="High Bid Review" subtitle="Bids exceeding the category threshold require approval before the client sees them" />
+          <div className="mt-6 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-4 max-w-2xl">
+            <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-900">Feature pending backend rollout</p>
+              <p className="text-sm text-amber-800 mt-1">
+                The <code className="bg-amber-100 px-1 rounded text-[12px]">GET /admin/bids/flagged</code> endpoint is not yet available.
+                Once the backend team implements it, set <code className="bg-amber-100 px-1 rounded text-[12px]">NEXT_PUBLIC_FEATURE_HIGH_BID_REVIEW=true</code> in your env to enable this page and the sidebar link.
+              </p>
+            </div>
+          </div>
+        </div>
+      </PageGuard>
+    )
+  }
 
   function openDialog(bid: FlaggedBid, decision: 'approved' | 'rejected') {
     setReason('')

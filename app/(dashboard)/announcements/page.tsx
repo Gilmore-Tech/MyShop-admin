@@ -10,9 +10,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { PageHeader } from '@/components/common/page-header'
-import { sendAnnouncement, getAnnouncementHistory, type AnnouncementTopic, type AnnouncementHistoryItem } from '@/lib/api'
-import { ApiError, getToken } from '@/lib/api-client'
-import type { SmsAudience } from '@/app/api/sms/route'
+import { sendAnnouncement, getAnnouncementHistory, sendSms, type AnnouncementTopic, type AnnouncementHistoryItem, type SmsAudience } from '@/lib/api'
+import { ApiError } from '@/lib/api-client'
 
 const AUDIENCE: { value: AnnouncementTopic; label: string; sub: string; icon: React.ElementType; colors: string; active: string }[] = [
   { value: 'all_users', label: 'All Users', sub: 'Clients · Drivers · Artisans', icon: Users, colors: ' text-gray-600 hover: hover:bg-gray-50', active: ' bg-orange-50 text-orange-700 ring-1 ring-orange-100' },
@@ -79,18 +78,8 @@ export default function AnnouncementsPage() {
       }
 
       if (smsChannels.includes(channel)) {
-        const token = getToken()
-        const res = await fetch('/api/sms', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ audience: topic as SmsAudience, message: `MyShop: ${body.trim()}` }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.error ?? 'SMS delivery failed.')
-        setSuccess(`Sent to ${label} — ${data.sent.toLocaleString()} SMS delivered, ${data.failed} failed.`)
+        const result = await sendSms(topic as SmsAudience, `MyShop: ${body.trim()}`)
+        setSuccess(`Sent to ${label} — ${result.sent.toLocaleString()} SMS delivered, ${result.failed} failed.`)
       } else {
         setSuccess(`Message sent to ${label}.`)
       }

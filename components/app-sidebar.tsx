@@ -6,11 +6,12 @@ import {
   LayoutDashboard, Radio, BadgeCheck, Scale, Users,
   Settings, Smartphone, ShieldCheck, Car,
   CreditCard, Megaphone, BarChart3, UserCog, ChevronDown, LogOut,
-  LineChart, Tag,
+  LineChart, Tag, ClipboardList, ShieldAlert, Activity, IdCard,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { getOverviewReport } from '@/lib/api'
+import { getOverviewReport, getEmergencyAlerts, getClientKycQueue, getUnassignedJobs, getHighBidQueue } from '@/lib/api'
+import { FEATURES } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { ROLE_LABELS, type Permission } from '@/lib/roles'
 
@@ -109,14 +110,37 @@ export default function AppSidebar() {
   const { can, role, adminName } = useRole()
   const [pendingVerifications, setPendingVerifications] = useState<number | null>(null)
   const [openDisputes, setOpenDisputes] = useState<number | null>(null)
+  const [unacknowledgedEmergencies, setUnacknowledgedEmergencies] = useState<number | null>(null)
+  const [pendingClientKyc, setPendingClientKyc] = useState<number | null>(null)
+  const [unassignedJobsCount, setUnassignedJobsCount] = useState<number | null>(null)
+  const [highBidCount, setHighBidCount] = useState<number | null>(null)
 
   useEffect(() => {
-    getOverviewReport()
-      .then(ov => {
-        setPendingVerifications(ov.pendingVerifications)
-        setOpenDisputes(ov.openDisputes)
-      })
-      .catch(() => {})
+    function loadCounts() {
+      getOverviewReport()
+        .then(ov => {
+          setPendingVerifications(ov.pendingVerifications)
+          setOpenDisputes(ov.openDisputes)
+        })
+        .catch(() => {})
+      getEmergencyAlerts()
+        .then(alerts => setUnacknowledgedEmergencies(alerts.filter(a => !a.acknowledgedAt).length))
+        .catch(() => {})
+      getClientKycQueue()
+        .then(items => setPendingClientKyc(items.length))
+        .catch(() => {})
+      getUnassignedJobs()
+        .then(res => setUnassignedJobsCount(res.total))
+        .catch(() => {})
+      if (FEATURES.highBidReview) {
+        getHighBidQueue()
+          .then(bids => setHighBidCount(bids.length))
+          .catch(() => {})
+      }
+    }
+    loadCounts()
+    const id = setInterval(loadCounts, 60_000)
+    return () => clearInterval(id)
   }, [])
 
   const primaryNav: NavItem[] = [
@@ -124,11 +148,15 @@ export default function AppSidebar() {
     { title: 'Analytics',            href: '/analytics',     icon: LineChart,        permission: 'view_analytics' },
     { title: 'Live Monitoring',      href: '/live-map',      icon: Radio,            permission: 'view_live_map' },
     { title: 'Verification Queue',   href: '/verifications', icon: BadgeCheck,       permission: 'view_verifications', badge: pendingVerifications ?? undefined },
+    { title: 'Client KYC Queue',     href: '/users/clients/kyc-queue', icon: IdCard,    permission: 'view_verifications', badge: pendingClientKyc ?? undefined },
     { title: 'Disputes & Incidents', href: '/disputes',      icon: Scale,            permission: 'view_disputes',      badge: openDisputes ?? undefined },
+    { title: 'Emergency Alerts',     href: '/emergency',     icon: ShieldAlert,      permission: 'view_emergency',     badge: unacknowledgedEmergencies ?? undefined },
+    { title: 'Activity Feed',        href: '/activity',      icon: Activity,         permission: 'view_activity' },
     { title: 'User Management',      href: '/users/clients', icon: Users,            permission: 'view_users' },
     { title: 'Marketplace Config',   href: '/configuration', icon: Settings,         permission: 'view_config' },
     { title: 'USSD & SMS Logs',      href: '/ussd',          icon: Smartphone,       permission: 'view_ussd' },
-    { title: 'System Settings',      href: '/admin-accounts',icon: ShieldCheck,      permission: 'manage_admins' },
+    { title: 'System Settings',      href: '/system-settings',icon: ShieldCheck,      permission: 'manage_admins' },
+    { title: 'Audit Logs',           href: '/audit-logs',    icon: ClipboardList,    permission: 'view_audit_logs' },
   ]
 
   const secondaryNav: NavItem[] = [
@@ -137,8 +165,10 @@ export default function AppSidebar() {
       children: [
         { title: 'All Rides',         href: '/rides' },
         { title: 'Artisan Jobs',      href: '/artisan-jobs' },
-        { title: 'Manual Assignment', href: '/artisan-jobs/manual-assignment' },
-        { title: 'High Bid Review',   href: '/artisan-jobs/high-bid-review', permission: 'review_bid' },
+        { title: 'Manual Assignment', href: '/artisan-jobs/manual-assignment', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
+        ...(FEATURES.highBidReview
+          ? [{ title: 'High Bid Review', href: '/artisan-jobs/high-bid-review', permission: 'review_bid' as const, badge: highBidCount ?? undefined }]
+          : []),
       ],
     },
     { title: 'Service Categories', href: '/categories',    icon: Tag,      permission: 'view_categories' },
@@ -171,9 +201,8 @@ export default function AppSidebar() {
       {/* Logo */}
       <div className="px-5 py-4">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#F5A623' }}>
-            <span className="text-white font-bold text-sm">M</span>
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="MyShop" className="w-8 h-8 rounded-lg shrink-0" />
           <div>
             <p className="text-gray-900 font-bold text-sm leading-tight">MyShop</p>
             <p className="text-gray-400 text-xs">Admin Console</p>

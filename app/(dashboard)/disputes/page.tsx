@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import { Search, CheckCircle, XCircle, RefreshCw, Scale } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -30,10 +32,11 @@ function formatDate(iso: string) {
 type ResolveAction='approved' |'denied'
 
 export default function DisputesPage() {
+ const searchParams = useSearchParams()
  const [items, setItems] = useState<Dispute[]>([])
  const [loading, setLoading] = useState(true)
  const [error, setError] = useState('')
- const [search, setSearch] = useState('')
+ const [search, setSearch] = useState(() => searchParams.get('search') ?? '')
  const [statusFilter, setStatusFilter] = useState('all')
  const [resolveDialog, setResolveDialog] = useState<{ dispute: Dispute; action: ResolveAction } | null>(null)
  const [reason, setReason] = useState('')
@@ -55,6 +58,7 @@ export default function DisputesPage() {
  }, [])
 
  useEffect(() => { load() }, [load])
+ useAutoRefresh(load)
 
  async function handleResolve() {
  if (!resolveDialog) return

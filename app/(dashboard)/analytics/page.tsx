@@ -114,23 +114,30 @@ export default function AnalyticsPage() {
  const fromStr = from.toISOString().split('T')[0]
  const dateParams = { from: fromStr }
 
+ const trace = <T,>(label: string, p: Promise<T>) =>
+ p.catch((err: unknown) => {
+ const e = err as { status?: number; code?: string; message?: string }
+ console.error(`[analytics] ${label} failed`, { status: e?.status, code: e?.code, message: e?.message, error: err })
+ return null
+ })
+
  Promise.all([
- getRevenueReport({ groupBy, from: fromStr }),
- getProviderReport(),
- getOverviewReport(),
- getRideStatusReport(dateParams).catch(() => null),
- getJobCategoryReport(dateParams).catch(() => null),
- getPaymentReport(dateParams).catch(() => null),
- getDisputeRateReport(dateParams).catch(() => null),
+ trace('revenue',       getRevenueReport({ groupBy, from: fromStr })),
+ trace('providers',     getProviderReport()),
+ trace('overview',      getOverviewReport()),
+ trace('rides/status',  getRideStatusReport(dateParams)),
+ trace('jobs/cats',     getJobCategoryReport(dateParams)),
+ trace('payments',      getPaymentReport(dateParams)),
+ trace('disputes/rate', getDisputeRateReport(dateParams)),
  ]).then(([rev, prov, ov, rs, jc, pr, dr]) => {
- setRevenue(rev.periods ?? [])
- setProviders(prov)
- setOverview(ov)
+ if (rev) setRevenue(rev.periods ?? [])
+ if (prov) setProviders(prov)
+ if (ov) setOverview(ov)
  setRideStatus(rs)
  setJobCats(Array.isArray(jc) ? jc : jc ? [] : null)
  setPaymentRpt(pr)
  setDisputeRts(Array.isArray(dr) ? dr : dr ? [] : null)
- }).catch(() => { /* silently degrade */ })
+ })
  }, [range])
 
  // ── Derived: KPI strip ─────────────────────────────────────────────────────
@@ -516,7 +523,7 @@ export default function AnalyticsPage() {
  return (
  <text textAnchor="middle">
  <tspan x={cx} y={cy - 4} fontSize={13} fontWeight={700} fill="#111827">{topPayment.value}%</tspan>
- <tspan x={cx} y={cy + 12} fontSize={8} fill="#9ca3af">{topPayment.name.split('')[0]}</tspan>
+ <tspan x={cx} y={cy + 12} fontSize={9} fill="#9ca3af">{topPayment.name}</tspan>
  </text>
  )
  }} />

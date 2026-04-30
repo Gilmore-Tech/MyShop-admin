@@ -75,12 +75,8 @@ export default function LoginPage() {
 
         {/* Logo */}
         <div className="relative flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-base shadow-lg"
-            style={{ backgroundColor: '#F5A623' }}
-          >
-            M
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="MyShop" className="w-10 h-10 rounded-xl shadow-lg" />
           <div>
             <p className="text-white font-semibold text-sm leading-none">MyShop</p>
             <p className="text-xs mt-0.5" style={{ color: '#4A6070' }}>Admin Console</p>
@@ -133,12 +129,8 @@ export default function LoginPage() {
       >
         {/* Mobile logo */}
         <div className="lg:hidden flex items-center gap-2.5 mb-10">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm"
-            style={{ backgroundColor: '#F5A623' }}
-          >
-            M
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="MyShop" className="w-9 h-9 rounded-lg" />
           <span className="text-white font-semibold">MyShop Admin</span>
         </div>
 

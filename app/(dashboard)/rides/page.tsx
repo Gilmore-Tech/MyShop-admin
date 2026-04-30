@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Search, MapPin, MoreHorizontal, Car, Loader2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -24,6 +27,7 @@ function formatDateTime(iso: string) {
 }
 
 export default function RidesPage() {
+  const router = useRouter()
   const [rides, setRides] = useState<AdminRide[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -51,6 +55,7 @@ export default function RidesPage() {
   }, [statusFilter, search, page])
 
   useEffect(() => { fetch() }, [fetch])
+  useAutoRefresh(fetch)
 
   // Reset to page 1 when filters change
   useEffect(() => { setPage(1) }, [statusFilter, search])
@@ -147,7 +152,7 @@ export default function RidesPage() {
               </TableRow>
             ) : (
               rides.map(ride => (
-                <TableRow key={ride.id} className="hover:bg-gray-50 cursor-pointer">
+                <TableRow key={ride.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/rides/${ride.id}`)}>
                   <TableCell className="font-mono text-sm font-semibold text-orange-600">
                     {ride.id.slice(-8).toUpperCase()}
                   </TableCell>
@@ -172,15 +177,26 @@ export default function RidesPage() {
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600" onClick={e => e.stopPropagation()}>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>View Details</DropdownMenuItem>
-                        <DropdownMenuItem>GPS Trail</DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href={`/rides/${ride.id}`} onClick={e => e.stopPropagation()}>View Details</Link>
+                        </DropdownMenuItem>
+                        {['requested', 'accepted', 'driver_en_route', 'arrived_at_pickup', 'in_progress'].includes(ride.status) && (
+                          <DropdownMenuItem
+                            className="text-red-600"
+                            onClick={e => { e.stopPropagation(); router.push(`/rides/${ride.id}`) }}
+                          >
+                            Cancel Ride
+                          </DropdownMenuItem>
+                        )}
                         {ride.status === 'disputed' && (
-                          <DropdownMenuItem className="text-amber-600">Handle Dispute</DropdownMenuItem>
+                          <DropdownMenuItem asChild className="text-amber-600">
+                            <Link href={`/disputes?search=${ride.id}`} onClick={e => e.stopPropagation()}>Handle Dispute</Link>
+                          </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>

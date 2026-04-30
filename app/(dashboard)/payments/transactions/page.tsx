@@ -3,15 +3,17 @@
 import { PageGuard } from '@/components/common/page-guard'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Search, Loader2 } from 'lucide-react'
+import { Search, Loader2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { listTransactions, type AdminTransaction } from '@/lib/api'
+import { ApiError } from '@/lib/api-client'
 
 const txTypeColors: Record<string, string> = {
   collection: 'bg-blue-100 text-blue-700',
@@ -32,6 +34,8 @@ function formatDateTime(iso: string) {
   })
 }
 
+const STATUS_OPTIONS = ['pending', 'completed', 'failed', 'refunded'] as const
+
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<AdminTransaction[]>([])
   const [total, setTotal] = useState(0)
@@ -39,13 +43,18 @@ export default function TransactionsPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [selected, setSelected] = useState<AdminTransaction | null>(null)
   const LIMIT = 50
 
   const fetchTransactions = useCallback(() => {
     setLoading(true)
+    setError('')
     listTransactions({
       type: typeFilter === 'all' ? undefined : typeFilter,
+      status: statusFilter === 'all' ? undefined : statusFilter,
       search: search || undefined,
       page,
       limit: LIMIT,
@@ -55,12 +64,23 @@ export default function TransactionsPage() {
         setTotal(res.total)
         setTotalPages(res.totalPages)
       })
-      .catch(() => setTransactions([]))
+      .catch(err => {
+        setTransactions([])
+        setTotal(0)
+        setTotalPages(1)
+        if (err instanceof ApiError) {
+          setError(err.status === 404
+            ? 'Transactions endpoint is not yet available on the backend.'
+            : err.message)
+        } else {
+          setError('Failed to load transactions.')
+        }
+      })
       .finally(() => setLoading(false))
-  }, [typeFilter, search, page])
+  }, [typeFilter, statusFilter, search, page])
 
   useEffect(() => { fetchTransactions() }, [fetchTransactions])
-  useEffect(() => { setPage(1) }, [typeFilter, search])
+  useEffect(() => { setPage(1) }, [typeFilter, statusFilter, search])
 
   return (
      <PageGuard permission="view_payments">
@@ -92,8 +112,32 @@ export default function TransactionsPage() {
             <SelectItem value="tip">Tip</SelectItem>
           </SelectContent>
         </Select>
-        <div className="ml-auto text-sm text-gray-500">{total} transactions</div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-36 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {STATUS_OPTIONS.map(s => (
+              <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="sm" onClick={fetchTransactions} disabled={loading} className="gap-1.5">
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
+        <div className="ml-auto text-sm text-gray-500">{total} transaction{total === 1 ? '' : 's'}</div>
       </div>
+
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="font-medium">Couldn&apos;t load transactions</p>
+            <p className="text-xs mt-0.5">{error}</p>
+          </div>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={fetchTransactions}>Retry</Button>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <Table>
@@ -120,11 +164,17 @@ export default function TransactionsPage() {
               ))
             ) : transactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-gray-400 text-sm">No transactions found</TableCell>
+                <TableCell colSpan={8} className="text-center py-12 text-gray-400 text-sm">
+                  {error ? 'No transactions to display while the endpoint is unavailable.' : 'No transactions found'}
+                </TableCell>
               </TableRow>
             ) : (
               transactions.map(tx => (
-                <TableRow key={tx.id} className="hover:bg-gray-50">
+                <TableRow
+                  key={tx.id}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={() => setSelected(tx)}
+                >
                   <TableCell className="font-mono text-sm font-medium text-slate-600">{tx.id.slice(-10).toUpperCase()}</TableCell>
                   <TableCell className="text-sm text-gray-500 whitespace-nowrap">{formatDateTime(tx.createdAt)}</TableCell>
                   <TableCell>
@@ -137,7 +187,11 @@ export default function TransactionsPage() {
                   </TableCell>
                   <TableCell className="text-sm text-gray-500">{tx.method}</TableCell>
                   <TableCell><StatusBadge status={tx.status} /></TableCell>
-                  <TableCell className="font-mono text-sm text-slate-500">{tx.bookingId ? tx.bookingId.slice(-8).toUpperCase() : '—'}</TableCell>
+                  <TableCell className="font-mono text-sm text-slate-500">
+                    {tx.bookingId
+                      ? <BookingLink type={tx.bookingType} id={tx.bookingId} />
+                      : '—'}
+                  </TableCell>
                   <TableCell className="text-sm">{tx.party ?? '—'}</TableCell>
                 </TableRow>
               ))
@@ -154,7 +208,86 @@ export default function TransactionsPage() {
           </div>
         </div>
       </div>
+
+      <TransactionDetailDialog tx={selected} onClose={() => setSelected(null)} />
     </div>
   </PageGuard>
+  )
+}
+
+function BookingLink({ type, id }: { type: 'ride' | 'job' | null; id: string }) {
+  const short = id.slice(-8).toUpperCase()
+  if (type === 'ride') {
+    return (
+      <Link
+        href={`/rides/${id}`}
+        className="hover:underline hover:text-blue-600"
+        onClick={e => e.stopPropagation()}
+      >
+        {short}
+      </Link>
+    )
+  }
+  if (type === 'job') {
+    return (
+      <Link
+        href={`/artisan-jobs/${id}`}
+        className="hover:underline hover:text-blue-600"
+        onClick={e => e.stopPropagation()}
+      >
+        {short}
+      </Link>
+    )
+  }
+  return <span>{short}</span>
+}
+
+function TransactionDetailDialog({ tx, onClose }: { tx: AdminTransaction | null; onClose: () => void }) {
+  return (
+    <Dialog open={!!tx} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Transaction Detail</DialogTitle>
+        </DialogHeader>
+        {tx && (
+          <div className="space-y-3 text-sm">
+            <Row label="ID" value={<span className="font-mono">{tx.id}</span>} />
+            <Row label="Type" value={<span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${txTypeColors[tx.type] ?? 'bg-gray-100 text-gray-600'}`}>{tx.type}</span>} />
+            <Row label="Status" value={<StatusBadge status={tx.status} />} />
+            <Row
+              label="Amount"
+              value={
+                <span className={`font-semibold ${tx.type === 'refund' || tx.type === 'clawback' ? 'text-red-600' : tx.type === 'payout' ? 'text-purple-600' : 'text-gray-900'}`}>
+                  {tx.type === 'refund' || tx.type === 'payout' ? '−' : '+'}{formatGhs(tx.amountPesewas)}
+                </span>
+              }
+            />
+            <Row label="Method" value={tx.method} />
+            <Row label="Created" value={formatDateTime(tx.createdAt)} />
+            <Row label="Party" value={tx.party ?? '—'} />
+            <Row
+              label="Booking"
+              value={
+                tx.bookingId ? (
+                  <BookingLink type={tx.bookingType} id={tx.bookingId} />
+                ) : '—'
+              }
+            />
+            {tx.bookingType && (
+              <Row label="Booking type" value={<span className="capitalize">{tx.bookingType}</span>} />
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-gray-100 pb-2 last:border-0">
+      <span className="text-xs uppercase tracking-wide text-gray-500 mt-0.5">{label}</span>
+      <span className="text-right">{value}</span>
+    </div>
   )
 }

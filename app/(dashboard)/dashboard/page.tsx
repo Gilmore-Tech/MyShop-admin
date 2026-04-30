@@ -293,30 +293,43 @@ export default function DashboardPage() {
             <Link href="/rides" className="text-xs font-medium" style={{ color: '#F5A623' }}>View Full Logs</Link>
           </div>
 
-          {loadingActivity ? (
-            <div className="divide-y divide-gray-50">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="px-5 py-3 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-100 animate-pulse shrink-0" />
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-3 bg-gray-100 rounded animate-pulse w-32" />
-                    <div className="h-2.5 bg-gray-100 rounded animate-pulse w-48" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : activity === null ? (
-            <div className="px-5 py-10 text-center">
-              <p className="text-sm text-gray-400">Activity feed not yet available</p>
-            </div>
-          ) : activity.length === 0 ? (
-            <div className="px-5 py-10 text-center">
-              <p className="text-sm text-gray-400">No recent activity</p>
-            </div>
-          ) : (
-            <table className="w-full">
-              <tbody className="divide-y divide-gray-50">
-                {activity.map(item => {
+          <table className="w-full">
+            <thead className="bg-gray-50 border-y border-gray-100">
+              <tr>
+                <th className="px-5 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Actor</th>
+                <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Description / Amount</th>
+                <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Status</th>
+                <th className="px-5 py-2 text-right text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Time</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {loadingActivity ? (
+                [...Array(5)].map((_, i) => (
+                  <tr key={i}>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gray-100 animate-pulse shrink-0" />
+                        <div className="space-y-1.5">
+                          <div className="h-3 bg-gray-100 rounded animate-pulse w-24" />
+                          <div className="h-2.5 bg-gray-100 rounded animate-pulse w-14" />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3"><div className="h-3 bg-gray-100 rounded animate-pulse w-40" /></td>
+                    <td className="px-3 py-3"><div className="h-5 bg-gray-100 rounded-full animate-pulse w-16" /></td>
+                    <td className="px-5 py-3"><div className="h-3 bg-gray-100 rounded animate-pulse w-12 ml-auto" /></td>
+                  </tr>
+                ))
+              ) : activity === null ? (
+                <tr>
+                  <td colSpan={4} className="px-5 py-10 text-center text-sm text-gray-400">Activity feed not yet available</td>
+                </tr>
+              ) : activity.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-5 py-10 text-center text-sm text-gray-400">No recent activity</td>
+                </tr>
+              ) : (
+                activity.map(item => {
                   const { statusText, statusColor } = activityMeta(item)
                   const roleLabel = item.actorRole.charAt(0).toUpperCase() + item.actorRole.slice(1)
                   return (
@@ -328,8 +341,12 @@ export default function DashboardPage() {
                             color={actorColor(item.actorRole)}
                           />
                           <div>
-                            <p className="text-sm font-medium text-gray-800">{item.actorName ?? 'System'}</p>
-                            <p className="text-xs text-gray-400">{roleLabel}</p>
+                            <p className="text-sm font-medium text-gray-800">
+                              {item.actorName ?? roleLabel}
+                            </p>
+                            {item.actorName && (
+                              <p className="text-xs text-gray-400">{roleLabel}</p>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -351,10 +368,10 @@ export default function DashboardPage() {
                       </td>
                     </tr>
                   )
-                })}
-              </tbody>
-            </table>
-          )}
+                })
+              )}
+            </tbody>
+          </table>
         </div>
 
         {/* Safety Console */}

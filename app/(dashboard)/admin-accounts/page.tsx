@@ -58,6 +58,7 @@ export default function AdminAccountsPage() {
  const [error, setError] = useState('')
  const [search, setSearch] = useState('')
  const [dialog, setDialog] = useState<DialogMode | null>(null)
+ const [deleteConfirm, setDeleteConfirm] = useState('')
  const [submitting, setSubmitting] = useState(false)
  const [submitError, setSubmitError] = useState('')
 
@@ -93,6 +94,9 @@ export default function AdminAccountsPage() {
 
  function openDialog(mode: DialogMode) {
  setSubmitError('')
+ if (mode.type ==='delete') {
+ setDeleteConfirm('')
+ }
  if (mode.type ==='role') {
  setEditRole(mode.admin.role)
  setEditRegion(mode.admin.regionScope ??'')
@@ -391,15 +395,33 @@ export default function AdminAccountsPage() {
  <DialogHeader><DialogTitle>Delete Admin Account</DialogTitle></DialogHeader>
  <div className="py-2 space-y-3">
  <div className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">
- <strong>Warning:</strong> This will permanently remove{''}
+ <strong>Warning:</strong> This will permanently remove{' '}
  <strong>{dialog?.type ==='delete' ? dialog.admin.fullName :''}</strong> from the admin team.
  This action cannot be undone.
  </div>
+ {dialog?.type ==='delete' && (
+ <div className="space-y-1.5">
+ <Label className="text-xs text-gray-600">
+ Type <strong className="font-mono text-gray-900">{dialog.admin.fullName}</strong> to confirm
+ </Label>
+ <Input
+ value={deleteConfirm}
+ onChange={e => setDeleteConfirm(e.target.value)}
+ placeholder={dialog.admin.fullName}
+ autoComplete="off"
+ spellCheck={false}
+ />
+ </div>
+ )}
  {submitError && <p className="text-xs text-red-600">{submitError}</p>}
  </div>
  <DialogFooter>
  <Button variant="outline" onClick={() => setDialog(null)}>Cancel</Button>
- <Button disabled={submitting} onClick={handleSubmit} className="bg-red-600 hover:bg-red-700 text-white">
+ <Button
+ disabled={submitting || (dialog?.type ==='delete' && deleteConfirm.trim() !== dialog.admin.fullName)}
+ onClick={handleSubmit}
+ className="bg-red-600 hover:bg-red-700 text-white"
+ >
  {submitting ?'Deleting…' :'Confirm Delete'}
  </Button>
  </DialogFooter>

@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, Loader2, User, Wrench, Tag, MapPin, Clock,
-  Calendar, AlertTriangle, CheckCircle, Hammer, ShieldAlert, ImageIcon, X,
+  Calendar, AlertTriangle, CheckCircle, Hammer, ShieldAlert, ImageIcon, X, RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import {
-  getJobDetail, lockJob, assignJob, forceCompleteJob,
+  getJobDetail, lockJob, assignJob, forceCompleteJob, unexpireBid, cancelJob,
   type JobDetail, type JobBid,
 } from '@/lib/api'
 
@@ -60,28 +60,32 @@ function TimelineRow({ label, value, highlight }: { label: string; value: string
 
 // ── Bid card ─────────────────────────────────────────────────────────────────
 
-function BidCard({ bid, isAssigned, onAssign, assigning }: {
+function BidCard({ bid, isAssigned, onAssign, assigning, onUnexpire, unexpiring }: {
   bid: JobBid
   isAssigned: boolean
   onAssign: (bid: JobBid) => void
   assigning: boolean
+  onUnexpire: (bid: JobBid) => void
+  unexpiring: boolean
 }) {
   const statusColors: Record<string, string> = {
     pending: 'bg-amber-100 text-amber-700',
     accepted: 'bg-emerald-100 text-emerald-700',
     rejected: 'bg-red-100 text-red-600',
     expired: 'bg-gray-100 text-gray-500',
+    bid_expired: 'bg-gray-100 text-gray-500',
     admin_review: 'bg-purple-100 text-purple-700',
   }
+  const isExpired = bid.status === 'expired' || bid.status === 'bid_expired' || bid.status?.toLowerCase().includes('expir')
   return (
-    <div className={`rounded-lg border p-3 ${isAssigned ? 'border-emerald-300 bg-emerald-50' : 'border-gray-100 bg-gray-50'}`}>
+    <div className={`rounded-lg border p-3 ${isAssigned ? 'border-emerald-300 bg-emerald-50' : isExpired ? 'border-gray-200 bg-gray-50/60 opacity-80' : 'border-gray-100 bg-gray-50'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-900 truncate">{bid.artisanName ?? 'Unknown Artisan'}</p>
           <p className="text-xs text-gray-500">{bid.artisanPhone ?? '—'}</p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-sm font-bold text-gray-900">{fmtGhs(bid.amountPesewas)}</p>
+          <p className={`text-sm font-bold ${isExpired ? 'text-gray-400' : 'text-gray-900'}`}>{fmtGhs(bid.amountPesewas)}</p>
           <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${statusColors[bid.status] ?? 'bg-gray-100 text-gray-500'}`}>
             {bid.status}
           </span>
@@ -90,15 +94,35 @@ function BidCard({ bid, isAssigned, onAssign, assigning }: {
       {bid.message && (
         <p className="mt-1.5 text-xs text-gray-600 italic">"{bid.message}"</p>
       )}
-      <div className="flex items-center justify-between mt-2">
-        <p className="text-[11px] text-gray-400">Submitted {fmtDateShort(bid.createdAt)}</p>
-        {isAssigned && <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Assigned</span>}
-        {!isAssigned && bid.status === 'pending' && (
-          <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1" onClick={() => onAssign(bid)} disabled={assigning}>
-            {assigning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Hammer className="h-3 w-3" />}
-            Assign
-          </Button>
-        )}
+      <div className="flex items-center justify-between mt-2 gap-2 flex-wrap">
+        <p className="text-[11px] text-gray-400">
+          Submitted {fmtDateShort(bid.createdAt)}
+          {isExpired && bid.expiresAt && (
+            <span className="ml-1.5 text-gray-400">· expired {fmtDateShort(bid.expiresAt)}</span>
+          )}
+        </p>
+        <div className="flex items-center gap-1.5">
+          {isAssigned && <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Assigned</span>}
+          {!isAssigned && bid.status === 'pending' && (
+            <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1" onClick={() => onAssign(bid)} disabled={assigning}>
+              {assigning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Hammer className="h-3 w-3" />}
+              Assign
+            </Button>
+          )}
+          {isExpired && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-xs px-2 gap-1 border-red-300 text-red-600 hover:bg-red-50"
+              onClick={() => onUnexpire(bid)}
+              disabled={unexpiring}
+              title="Restore this bid so the artisan can participate again"
+            >
+              {unexpiring ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Restore Bid
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -201,6 +225,52 @@ function ForceCompleteDialog({ open, onClose, onConfirm, loading }: {
   )
 }
 
+// ── Cancel Job Dialog ─────────────────────────────────────────────────────────
+
+function CancelJobDialog({ open, onClose, onConfirm, loading }: {
+  open: boolean
+  onClose: () => void
+  onConfirm: (reason: string) => void
+  loading: boolean
+}) {
+  const [reason, setReason] = useState('')
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-600">
+            <AlertTriangle className="h-5 w-5" /> Cancel Job
+          </DialogTitle>
+          <DialogDescription>
+            This will cancel the job and notify both the client and artisan. Provide a clear reason for the audit log (minimum 5 characters).
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-1">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</Label>
+          <Textarea
+            placeholder="e.g. Client requested cancellation; no artisan available in region"
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            rows={3}
+          />
+          <p className="text-[11px] text-gray-400">{reason.length} / min 5 characters</p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Back</Button>
+          <Button
+            onClick={() => onConfirm(reason)}
+            disabled={loading || reason.trim().length < 5}
+            className="bg-red-500 hover:bg-red-600 text-white gap-2"
+          >
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            Confirm Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function JobDetailPage({ params }: { params: { id: string } }) {
@@ -213,8 +283,11 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
 
   const [actionError, setActionError] = useState<string | null>(null)
   const [assigning, setAssigning] = useState(false)
+  const [unexpiringBidId, setUnexpiringBidId] = useState<string | null>(null)
   const [forceCompleteOpen, setForceCompleteOpen] = useState(false)
   const [forcingComplete, setForcingComplete] = useState(false)
+  const [cancelOpen, setCancelOpen] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -242,6 +315,20 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
     }
   }
 
+  async function handleUnexpireBid(bid: JobBid) {
+    setActionError(null)
+    setUnexpiringBidId(bid.id)
+    try {
+      await unexpireBid(bid.id)
+      const updated = await getJobDetail(jobId)
+      setJob(updated)
+    } catch (e: unknown) {
+      setActionError((e as { message?: string })?.message ?? 'Failed to restore bid')
+    } finally {
+      setUnexpiringBidId(null)
+    }
+  }
+
   async function handleForceComplete(reason: string) {
     setForcingComplete(true)
     setActionError(null)
@@ -257,9 +344,25 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
     }
   }
 
+  async function handleCancelJob(reason: string) {
+    setCancelling(true)
+    setActionError(null)
+    try {
+      await cancelJob(jobId, reason)
+      const updated = await getJobDetail(jobId)
+      setJob(updated)
+      setCancelOpen(false)
+    } catch (e: unknown) {
+      setActionError((e as { message?: string })?.message ?? 'Cancel failed')
+    } finally {
+      setCancelling(false)
+    }
+  }
+
   const isStale = job ? job.hoursInactive >= 24 : false
   const canAssign = job ? ['queued', 'pending_admin'].includes(job.status) : false
   const canForceComplete = job ? job.status === 'in_progress' && isStale : false
+  const canCancel = job ? ['queued', 'pending_admin', 'open_for_bids', 'bids_received', 'confirmed'].includes(job.status) : false
   const assignedArtisanId = job?.artisan?.id ?? null
 
   return (
@@ -312,6 +415,16 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
                     onClick={() => setForceCompleteOpen(true)}
                   >
                     <ShieldAlert className="h-3.5 w-3.5" /> Force Complete
+                  </Button>
+                )}
+                {canCancel && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-red-300 text-red-600 hover:bg-red-50 gap-1.5"
+                    onClick={() => setCancelOpen(true)}
+                  >
+                    <X className="h-3.5 w-3.5" /> Cancel Job
                   </Button>
                 )}
                 {canAssign && (
@@ -515,6 +628,8 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
                           isAssigned={bid.artisanId === assignedArtisanId}
                           onAssign={handleAssignBid}
                           assigning={assigning}
+                          onUnexpire={handleUnexpireBid}
+                          unexpiring={unexpiringBidId === bid.id}
                         />
                       ))
                     )}
@@ -531,6 +646,12 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
           onClose={() => setForceCompleteOpen(false)}
           onConfirm={handleForceComplete}
           loading={forcingComplete}
+        />
+        <CancelJobDialog
+          open={cancelOpen}
+          onClose={() => setCancelOpen(false)}
+          onConfirm={handleCancelJob}
+          loading={cancelling}
         />
       </div>
     </PageGuard>

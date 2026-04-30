@@ -85,7 +85,14 @@ export interface RevenueReport {
 }
 
 export async function getRevenueReport(params?: { from?: string; to?: string; groupBy?: 'day' | 'week' | 'month' }) {
-  const qs = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''
+  const groupBy = params?.groupBy ?? 'day'
+  const defaultDays = groupBy === 'month' ? 365 : groupBy === 'week' ? 90 : 30
+  const from = params?.from ?? (() => {
+    const d = new Date(); d.setDate(d.getDate() - defaultDays)
+    return d.toISOString().split('T')[0]
+  })()
+  const to = params?.to ?? new Date().toISOString().split('T')[0]
+  const qs = '?' + new URLSearchParams({ from, to, groupBy }).toString()
   const raw = await api.get<any>(`/admin/reports/revenue${qs}`)
   const periods: RevenueDataPoint[] = (raw.periods ?? raw.data ?? []).map((p: any) => ({
     period:               p.period               ?? p.date               ?? '',
@@ -146,8 +153,12 @@ export interface PilotMetric {
   unit: string
 }
 
-export function getPilotReport() {
-  return api.get<PilotMetric[]>('/admin/reports/pilot')
+export async function getPilotReport(): Promise<PilotMetric[]> {
+  const raw = await api.get<any>('/admin/reports/pilot')
+  if (Array.isArray(raw)) return raw
+  if (Array.isArray(raw?.metrics)) return raw.metrics
+  if (Array.isArray(raw?.items)) return raw.items
+  return []
 }
 
 // ── Live Map ──────────────────────────────────────────────────────────────────
@@ -163,8 +174,27 @@ export interface LiveMapMarker {
   markerColor: 'blue' | 'orange'
 }
 
-export function getLiveMapData() {
-  return api.get<LiveMapMarker[]>('/admin/live-map')
+// Normalise raw DB status names to the values the frontend expects
+function normaliseMarkerStatus(status: string): string {
+  switch (status) {
+    case 'driver_en_route':
+    case 'artisan_en_route': return 'en_route'
+    case 'arrived_at_pickup':
+    case 'artisan_arrived':  return 'arrived'
+    default:                 return status
+  }
+}
+
+export async function getLiveMapData(): Promise<LiveMapMarker[]> {
+  const raw = await api.get<any>('/admin/live-map')
+  // Backend returns { rides: [...], jobs: [...] } — flatten into a single array
+  const rides: LiveMapMarker[] = (Array.isArray(raw) ? [] : (raw.rides ?? [])).map((m: any) => ({
+    ...m, status: normaliseMarkerStatus(m.status),
+  }))
+  const jobs: LiveMapMarker[] = (Array.isArray(raw) ? raw : (raw.jobs ?? [])).map((m: any) => ({
+    ...m, status: normaliseMarkerStatus(m.status),
+  }))
+  return [...rides, ...jobs]
 }
 
 export interface RideMarkerDetail {
@@ -218,6 +248,17 @@ function docTypeLabel(raw: string): string {
   return DOC_TYPE_LABELS[raw] ?? raw.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
+// Resolves a storage key (e.g. "documents/driver/uuid/ghana_card/abc.pdf") to a full Cloudinary
+// delivery URL. Falls back to the raw key unchanged if NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME isn't set.
+function resolveCloudinaryUrl(fileUrl: string, mimeType: string | null): string {
+  if (fileUrl.startsWith('http')) return fileUrl
+  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+  if (!cloudName) return fileUrl
+  const lk = fileUrl.toLowerCase()
+  const resourceType = (mimeType === 'application/pdf' || lk.endsWith('.pdf')) ? 'raw' : 'image'
+  return `https://res.cloudinary.com/${cloudName}/${resourceType}/upload/${fileUrl}`
+}
+
 export interface ProviderDocument {
   id: string
   type: string            // raw document_type from DB (e.g. "national_id")
@@ -246,13 +287,15 @@ export interface VerificationItem {
 // Handles both raw SQL (snake_case keys) and Prisma/camelCase responses.
 function normaliseDoc(d: any): ProviderDocument {
   const rawType = d.document_type ?? d.documentType ?? d.type ?? ''
+  const mimeType = d.mime_type ?? d.mimeType ?? null
+  const rawUrl   = d.file_url ?? d.fileUrl ?? ''
   return {
     id:               String(d.id ?? ''),
     type:             rawType,
     label:            d.label ?? docTypeLabel(rawType),
     status:           d.status ?? 'pending_review',
-    file_url:         d.file_url ?? d.fileUrl ?? '',
-    mime_type:        d.mime_type ?? d.mimeType ?? null,
+    file_url:         resolveCloudinaryUrl(rawUrl, mimeType),
+    mime_type:        mimeType,
     uploaded_at:      d.uploaded_at ?? d.uploadedAt ?? d.created_at ?? d.createdAt ?? '',
     expires_at:       d.expires_at ?? d.expiresAt ?? null,
     version:          Number(d.version ?? 1),
@@ -293,24 +336,65 @@ export async function getVerificationQueue(): Promise<VerificationItem[]> {
   return arr.map(normaliseItem)
 }
 
-// ReviewVerificationDto: { providerType, action: 'approve'|'reject', reason (min 5) }
+// PATCH /admin/verifications/:providerId — body shape per docs/admin-auth-flow.md §4.4:
+//   { decision: 'approved' | 'rejected', reason }
+// `providerType` is accepted for caller compatibility but isn't sent to the backend.
 export function reviewVerification(
   providerId: string,
-  providerType: string,
+  _providerType: string,
   action: 'approve' | 'reject',
   reason: string,
 ) {
-  return api.patch(`/admin/verifications/${providerId}`, { providerType, action, reason })
+  const decision = action === 'approve' ? 'approved' : 'rejected'
+  return api.patch(`/admin/verifications/${providerId}`, { decision, reason })
 }
 
-// ReviewDocumentDto: { providerType, action: 'approve'|'reject', reason (required on reject) }
+// ReviewClientKycDto: { action: 'approve'|'reject', reason (min 5 on reject) }
+export function reviewClientKyc(
+  clientId: string,
+  action: 'approve' | 'reject',
+  reason?: string,
+) {
+  return api.patch(`/admin/clients/${clientId}/kyc`, {
+    action,
+    ...(reason ? { reason } : {}),
+  })
+}
+
+export interface ClientKycQueueItem {
+  clientId: string
+  userId: string
+  fullName: string
+  phone: string
+  email: string | null
+  ghanaCardImageUrl: string | null
+  submittedAt: string | null
+}
+
+export async function getClientKycQueue(): Promise<ClientKycQueueItem[]> {
+  const raw = await api.get<{ clients: any[]; total?: number } | any[]>('/admin/clients/kyc-queue')
+  const arr: any[] = Array.isArray(raw) ? raw : ((raw as any).clients ?? [])
+  return arr.map((c: any) => ({
+    clientId:          c.clientId ?? c.client_id ?? c.id,
+    userId:            c.userId ?? c.user_id,
+    fullName:          c.fullName ?? c.full_name ?? '',
+    phone:             c.phone ?? '',
+    email:             c.email ?? null,
+    ghanaCardImageUrl: c.ghanaCardImageUrl ?? c.ghana_card_image_url ?? null,
+    submittedAt:       c.submittedAt ?? c.submitted_at ?? c.kycSubmittedAt ?? null,
+  }))
+}
+
+// PATCH /admin/verifications/documents/:id — body shape per docs/admin-auth-flow.md §4.4:
+//   { decision: 'approved' | 'rejected', reason }
 export function reviewDocument(
   documentId: string,
-  providerType: string,
+  _providerType: string,
   action: 'approve' | 'reject',
   reason: string,
 ) {
-  return api.patch(`/admin/verifications/documents/${documentId}`, { providerType, action, reason })
+  const decision = action === 'approve' ? 'approved' : 'rejected'
+  return api.patch(`/admin/verifications/documents/${documentId}`, { decision, reason })
 }
 
 // ── Disputes ──────────────────────────────────────────────────────────────────
@@ -357,9 +441,54 @@ export interface PlatformUser {
   status: string
   createdAt: string
   roles: string[]
-  client: { id: string; loyaltyPointsBalance: number; preferredPaymentMethod: string | null } | null
-  driver: { id: string; verificationStatus: string; onlineStatus: string } | null
-  artisan: { id: string; verificationStatus: string; onlineStatus: string } | null
+  client: {
+    id: string
+    loyaltyPointsBalance: number
+    preferredPaymentMethod: string | null
+    kycStatus: 'not_started' | 'pending_review' | 'verified' | 'rejected' | string
+    ghanaCardImageUrl: string | null
+    ghanaCardVerified: boolean
+    kycSubmittedAt: string | null
+    kycReviewedAt: string | null
+    kycRejectionReason: string | null
+  } | null
+  driver: {
+    id: string
+    verificationStatus: string
+    onlineStatus: string
+    vehicleMake: string | null
+    vehicleModel: string | null
+    vehicleYear: number | null
+    vehiclePlate: string | null
+    vehicleColor: string | null
+    licenceNumber: string | null
+    licenceExpiry: string | null
+    payoutPreference: string | null
+    payoutMethod: string | null
+    payoutLocked: boolean
+    avgRating: number | null
+    ratingCount: number
+    completedRidesCount: number
+    cancellationCount30d: number
+  } | null
+  artisan: {
+    id: string
+    verificationStatus: string
+    onlineStatus: string
+    displayName: string | null
+    businessName: string | null
+    categories: string[]
+    serviceRadius: number | null
+    shopCapacity: string | null
+    maxConcurrentJobs: number | null
+    payoutPreference: string | null
+    payoutMethod: string | null
+    payoutLocked: boolean
+    avgRating: number | null
+    ratingCount: number
+    completedJobsCount: number
+    cancellationCount30d: number
+  } | null
 }
 
 export interface UserListResponse {
@@ -370,21 +499,80 @@ export interface UserListResponse {
   totalPages: number
 }
 
-export function listUsers(params?: {
+export async function listUsers(params?: {
   role?: string
   status?: string
   search?: string
   page?: number
   limit?: number
-}) {
+}): Promise<UserListResponse> {
   const qs = params ? '?' + new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
   ).toString() : ''
-  return api.get<UserListResponse>(`/admin/users${qs}`)
+  const raw = await api.get<any>(`/admin/users${qs}`)
+  return { ...raw, items: (raw.items ?? []).map(normalisePlatformUser) }
 }
 
-export function getUser(userId: string) {
-  return api.get<PlatformUser>(`/admin/users/${userId}`)
+function normalisePlatformUser(raw: any): PlatformUser {
+  const c = raw.client ?? null
+  const d = raw.driver ?? null
+  const a = raw.artisan ?? null
+  return {
+    ...raw,
+    client: c ? {
+      id:                     c.id,
+      loyaltyPointsBalance:   Number(c.loyaltyPointsBalance ?? c.loyalty_points_balance ?? 0),
+      preferredPaymentMethod: c.preferredPaymentMethod ?? c.preferred_payment_method ?? null,
+      kycStatus:              c.kycStatus ?? c.kyc_status ?? 'not_started',
+      ghanaCardImageUrl:      c.ghanaCardImageUrl ?? c.ghana_card_image_url ?? null,
+      ghanaCardVerified:      Boolean(c.ghanaCardVerified ?? c.ghana_card_verified ?? false),
+      kycSubmittedAt:         c.kycSubmittedAt ?? c.kyc_submitted_at ?? null,
+      kycReviewedAt:          c.kycReviewedAt ?? c.kyc_reviewed_at ?? null,
+      kycRejectionReason:     c.kycRejectionReason ?? c.kyc_rejection_reason ?? null,
+    } : null,
+    driver: d ? {
+      id:                  d.id,
+      verificationStatus:  d.verificationStatus ?? d.verification_status ?? 'unverified',
+      onlineStatus:        d.onlineStatus ?? d.online_status ?? 'offline',
+      vehicleMake:         d.vehicleMake ?? d.vehicle?.make ?? null,
+      vehicleModel:        d.vehicleModel ?? d.vehicle?.model ?? null,
+      vehicleYear:         d.vehicleYear ?? d.vehicle_year ?? d.vehicle?.year ?? null,
+      vehiclePlate:        d.vehiclePlate ?? d.vehicle?.plate ?? d.vehicle?.licensePlate ?? null,
+      vehicleColor:        d.vehicleColor ?? d.vehicle?.color ?? null,
+      licenceNumber:       d.licenceNumber ?? d.licence_number ?? null,
+      licenceExpiry:       d.licenceExpiry ?? d.licence_expiry ?? null,
+      payoutPreference:    d.payoutPreference ?? d.payout_preference ?? null,
+      payoutMethod:        d.payoutMethod ?? d.payout_method ?? null,
+      payoutLocked:        Boolean(d.payoutLocked ?? d.payout_locked ?? false),
+      avgRating:           d.avgRating ?? d.avg_rating ?? null,
+      ratingCount:         Number(d.ratingCount ?? d.rating_count ?? 0),
+      completedRidesCount: Number(d.completedRidesCount ?? d.completed_rides_count ?? d._count?.completedRides ?? 0),
+      cancellationCount30d: Number(d.cancellationCount30d ?? d.cancellation_count_30d ?? 0),
+    } : null,
+    artisan: a ? {
+      id:                  a.id,
+      verificationStatus:  a.verificationStatus ?? a.verification_status ?? 'unverified',
+      onlineStatus:        a.onlineStatus ?? a.online_status ?? 'offline',
+      displayName:         a.displayName ?? a.display_name ?? null,
+      businessName:        a.businessName ?? a.business_name ?? null,
+      categories:          Array.isArray(a.categories) ? a.categories.map((c: any) => typeof c === 'string' ? c : (c.name ?? '')) : [],
+      serviceRadius:       a.serviceRadius != null ? Number(a.serviceRadius) : a.service_radius_km != null ? Number(a.service_radius_km) : null,
+      shopCapacity:        a.shopCapacity ?? a.shop_capacity ?? null,
+      maxConcurrentJobs:   a.maxConcurrentJobs != null ? Number(a.maxConcurrentJobs) : a.max_concurrent_jobs != null ? Number(a.max_concurrent_jobs) : null,
+      payoutPreference:    a.payoutPreference ?? a.payout_preference ?? null,
+      payoutMethod:        a.payoutMethod ?? a.payout_method ?? null,
+      payoutLocked:        Boolean(a.payoutLocked ?? a.payout_locked ?? false),
+      avgRating:           a.avgRating ?? a.avg_rating ?? null,
+      ratingCount:         Number(a.ratingCount ?? a.rating_count ?? 0),
+      completedJobsCount:  Number(a.completedJobsCount ?? a.completed_jobs_count ?? a._count?.completedJobs ?? 0),
+      cancellationCount30d: Number(a.cancellationCount30d ?? a.cancellation_count_30d ?? 0),
+    } : null,
+  }
+}
+
+export async function getUser(userId: string): Promise<PlatformUser> {
+  const raw = await api.get<any>(`/admin/users/${userId}`)
+  return normalisePlatformUser(raw)
 }
 
 export function suspendUser(userId: string, reason: string) {
@@ -416,6 +604,10 @@ export function triggerReverification(userId: string) {
   return api.post(`/admin/users/${userId}/reverification`, {})
 }
 
+export function unlockPayoutMethod(userId: string, reason?: string) {
+  return api.post(`/admin/users/${userId}/unlock-payout-method`, reason ? { reason } : {})
+}
+
 export interface UserProviderDocument {
   id: string
   documentType: string
@@ -430,33 +622,103 @@ export interface UserProviderDocument {
   createdAt: string
 }
 
-export interface UserDocumentsResponse {
-  providerId: string | null
-  providerType: 'driver' | 'artisan' | null
+export interface UserProviderGroup {
+  providerId: string
+  providerType: 'driver' | 'artisan'
   documents: UserProviderDocument[]
+}
+
+export interface UserDocumentsResponse {
+  providers: UserProviderGroup[]
+}
+
+function parseDoc(d: any): UserProviderDocument {
+  const mimeType = d.mimeType ?? d.mime_type ?? null
+  const rawFileUrl = d.fileUrl ?? d.file_url ?? ''
+  return {
+    id:              d.id,
+    documentType:    d.documentType ?? d.document_type ?? '',
+    label:           DOC_TYPE_LABELS[d.documentType ?? d.document_type ?? '']
+                       ?? (d.documentType ?? '').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+    fileUrl:         resolveCloudinaryUrl(rawFileUrl, mimeType),
+    mimeType,
+    status:          d.status ?? 'uploaded',
+    rejectionReason: d.rejectionReason ?? d.rejection_reason ?? null,
+    expiresAt:       d.expiresAt ?? d.expires_at ?? null,
+    version:         Number(d.version ?? 1),
+    isCurrent:       Boolean(d.isCurrent ?? d.is_current ?? true),
+    createdAt:       d.createdAt ?? d.created_at ?? '',
+  }
 }
 
 export async function getProviderDocuments(userId: string): Promise<UserDocumentsResponse> {
   const raw = await api.get<any>(`/admin/users/${userId}/documents`)
+
+  // New shape: { providers: [{ providerId, providerType, documents: [] }] }
+  if (Array.isArray(raw.providers)) {
+    return {
+      providers: raw.providers.map((p: any) => ({
+        providerId:   p.providerId,
+        providerType: p.providerType,
+        documents:    Array.isArray(p.documents) ? p.documents.map(parseDoc) : [],
+      })),
+    }
+  }
+
+  // Fallback: legacy shape { providerId, providerType, documents: [] }
   const docs: any[] = Array.isArray(raw.documents) ? raw.documents : []
   return {
-    providerId:   raw.providerId   ?? null,
-    providerType: raw.providerType ?? null,
-    documents: docs.map(d => ({
-      id:              d.id,
-      documentType:    d.documentType ?? d.document_type ?? '',
-      label:           DOC_TYPE_LABELS[d.documentType ?? d.document_type ?? '']
-                         ?? (d.documentType ?? '').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
-      fileUrl:         d.fileUrl   ?? d.file_url   ?? '',
-      mimeType:        d.mimeType  ?? d.mime_type  ?? null,
-      status:          d.status    ?? 'uploaded',
-      rejectionReason: d.rejectionReason ?? d.rejection_reason ?? null,
-      expiresAt:       d.expiresAt ?? d.expires_at  ?? null,
-      version:         Number(d.version ?? 1),
-      isCurrent:       Boolean(d.isCurrent ?? d.is_current ?? true),
-      createdAt:       d.createdAt ?? d.created_at ?? '',
-    })),
+    providers: raw.providerId ? [{
+      providerId:   raw.providerId,
+      providerType: raw.providerType,
+      documents:    docs.map(parseDoc),
+    }] : [],
   }
+}
+
+// ── Audit Logs ────────────────────────────────────────────────────────────────
+
+export interface AuditLogAdmin {
+  id: string
+  fullName: string
+  email: string
+  role: string
+}
+
+export interface AuditLogEntry {
+  id: string
+  action: string
+  targetType: string
+  targetId: string
+  details: Record<string, unknown> | null
+  ipAddress: string | null
+  createdAt: string
+  admin: AuditLogAdmin
+}
+
+export interface AuditLogResponse {
+  items: AuditLogEntry[]
+  total: number
+  page: number
+  limit: number
+  totalPages: number
+}
+
+export interface AuditLogParams {
+  page?: number
+  limit?: number
+  adminId?: string
+  action?: string
+  targetType?: string
+  from?: string
+  to?: string
+}
+
+export async function getAuditLogs(params?: AuditLogParams): Promise<AuditLogResponse> {
+  const qs = params ? '?' + new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
+  ).toString() : ''
+  return api.get<AuditLogResponse>(`/admin/audit-logs${qs}`)
 }
 
 // ── Admin Account Management ──────────────────────────────────────────────────
@@ -528,18 +790,29 @@ export interface RideStatusBreakdown {
   disputed: number
   inProgress: number
 }
-export function getRideStatusReport(params?: { from?: string; to?: string }) {
+export async function getRideStatusReport(params?: { from?: string; to?: string }): Promise<RideStatusBreakdown> {
   const qs = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''
-  return api.get<RideStatusBreakdown>(`/admin/reports/rides/status${qs}`)
+  const raw = await api.get<any>(`/admin/reports/rides/status${qs}`)
+  return {
+    completed:  raw?.completed   ?? 0,
+    cancelled:  raw?.cancelled   ?? 0,
+    disputed:   raw?.disputed    ?? 0,
+    inProgress: raw?.inProgress  ?? raw?.in_progress ?? 0,
+  }
 }
 
 export interface JobCategoryCount {
   category: string
   jobs: number
 }
-export function getJobCategoryReport(params?: { from?: string; to?: string }) {
+export async function getJobCategoryReport(params?: { from?: string; to?: string }): Promise<JobCategoryCount[]> {
   const qs = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''
-  return api.get<JobCategoryCount[]>(`/admin/reports/jobs/categories${qs}`)
+  const raw = await api.get<any>(`/admin/reports/jobs/categories${qs}`)
+  const list: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.categories) ? raw.categories : Array.isArray(raw?.items) ? raw.items : []
+  return list.map(d => ({
+    category: d.category ?? d.name ?? '',
+    jobs:     d.jobs ?? d.count ?? d.total ?? 0,
+  }))
 }
 
 export interface PaymentMethodShare {
@@ -555,18 +828,36 @@ export interface PaymentReport {
   methods: PaymentMethodShare[]
   dailyRates: DailyPaymentRate[]
 }
-export function getPaymentReport(params?: { from?: string; to?: string }) {
+export async function getPaymentReport(params?: { from?: string; to?: string }): Promise<PaymentReport> {
   const qs = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''
-  return api.get<PaymentReport>(`/admin/reports/payments${qs}`)
+  const raw = await api.get<any>(`/admin/reports/payments${qs}`)
+  const methods: any[] = Array.isArray(raw?.methods) ? raw.methods : []
+  const dailyRates: any[] = Array.isArray(raw?.dailyRates) ? raw.dailyRates : Array.isArray(raw?.daily_rates) ? raw.daily_rates : []
+  return {
+    methods: methods.map(m => ({
+      name:    m.name ?? m.method ?? '',
+      percent: m.percent ?? m.share ?? m.percentage ?? 0,
+    })),
+    dailyRates: dailyRates.map(d => ({
+      date:        d.date ?? '',
+      successRate: d.successRate ?? d.success_rate ?? 0,
+      failureRate: d.failureRate ?? d.failure_rate ?? 0,
+    })),
+  }
 }
 
 export interface DisputeRatePoint {
   date: string
   rate: number
 }
-export function getDisputeRateReport(params?: { from?: string; to?: string }) {
+export async function getDisputeRateReport(params?: { from?: string; to?: string }): Promise<DisputeRatePoint[]> {
   const qs = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''
-  return api.get<DisputeRatePoint[]>(`/admin/reports/disputes/rate${qs}`)
+  const raw = await api.get<any>(`/admin/reports/disputes/rate${qs}`)
+  const list: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.points) ? raw.points : Array.isArray(raw?.items) ? raw.items : []
+  return list.map(d => ({
+    date: d.date ?? '',
+    rate: d.rate ?? d.dispute_rate ?? d.disputeRate ?? 0,
+  }))
 }
 
 // ── Admin Notifications ───────────────────────────────────────────────────────
@@ -620,13 +911,29 @@ export interface ActivityItem {
   eventType: ActivityEventType
   actorName: string | null
   actorRole: 'client' | 'driver' | 'artisan' | 'system'
+  secondaryActorName: string | null
   description: string
   amountPesewas: number | null
+  bookingId: string | null
+  bookingType: 'ride' | 'job' | null
   occurredAt: string
 }
 
-export function getRecentActivity(limit = 10) {
-  return api.get<ActivityItem[]>(`/admin/activity?limit=${limit}`)
+export async function getRecentActivity(limit = 10): Promise<ActivityItem[]> {
+  const raw = await api.get<any>(`/admin/activity?limit=${limit}`)
+  const arr: any[] = Array.isArray(raw) ? raw : (raw?.items ?? [])
+  return arr.filter((r: any) => r?.id).map((r: any): ActivityItem => ({
+    id:                 r.id,
+    eventType:          r.eventType ?? r.event_type ?? r.type ?? 'unknown',
+    actorName:          r.actorName ?? r.actor_name ?? r.userName ?? r.user_name ?? r.fullName ?? r.full_name ?? r.actor?.fullName ?? r.actor?.name ?? r.user?.fullName ?? r.user?.full_name ?? null,
+    actorRole:          r.actorRole ?? r.actor_role ?? r.role ?? 'system',
+    secondaryActorName: r.secondaryActorName ?? r.secondary_actor_name ?? null,
+    description:        r.summary ?? r.description ?? '',
+    amountPesewas:      r.amountPesewas ?? r.amount_pesewas ?? null,
+    bookingId:          r.bookingId ?? r.booking_id ?? r.rideId ?? r.ride_id ?? r.jobId ?? r.job_id ?? null,
+    bookingType:        r.bookingType ?? r.booking_type ?? null,
+    occurredAt:         r.occurredAt ?? r.occurred_at ?? r.createdAt ?? '',
+  }))
 }
 
 // ── Categories ────────────────────────────────────────────────────────────────
@@ -797,6 +1104,10 @@ export function reviewHighBid(
   return api.patch(`/admin/bids/${bidId}/review`, { decision, reason })
 }
 
+export function unexpireBid(bidId: string) {
+  return api.patch(`/admin/bids/${bidId}/unexpire`, {})
+}
+
 // ── Rides (admin listing) ─────────────────────────────────────────────────────
 
 export interface AdminRide {
@@ -808,7 +1119,7 @@ export interface AdminRide {
   status: string
   farePesewas: number
   paymentMethod: string | null
-  paymentStatus: string
+  paymentStatus: string | null
   createdAt: string
 }
 
@@ -834,6 +1145,53 @@ export function listRides(params?: {
   return api.get<AdminRideListResponse>(`/admin/rides${qs}`)
 }
 
+export interface RideDetail {
+  id: string
+  status: string
+  pickupAddress: string | null
+  dropoffAddress: string | null
+  estimatedFarePesewas: number | null
+  finalFarePesewas: number | null
+  surgeMultiplier: string | number
+  distanceKm: string | number | null
+  durationMins: string | number | null
+  cancellationReason: string | null
+  cancelledBy: string | null
+  cancelledAt: string | null
+  acceptedAt: string | null
+  driverEnRouteAt: string | null
+  arrivedAtPickupAt: string | null
+  startedAt: string | null
+  completedAt: string | null
+  createdAt: string
+  stops: { stopOrder: number; addressText: string | null }[]
+  client: { id: string; user: { fullName: string; phone: string } } | null
+  driver: {
+    id: string
+    vehicleMake: string | null
+    vehicleModel: string | null
+    vehiclePlate: string | null
+    vehicleColor: string | null
+    user: { fullName: string; phone: string }
+  } | null
+}
+
+export function getRideDetail(rideId: string) {
+  return api.get<RideDetail>(`/admin/rides/${rideId}`)
+}
+
+export function cancelRide(rideId: string, reason: string) {
+  return api.patch(`/admin/rides/${rideId}/cancel`, { reason })
+}
+
+export function forceCompleteRide(rideId: string, reason: string) {
+  return api.patch(`/admin/rides/${rideId}/force-complete`, { reason })
+}
+
+export function cancelJob(jobId: string, reason: string) {
+  return api.patch(`/admin/jobs/${jobId}/cancel`, { reason })
+}
+
 // ── Artisan Jobs (admin listing) ──────────────────────────────────────────────
 
 export interface AdminJob {
@@ -848,6 +1206,7 @@ export interface AdminJob {
   createdAt: string
   lastActivityAt: string | null
   staleHours: number
+  region: string | null
   bidCount?: number
   scheduledFor?: string | null
   bidWindowEndsAt?: string | null
@@ -866,6 +1225,7 @@ export async function listArtisanJobs(params?: {
   search?: string
   page?: number
   limit?: number
+  region?: string
 }): Promise<AdminJobListResponse> {
   const qs = params
     ? '?' + new URLSearchParams(
@@ -889,6 +1249,7 @@ export async function listArtisanJobs(params?: {
       createdAt: j.createdAt,
       lastActivityAt: j.lastActivityAt ?? null,
       staleHours: j.hoursInactive ?? j.staleHours ?? 0,
+      region: j.region ?? j.locationRegion ?? null,
       bidCount: j.bidCount ?? 0,
       scheduledFor: j.scheduledFor ?? null,
       bidWindowEndsAt: j.bidWindowEndsAt ?? null,
@@ -991,6 +1352,10 @@ export function assignJob(jobId: string, data: { artisanId: string; agreedPriceP
 
 export function forceCompleteJob(jobId: string, reason: string) {
   return api.patch<{ forced: boolean }>(`/admin/jobs/${jobId}/force-complete`, { reason })
+}
+
+export function deleteJob(jobId: string) {
+  return api.delete(`/admin/jobs/${jobId}`)
 }
 
 // ── Emergency ─────────────────────────────────────────────────────────────────
@@ -1198,6 +1563,21 @@ export interface SmsHistoryItem {
 
 export function getSmsHistory() {
   return api.get<SmsHistoryItem[]>('/admin/sms/history')
+}
+
+// ── SMS Send (Next.js local route → Arkesel) ─────────────────────────────────
+
+export type SmsAudience = 'all_users' | 'clients' | 'drivers' | 'artisans'
+
+export interface SmsResult {
+  success: boolean
+  total: number
+  sent: number
+  failed: number
+}
+
+export function sendSms(audience: SmsAudience, message: string) {
+  return api.post<SmsResult>('/api/sms', { audience, message }, { localRoute: true })
 }
 
 // ── Announcement History ──────────────────────────────────────────────────────

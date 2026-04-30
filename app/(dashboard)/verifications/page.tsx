@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import {
   Search, CheckCircle, XCircle, RefreshCw, FileText,
@@ -645,6 +646,7 @@ export default function VerificationsPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useAutoRefresh(load)
 
   const filtered = items.filter(v => {
     const name = v.provider_name?.toLowerCase() ?? ''

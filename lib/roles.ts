@@ -33,6 +33,10 @@ export type Permission =
   | 'manage_admins'
   | 'review_bid'
   | 'view_rides'
+  | 'view_audit_logs'
+  | 'view_emergency'
+  | 'view_activity'
+  | 'unlock_payout_method'
 
 const L1: AdminRole[] = ['super_admin']
 const L1L2: AdminRole[] = ['super_admin', 'regional_admin']
@@ -54,7 +58,7 @@ export const PERMISSIONS: Record<Permission, AdminRole[]> = {
   ban_user:          L1,
   view_categories:   L1L3,
   edit_categories:   L1,
-  view_jobs:         L1L3,
+  view_jobs:         L1L2L3,
   assign_job:        L1L3,
   view_payments:     L1,
   view_reports:      L1L2,
@@ -64,6 +68,10 @@ export const PERMISSIONS: Record<Permission, AdminRole[]> = {
   manage_admins:     L1,
   review_bid:        L1L3,
   view_rides:        L1L2L3,
+  view_audit_logs:   L1,
+  view_emergency:    L1L2L3,
+  view_activity:     L1L2L3,
+  unlock_payout_method: L1L3,
 }
 
 export function can(role: AdminRole | null | undefined, permission: Permission): boolean {

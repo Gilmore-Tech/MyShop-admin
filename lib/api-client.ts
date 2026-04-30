@@ -49,6 +49,33 @@ export function setAdminUser(user: AdminUser) {
   localStorage.setItem(ADMIN_KEY, JSON.stringify(user))
 }
 
+// Returns the JWT `exp` claim (Unix seconds) for the current access token, or null if absent/unparsable.
+export function getTokenExpiresAt(): number | null {
+  const token = getToken()
+  if (!token) return null
+  const parts = token.split('.')
+  if (parts.length !== 3) return null
+  try {
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return typeof payload.exp === 'number' ? payload.exp : null
+  } catch {
+    return null
+  }
+}
+
+export type DeployEnv = 'LOCAL' | 'STAGING' | 'PROD'
+
+// Resolves the deploy environment for the topbar badge.
+// Override priority: NEXT_PUBLIC_ENV > URL inference from NEXT_PUBLIC_API_URL.
+export function getDeployEnv(): DeployEnv {
+  const explicit = process.env.NEXT_PUBLIC_ENV?.toUpperCase()
+  if (explicit === 'LOCAL' || explicit === 'STAGING' || explicit === 'PROD') return explicit
+  const url = process.env.NEXT_PUBLIC_API_URL ?? ''
+  if (/localhost|127\.0\.0\.1/.test(url)) return 'LOCAL'
+  if (/staging/i.test(url)) return 'STAGING'
+  return 'PROD'
+}
+
 export interface AdminUser {
   id: string
   email: string
@@ -61,14 +88,24 @@ export interface AdminUser {
 
 interface ApiOptions extends RequestInit {
   skipAuth?: boolean
+  // Skip the API_BASE prefix and call the path as-is. Use for Next.js route
+  // handlers like /api/sms that live on this same origin and aren't part of
+  // the NestJS backend.
+  localRoute?: boolean
 }
+
+// Feature flags resolved from public env vars at build time. Default false so
+// the dashboard hides any UI tied to a backend endpoint that isn't shipped yet.
+export const FEATURES = {
+  highBidReview: process.env.NEXT_PUBLIC_FEATURE_HIGH_BID_REVIEW === 'true',
+} as const
 
 
 export async function apiFetch<T = unknown>(
   path: string,
   options: ApiOptions = {},
 ): Promise<T> {
-  const { skipAuth, ...init } = options
+  const { skipAuth, localRoute, ...init } = options
   const token = getToken()
 
   const headers = new Headers(init.headers)
@@ -77,7 +114,8 @@ export async function apiFetch<T = unknown>(
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
+  const url = localRoute ? path : `${API_BASE}${path}`
+  const res = await fetch(url, { ...init, headers })
 
   return unwrap<T>(res)
 }

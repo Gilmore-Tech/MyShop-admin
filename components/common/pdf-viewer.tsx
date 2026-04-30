@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Download, ExternalLink, Loader2, AlertCircle } from 'lucide-react'
 
 interface PdfViewerProps {
@@ -14,23 +14,58 @@ function proxyUrl(original: string) {
 }
 
 export function PdfViewer({ url, label, height = 480 }: PdfViewerProps) {
+  // Fetch the PDF via proxy into a blob URL so the iframe always renders inline.
+  // Direct iframe src with Content-Type: application/pdf is unreliable on Linux Chrome —
+  // the browser may navigate to a new tab or silently show blank instead of embedding.
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [downloading, setDownloading] = useState(false)
 
   const src = proxyUrl(url)
 
+  useEffect(() => {
+    const controller = new AbortController()
+    let objectUrl: string | null = null
+
+    setLoading(true)
+    setError(false)
+    setBlobUrl(null)
+
+    fetch(src, { signal: controller.signal })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.arrayBuffer()
+      })
+      .then(buffer => {
+        const blob = new Blob([buffer], { type: 'application/pdf' })
+        objectUrl = URL.createObjectURL(blob)
+        setBlobUrl(objectUrl)
+        setLoading(false)
+      })
+      .catch(err => {
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        setLoading(false)
+        setError(true)
+      })
+
+    return () => {
+      controller.abort()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [src])
+
   async function handleDownload() {
     setDownloading(true)
     try {
       const res = await fetch(src)
       const blob = await res.blob()
-      const objectUrl = URL.createObjectURL(blob)
+      const dl = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = objectUrl
+      a.href = dl
       a.download = label ? `${label}.pdf` : 'document.pdf'
       a.click()
-      URL.revokeObjectURL(objectUrl)
+      URL.revokeObjectURL(dl)
     } catch {
       window.open(url, '_blank')
     } finally {
@@ -71,13 +106,13 @@ export function PdfViewer({ url, label, height = 480 }: PdfViewerProps) {
             <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
           </div>
         )}
-        <iframe
-          src={src}
-          title={label ?? 'Document'}
-          className="w-full h-full border-none"
-          onLoad={() => setLoading(false)}
-          onError={() => { setLoading(false); setError(true) }}
-        />
+        {blobUrl && (
+          <iframe
+            src={blobUrl}
+            title={label ?? 'Document'}
+            className="w-full h-full border-none"
+          />
+        )}
       </div>
 
       <div className="flex items-center justify-between px-3 py-2 bg-white border-t border-gray-100">
