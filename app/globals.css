@@ -1,26 +1,39 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Brand colours */
+  --color-primary: #F5A623;
+  --color-primary-dark: #D48E1A;
+  --color-slate: #46535D;
+
+  /* Text */
+  --color-text-primary: #161A1D;
+  --color-text-secondary: #555E68;
+
+  /* Backgrounds */
+  --color-background: #F6F7F8;
+  --color-surface: #FFFFFF;
+
+  /* Semantic */
+  --color-success: #2D8A4E;
+  --color-warning: #E5A100;
+  --color-danger: #D93025;
+  --color-info: #1A73E8;
+
+  /* Typography */
+  --font-heading: var(--font-raleway), sans-serif;
+  --font-body: var(--font-roboto), sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  body {
+    font-family: var(--font-body);
+    background-color: var(--color-background);
+    color: var(--color-text-primary);
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+  }
 }
