@@ -2,7 +2,8 @@
  * Typed API methods for MyShop Admin Panel
  * All endpoints map directly to the NestJS backend (v1 prefix).
  */
-import { api, AdminUser, setTokens, setAdminUser, clearTokens } from './api-client'
+import { api, apiFetch, AdminUser, setTokens, setAdminUser, clearTokens } from './api-client'
+import type { Permission } from './roles'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -336,17 +337,28 @@ export async function getVerificationQueue(): Promise<VerificationItem[]> {
   return arr.map(normaliseItem)
 }
 
-// PATCH /admin/verifications/:providerId — body shape per docs/admin-auth-flow.md §4.4:
-//   { decision: 'approved' | 'rejected', reason }
-// `providerType` is accepted for caller compatibility but isn't sent to the backend.
+// PATCH /admin/verifications/:providerId
+// Backend expects { action: 'approve' | 'reject', providerType: 'driver' | 'artisan', reason }.
+// (docs/admin-auth-flow.md §4.4 says `decision: 'approved'|'rejected'` but that's stale —
+// the deployed validator rejects it with VALIDATION_ERROR.)
 export function reviewVerification(
   providerId: string,
-  _providerType: string,
+  providerType: string,
   action: 'approve' | 'reject',
   reason: string,
 ) {
-  const decision = action === 'approve' ? 'approved' : 'rejected'
-  return api.patch(`/admin/verifications/${providerId}`, { decision, reason })
+  return api.patch(`/admin/verifications/${providerId}`, { action, providerType, reason })
+}
+
+// Lifts an auto-suspension (rating-engine or cancellation-engine triggered).
+// Backend flips driver/artisan.verificationStatus back to 'approved' and updates
+// the matching ProviderSuspension row with reinstatedAt/reinstatedBy.
+export function liftVerificationSuspension(
+  providerId: string,
+  providerType: 'driver' | 'artisan',
+  reason: string,
+) {
+  return api.post(`/admin/verifications/${providerId}/lift-suspension`, { providerType, reason })
 }
 
 // ReviewClientKycDto: { action: 'approve'|'reject', reason (min 5 on reject) }
@@ -385,16 +397,15 @@ export async function getClientKycQueue(): Promise<ClientKycQueueItem[]> {
   }))
 }
 
-// PATCH /admin/verifications/documents/:id — body shape per docs/admin-auth-flow.md §4.4:
-//   { decision: 'approved' | 'rejected', reason }
+// PATCH /admin/verifications/documents/:id
+// Backend expects { action: 'approve' | 'reject', providerType: 'driver' | 'artisan', reason }.
 export function reviewDocument(
   documentId: string,
-  _providerType: string,
+  providerType: string,
   action: 'approve' | 'reject',
   reason: string,
 ) {
-  const decision = action === 'approve' ? 'approved' : 'rejected'
-  return api.patch(`/admin/verifications/documents/${documentId}`, { decision, reason })
+  return api.patch(`/admin/verifications/documents/${documentId}`, { action, providerType, reason })
 }
 
 // ── Disputes ──────────────────────────────────────────────────────────────────
@@ -414,10 +425,67 @@ export function getDisputes() {
   return api.get<Dispute[]>('/admin/disputes')
 }
 
-export function getDisputeDetail(disputeId: string) {
-  return api.get(`/admin/disputes/${disputeId}`)
+// Detail returned by GET /admin/disputes/:id. Most fields are optional because
+// the backend payload varies by booking type and whether GPS data was captured.
+// See PRD 4.8.1 for the route-excess threshold (30%) and
+// docs/admin-frontend-spec-payment-panel.md §4.3.
+export interface DisputeDetailGpsPoint {
+  lat: number
+  lng: number
+  /** ISO timestamp; optional. */
+  t?: string
 }
 
+export interface DisputeDetail {
+  id: string
+  type: 'ride' | 'job' | string
+  status: string
+  description: string | null
+  amountPesewas: number | null
+  createdAt: string
+
+  client: { id?: string; fullName: string | null; phone: string | null } | null
+  provider: { id?: string; fullName: string | null; phone: string | null; type?: string } | null
+
+  booking: {
+    id: string
+    type: 'ride' | 'job'
+    shortRef?: string | null
+    pickupAddress?: string | null
+    dropoffAddress?: string | null
+    farePesewas?: number | null
+  } | null
+
+  payment: {
+    id: string
+    grossPesewas: number
+    commissionPesewas: number
+    method: string
+    status: string
+  } | null
+
+  /** Actual GPS trail captured during the trip (red on the map). */
+  gpsTrail?: DisputeDetailGpsPoint[] | null
+  /** Optimal route returned by Google Maps Directions (blue on the map). */
+  optimalRoute?: DisputeDetailGpsPoint[] | null
+  /** Excess distance vs optimal, expressed as a percent. PRD 4.8.1 threshold = 30. */
+  routeExcessPercent?: number | null
+
+  evidence?: Array<{ kind: 'photo' | 'note'; url?: string; text?: string }> | null
+}
+
+export function getDisputeDetail(disputeId: string) {
+  return api.get<DisputeDetail>(`/admin/disputes/${disputeId}`)
+}
+
+// NOTE: the frontend payment-panel spec proposes a richer DTO
+// `{ resolution: 'REFUND_FULL'|'REFUND_PARTIAL'|'REJECT', notes? }`. The
+// backend currently accepts the legacy `{ decision, reason, refundAmountPesewas? }`
+// shape. Until backend ships the new contract, the detail page maps the spec's
+// resolution modes onto this signature:
+//   REFUND_FULL    → decision='approved', refundAmountPesewas omitted
+//   REFUND_PARTIAL → decision='approved', refundAmountPesewas=<amount>
+//   REJECT         → decision='denied'
 export function resolveDispute(
   disputeId: string,
   decision: 'approved' | 'denied',
@@ -583,8 +651,23 @@ export function banUser(userId: string, reason: string) {
   return api.patch(`/admin/users/${userId}/ban`, { reason })
 }
 
+// Soft-delete a user. Different from Ban: non-punitive, ops_admin can action,
+// covers housekeeping (duplicates, test accounts) + user-requested removal.
+// Backend still enforces the no-outstanding-clawbacks check (PRD edge case #51).
+// 90-day retention applies — purge happens via nightly cron.
+export function deleteUser(userId: string, reason: string) {
+  return api.patch<PlatformUser>(`/admin/users/${userId}/delete`, { reason })
+}
+
 export function reinstateUser(userId: string, reason?: string) {
   return api.patch<PlatformUser>(`/admin/users/${userId}`, { status: 'active', ...(reason ? { reason } : {}) })
+}
+
+// Revokes every refresh token for the user, ending any active session on every device.
+// Used to unblock a provider/client who can't access the device that's holding the active
+// session (lost phone, ported number) — admin verifies identity manually, then calls this.
+export function forceLogoutUser(userId: string, reason: string) {
+  return api.post(`/admin/users/${userId}/force-logout`, { reason })
 }
 
 export function updateUser(userId: string, data: { fullName?: string; email?: string }) {
@@ -682,7 +765,9 @@ export interface AuditLogAdmin {
   id: string
   fullName: string
   email: string
-  role: string
+  // Legacy field — the backend no longer assigns admins a single role. Kept
+  // optional for backward compatibility with old audit entries.
+  role?: string
 }
 
 export interface AuditLogEntry {
@@ -723,13 +808,11 @@ export async function getAuditLogs(params?: AuditLogParams): Promise<AuditLogRes
 
 // ── Admin Account Management ──────────────────────────────────────────────────
 
-export type AdminRole = 'super_admin' | 'regional_admin' | 'ops_admin' | 'support_agent'
-
 export interface AdminAccount {
   id: string
   email: string
   fullName: string
-  role: AdminRole
+  permissions: Permission[]
   regionScope: string | null
   isActive: boolean
   lastLoginAt: string | null
@@ -747,15 +830,17 @@ export function getAdmin(adminId: string) {
 export function createAdmin(data: {
   email: string
   fullName: string
-  role: AdminRole
+  permissions: Permission[]
   password: string
   regionScope?: string
 }) {
   return api.post<AdminAccount>('/admin/admins', data)
 }
 
-export function reassignAdminRole(adminId: string, role: AdminRole, regionScope?: string) {
-  return api.patch<AdminAccount>(`/admin/admins/${adminId}/role`, { role, regionScope })
+// Replace an admin's full permission set. Backend rejects editing your own
+// permissions and removing manage_admins from the last holder.
+export function updateAdminPermissions(adminId: string, permissions: Permission[]) {
+  return api.patch<AdminAccount>(`/admin/admins/${adminId}/permissions`, { permissions })
 }
 
 export function deactivateAdmin(adminId: string) {
@@ -944,6 +1029,10 @@ export interface Category {
   name: string
   slug: string
   iconUrl: string | null
+  // Material icon identifier (snake_case) rendered by the mobile client.
+  // E.g. 'handyman', 'laptop_mac', 'kitchen'. Backend validates against
+  // /^[a-z0-9]+(?:_[a-z0-9]+)*$/.
+  iconName: string | null
   minBidPesewas: number
   highBidFlagPesewas: number
   isActive: boolean
@@ -962,12 +1051,20 @@ export function createCategory(data: {
   slug: string
   minBidPesewas: number
   highBidFlagPesewas?: number
+  parentId?: string
+  iconName?: string
+  iconUrl?: string
+  sortOrder?: number
 }) {
   return api.post<Category>('/admin/categories', {
     name: data.name,
     slug: data.slug,
     minBidPesewas: data.minBidPesewas,
     ...(data.highBidFlagPesewas != null && { highBidFlagPesewas: data.highBidFlagPesewas }),
+    ...(data.parentId && { parentId: data.parentId }),
+    ...(data.iconName && { iconName: data.iconName }),
+    ...(data.iconUrl && { iconUrl: data.iconUrl }),
+    ...(data.sortOrder != null && { sortOrder: data.sortOrder }),
   })
 }
 
@@ -979,9 +1076,43 @@ export function updateCategory(
     isActive: boolean
     minBidPesewas: number
     highBidFlagPesewas: number
+    // Backend UpdateCategoryDto does NOT accept parentId — categories can't be
+    // moved between parents after creation.
+    iconName: string
+    iconUrl: string
+    sortOrder: number
   }>,
 ) {
   return api.patch<Category>(`/admin/categories/${categoryId}`, data)
+}
+
+// Conflict body shape returned by DELETE /admin/categories/:id on 409.
+// Frontend reads this to surface usage counts in the confirmation dialog.
+export interface CategoryDeleteConflict {
+  code: 'CATEGORY_IN_USE' | 'CATEGORY_HAS_JOBS'
+  artisansCount: number
+  jobsCount: number
+  subcategoryCount: number
+}
+
+// Hard-delete a service category.
+//   - Default: backend refuses (409 CATEGORY_IN_USE) if any artisans or
+//     subcategories reference it; refuses (409 CATEGORY_HAS_JOBS) if any
+//     historical jobs do — that one is not bypassable.
+//   - force=true: super_admin can override the artisans/subcategories check.
+//     Subcategories cascade-delete (recursively, with the same job-block rule).
+//     Historical jobs still block regardless of force.
+//
+// Reason is audit-logged.
+export function deleteCategory(
+  categoryId: string,
+  opts: { reason: string; force?: boolean },
+) {
+  const qs = opts.force ? '?force=true' : ''
+  return apiFetch<{ deleted: true }>(`/admin/categories/${categoryId}${qs}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ reason: opts.reason }),
+  })
 }
 
 // ── Platform Config ───────────────────────────────────────────────────────────
@@ -1016,6 +1147,10 @@ export interface UnassignedJob {
   bidCount: number
   hoursInQueue: number
   adminLock: { lockedBy: string; expiresAt: string } | null
+  // Job pin coordinates. See docs/backend-spec-nearby-artisan-search.md §2.1.
+  // Null when the job has no recorded location (legacy/USSD-pinless).
+  lat: number | null
+  lng: number | null
 }
 
 export async function getUnassignedJobs(): Promise<{ total: number; jobs: UnassignedJob[] }> {
@@ -1038,6 +1173,8 @@ export async function getUnassignedJobs(): Promise<{ total: number; jobs: Unassi
       bidCount: j.bidCount ?? j._count?.bids ?? 0,
       hoursInQueue: j.hoursInQueue ?? 0,
       adminLock: j.adminLock ?? null,
+      lat: j.lat != null ? Number(j.lat) : (j.location?.lat ?? null),
+      lng: j.lng != null ? Number(j.lng) : (j.location?.lng ?? null),
     })),
   }
 }
@@ -1053,15 +1190,54 @@ export interface ArtisanSearchResult {
   completedJobsCount: number
   verificationStatus: string
   categories: { id: string; name: string }[]
+  // Last-known coordinates (online or stale). Null if the artisan has never
+  // broadcast a location. See docs/backend-spec-nearby-artisan-search.md §2.2.
+  lat: number | null
+  lng: number | null
+  lastLocationAt: string | null
+  // Set only when the search is called with `lat`+`lng`; the backend computes
+  // it server-side via PostGIS. Frontend may also fill it in via the Option C
+  // live-map fallback (see lib/distance.ts).
+  distanceKm: number | null
 }
 
-export async function searchArtisans(params: { categoryId?: string; q?: string; limit?: number }): Promise<ArtisanSearchResult[]> {
+export async function searchArtisans(params: {
+  categoryId?: string
+  q?: string
+  limit?: number
+  lat?: number
+  lng?: number
+  maxKm?: number
+  sort?: 'nearest' | 'name'
+}): Promise<ArtisanSearchResult[]> {
   const qs = new URLSearchParams()
   if (params.categoryId) qs.set('categoryId', params.categoryId)
   if (params.q) qs.set('q', params.q)
   if (params.limit) qs.set('limit', String(params.limit))
+  if (params.lat != null && params.lng != null) {
+    qs.set('lat', String(params.lat))
+    qs.set('lng', String(params.lng))
+  }
+  if (params.maxKm != null) qs.set('maxKm', String(params.maxKm))
+  if (params.sort) qs.set('sort', params.sort)
   const raw = await api.get<any[]>(`/admin/artisans/search?${qs}`)
-  return Array.isArray(raw) ? raw : []
+  if (!Array.isArray(raw)) return []
+  return raw.map(a => ({
+    id: a.id,
+    userId: a.userId,
+    fullName: a.fullName,
+    phone: a.phone ?? null,
+    displayName: a.displayName ?? null,
+    onlineStatus: a.onlineStatus ?? null,
+    rating: a.rating != null ? Number(a.rating) : null,
+    completedJobsCount: a.completedJobsCount ?? 0,
+    verificationStatus: a.verificationStatus,
+    categories: a.categories ?? [],
+    lat: a.lat != null ? Number(a.lat) : null,
+    lng: a.lng != null ? Number(a.lng) : null,
+    lastLocationAt: a.lastLocationAt ?? a.last_location_at ?? null,
+    distanceKm: a.distanceKm != null ? Number(a.distanceKm) : null,
+  }))
 }
 
 // ── High Bid Review ───────────────────────────────────────────────────────────
@@ -1190,6 +1366,14 @@ export function forceCompleteRide(rideId: string, reason: string) {
 
 export function cancelJob(jobId: string, reason: string) {
   return api.patch(`/admin/jobs/${jobId}/cancel`, { reason })
+}
+
+// Soft-delete a job. Backend only allows this in terminal or pre-acceptance
+// states (queued, pending_admin, completed, cancelled, expired). Active or
+// in-progress jobs return 400 JOB_NOT_DELETABLE; use force-complete or cancel
+// first. Reason is passed as a query param per the backend signature.
+export function deleteJob(jobId: string, reason: string) {
+  return api.delete(`/admin/jobs/${jobId}?reason=${encodeURIComponent(reason)}`)
 }
 
 // ── Artisan Jobs (admin listing) ──────────────────────────────────────────────
@@ -1354,13 +1538,19 @@ export function forceCompleteJob(jobId: string, reason: string) {
   return api.patch<{ forced: boolean }>(`/admin/jobs/${jobId}/force-complete`, { reason })
 }
 
-export function deleteJob(jobId: string) {
-  return api.delete(`/admin/jobs/${jobId}`)
-}
-
 // ── Emergency ─────────────────────────────────────────────────────────────────
 
 export type EmergencyType = 'sos' | 'welfare_check'
+
+export type WelfareCheckStatus = 'pending' | 'escalated' | 'responded' | 'resolved'
+
+export interface WelfareCheckInfo {
+  notificationSentAt: string
+  responseReceivedAt: string | null
+  adminAlertedAt: string | null
+  isResolved: boolean
+  status: WelfareCheckStatus
+}
 
 export interface EmergencyAlert {
   id: string
@@ -1375,14 +1565,32 @@ export interface EmergencyAlert {
   recordingUrl: string | null
   acknowledgedAt: string | null
   occurredAt: string
+  // Present on welfare_check rows only; null for sos. Schema added when backend
+  // unioned welfare_checks into /admin/emergency.
+  welfareCheck: WelfareCheckInfo | null
 }
 
 export function getEmergencyAlerts() {
   return api.get<EmergencyAlert[]>('/admin/emergency')
 }
 
+// SOS-only — acknowledges an emergency_event row.
 export function acknowledgeEmergency(emergencyId: string) {
   return api.patch(`/admin/emergency/${emergencyId}/acknowledge`)
+}
+
+export type WelfareContactMethod = 'phone' | 'in_person' | 'auto'
+
+// Welfare-check resolution. Admin confirms the artisan is okay and records how
+// they verified. Note ≥10 chars (audit-logged).
+export function resolveWelfareCheck(
+  welfareCheckId: string,
+  body: { note: string; contactMethod: WelfareContactMethod },
+) {
+  return api.patch<{ id: string; isResolved: true; resolvedAt: string }>(
+    `/admin/welfare-checks/${welfareCheckId}/resolve`,
+    body,
+  )
 }
 
 // ── Transactions ─────────────────────────────────────────────────────────────
@@ -1409,6 +1617,10 @@ export interface TransactionListResponse {
   totalPages: number
 }
 
+// `from`/`to` deliberately omitted: the backend currently rejects unknown query
+// params via class-validator's `forbidNonWhitelisted`. Re-add them here once
+// the backend DTO accepts ISO date filters — see
+// docs/backend-spec-payment-panel.md.
 export function listTransactions(params?: {
   type?: string
   status?: string
@@ -1596,6 +1808,296 @@ export interface AnnouncementHistoryItem {
 
 export function getAnnouncementHistory() {
   return api.get<AnnouncementHistoryItem[]>('/admin/announcements/history')
+}
+
+// ── Help Center (CMS) ─────────────────────────────────────────────────────────
+
+export type HelpAudience = 'client' | 'provider' | 'both'
+
+export interface HelpCategory {
+  id: string
+  slug: string
+  title: string
+  description: string | null
+  iconName: string | null
+  audience: HelpAudience
+  sortOrder: number
+  isPublished: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface HelpArticleSummary {
+  id: string
+  slug: string
+  title: string
+  summary: string | null
+  categoryId: string
+  categorySlug: string
+  audience: HelpAudience
+  sortOrder: number
+  isPublished: boolean
+  updatedAt: string
+}
+
+export interface HelpArticle extends HelpArticleSummary {
+  bodyMarkdown: string
+  createdAt: string
+}
+
+export function getHelpCategories() {
+  return api.get<HelpCategory[]>('/admin/support/help/categories')
+}
+
+export function getHelpArticles(params?: { categorySlug?: string; audience?: HelpAudience }) {
+  const qs = new URLSearchParams()
+  if (params?.categorySlug) qs.set('categorySlug', params.categorySlug)
+  if (params?.audience) qs.set('audience', params.audience)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return api.get<HelpArticleSummary[]>(`/admin/support/help/articles${suffix}`)
+}
+
+export function getHelpArticle(slug: string) {
+  return api.get<HelpArticle>(`/admin/support/help/articles/${encodeURIComponent(slug)}`)
+}
+
+export interface CreateHelpArticleInput {
+  slug: string
+  title: string
+  summary?: string
+  bodyMarkdown: string
+  categoryId: string
+  audience?: HelpAudience
+  sortOrder?: number
+  isPublished?: boolean
+}
+
+export function createHelpArticle(data: CreateHelpArticleInput) {
+  return api.post<HelpArticle>('/admin/support/help/articles', data)
+}
+
+export type UpdateHelpArticleInput = Partial<Omit<CreateHelpArticleInput, 'slug'>>
+
+export function updateHelpArticle(articleId: string, data: UpdateHelpArticleInput) {
+  return api.patch<HelpArticle>(`/admin/support/help/articles/${articleId}`, data)
+}
+
+export function deleteHelpArticle(articleId: string) {
+  return api.delete<{ ok: true }>(`/admin/support/help/articles/${articleId}`)
+}
+
+// ── Session Recovery Requests ─────────────────────────────────────────────────
+// Backend: GET/POST /admin/session-recovery-requests*, POST /admin/users/:id/sessions/revoke
+// Source of truth: apps/api/src/modules/admin/admin.controller.ts (myshop monorepo).
+
+export type SessionRecoveryStatus = 'pending' | 'resolved' | 'expired'
+export type SessionRole = 'client' | 'driver' | 'artisan'
+export type SessionRecoveryAction = 'revoked' | 'dismissed'
+
+export interface SessionRecoveryRequest {
+  id: string
+  /** May be null when no User row matches the request phone. */
+  userId: string | null
+  /** Resolved by request.currentSessionRole or, if absent, the user's profile. */
+  userType: SessionRole | null
+  fullName: string | null
+  phone: string
+  requestingDeviceId: string
+  requestingIp: string | null
+  currentSessionRole: SessionRole | null
+  currentSessionDeviceId: string | null
+  currentSessionDeviceInfo: string | null
+  currentSessionLoggedInAt: string | null
+  status: SessionRecoveryStatus
+  resolvedAt: string | null
+  resolvedByAdminId: string | null
+  resolvedAction: SessionRecoveryAction | null
+  resolutionReason: string | null
+  createdAt: string
+}
+
+export interface SessionRecoveryRequestDetail extends SessionRecoveryRequest {
+  identity: {
+    ghanaCardImageUrl: string | null
+    ghanaCardVerified: boolean
+    registeredAt: string
+    vehicle: { make: string | null; model: string | null; plate: string | null; color: string | null } | null
+    completedRidesCount: number | null
+    categories: string[] | null
+    completedJobsCount: number | null
+    verificationStatus: string | null
+  } | null
+}
+
+export interface SessionRecoveryListResponse {
+  total: number
+  page: number
+  limit: number
+  totalPages: number
+  items: SessionRecoveryRequest[]
+}
+
+export function listSessionRecoveryRequests(params?: {
+  status?: SessionRecoveryStatus
+  page?: number
+  limit?: number
+  search?: string
+}) {
+  const qs = params
+    ? '?' + new URLSearchParams(
+        Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== '').map(([k, v]) => [k, String(v)]))
+      ).toString()
+    : ''
+  return api.get<SessionRecoveryListResponse>(`/admin/session-recovery-requests${qs}`)
+}
+
+export function getSessionRecoveryRequestDetail(requestId: string) {
+  return api.get<SessionRecoveryRequestDetail>(`/admin/session-recovery-requests/${requestId}`)
+}
+
+export function dismissSessionRecoveryRequest(requestId: string, reason?: string) {
+  return api.post<{ success: true }>(`/admin/session-recovery-requests/${requestId}/resolve`,
+    reason ? { reason } : {},
+  )
+}
+
+/**
+ * Approves the recovery — revokes the old device's session for the given role.
+ * Pass `recoveryRequestId` to also mark that request resolved with
+ * `resolvedAction='revoked'` in one call (backend handles both atomically).
+ */
+export function revokeUserSession(
+  userId: string,
+  body: { role: SessionRole; reason?: string; recoveryRequestId?: string },
+) {
+  return api.post<{ success: true }>(`/admin/users/${userId}/sessions/revoke`, body)
+}
+
+// ── Promotions ────────────────────────────────────────────────────────────────
+// Backend: GET/POST/PATCH /admin/promos*. See docs/backend-spec-promotions.md
+// (Phase 1 backend spec).
+
+export type PromoType = 'PERCENTAGE_DISCOUNT' | 'FIXED_DISCOUNT' | 'FREE_RIDE' | 'BONUS_POINTS'
+export type PromoScope = 'ride' | 'job' | 'both'
+export type PromoStatus = 'active' | 'expired' | 'scheduled' | 'inactive'
+
+export interface Promo {
+  id: string
+  code: string
+  promoType: PromoType
+  promoScope: PromoScope
+  discountValue: number
+  maxDiscountPesewas: number | null
+  minBookingPesewas: number
+  maxUsesTotal: number | null
+  maxUsesPerUser: number
+  currentUses: number
+  isActive: boolean
+  startsAt: string
+  expiresAt: string | null
+  createdAt: string
+  updatedAt: string
+  createdBy: string | null
+  updatedBy: string | null
+  status: PromoStatus
+}
+
+export interface PromoDetail extends Promo {
+  stats: {
+    totalDiscountedPesewas: number
+    uniqueRedeemerCount: number
+    rideRedemptions: number
+    jobRedemptions: number
+  }
+}
+
+export interface PromoListResponse {
+  items: Promo[]
+  total: number
+  page: number
+  limit: number
+  totalPages: number
+}
+
+export interface PromoRedemptionItem {
+  id: string
+  promoCodeId: string
+  clientId: string
+  clientName: string | null
+  bookingType: 'ride' | 'job'
+  bookingId: string
+  bookingShortRef: string | null
+  discountPesewas: number
+  createdAt: string
+}
+
+export interface PromoRedemptionListResponse {
+  items: PromoRedemptionItem[]
+  total: number
+  page: number
+  limit: number
+  totalPages: number
+}
+
+export function listPromos(params?: {
+  status?: PromoStatus
+  promoType?: PromoType
+  promoScope?: PromoScope
+  search?: string
+  page?: number
+  limit?: number
+}) {
+  const qs = params
+    ? '?' + new URLSearchParams(
+        Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== '').map(([k, v]) => [k, String(v)]))
+      ).toString()
+    : ''
+  return api.get<PromoListResponse>(`/admin/promos${qs}`)
+}
+
+export function getPromo(promoId: string) {
+  return api.get<PromoDetail>(`/admin/promos/${promoId}`)
+}
+
+export interface CreatePromoInput {
+  code: string
+  promoType: PromoType
+  promoScope: PromoScope
+  discountValue: number
+  maxDiscountPesewas?: number
+  minBookingPesewas?: number
+  maxUsesTotal?: number
+  maxUsesPerUser?: number
+  startsAt?: string
+  expiresAt?: string
+  isActive?: boolean
+}
+
+export function createPromo(data: CreatePromoInput) {
+  return api.post<Promo>('/admin/promos', data)
+}
+
+// Frozen on the backend: code, promoType, promoScope, discountValue.
+export type UpdatePromoInput = Partial<{
+  isActive: boolean
+  expiresAt: string | null
+  maxUsesTotal: number
+  maxUsesPerUser: number
+  minBookingPesewas: number
+  maxDiscountPesewas: number
+}>
+
+export function updatePromo(promoId: string, data: UpdatePromoInput) {
+  return api.patch<Promo>(`/admin/promos/${promoId}`, data)
+}
+
+export function listPromoRedemptions(promoId: string, params?: { page?: number; limit?: number }) {
+  const qs = params
+    ? '?' + new URLSearchParams(
+        Object.fromEntries(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
+      ).toString()
+    : ''
+  return api.get<PromoRedemptionListResponse>(`/admin/promos/${promoId}/redemptions${qs}`)
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────

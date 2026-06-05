@@ -242,7 +242,7 @@ function CancelJobDialog({ open, onClose, onConfirm, loading }: {
             <AlertTriangle className="h-5 w-5" /> Cancel Job
           </DialogTitle>
           <DialogDescription>
-            This will cancel the job and notify both the client and artisan. Provide a clear reason for the audit log (minimum 5 characters).
+            This will cancel the job and notify both the client and artisan. Provide a clear reason for the audit log (minimum 10 characters).
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 py-1">
@@ -253,13 +253,15 @@ function CancelJobDialog({ open, onClose, onConfirm, loading }: {
             onChange={e => setReason(e.target.value)}
             rows={3}
           />
-          <p className="text-[11px] text-gray-400">{reason.length} / min 5 characters</p>
+          <p className={`text-[11px] ${reason.trim().length >= 10 ? 'text-emerald-600' : 'text-gray-400'}`}>
+            {reason.trim().length} / 10 characters minimum
+          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Back</Button>
           <Button
-            onClick={() => onConfirm(reason)}
-            disabled={loading || reason.trim().length < 5}
+            onClick={() => onConfirm(reason.trim())}
+            disabled={loading || reason.trim().length < 10}
             className="bg-red-500 hover:bg-red-600 text-white gap-2"
           >
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}

@@ -17,7 +17,7 @@ Admin auth is **separate** from the regular user (client/driver/artisan) auth sy
 | Access token expiry  | 15 minutes               | 8 hours (default)          |
 | Refresh token expiry | 30 days                  | 30 days (default)          |
 | Passport strategy    | `jwt`                    | `admin-jwt`                |
-| JWT payload fields   | `sub`, `role`, `phone`   | `sub`, `email`, `role`     |
+| JWT payload fields   | `sub`, `role`, `phone`   | `sub`, `email`, `permissions` |
 
 ### Guard execution order (every request)
 
@@ -27,9 +27,9 @@ Admin auth is **separate** from the regular user (client/driver/artisan) auth sy
    ├─ Valid user JWT?   → set req.user, continue
    └─ Valid admin JWT?  → set req.user (admin), continue   ← fallback added for admin tokens
                                                               (uses ADMIN_JWT_ACCESS_SECRET)
-2. RolesGuard (global)
-   ├─ No @Roles() on route?  → pass through
-   └─ req.user.role in allowed roles?  → continue / 403
+2. PermissionsGuard (global)
+   ├─ No @RequirePermissions() on route?  → pass through
+   └─ req.user.permissions includes required permission?  → continue / 403
 3. ThrottlerGuard (global)
 4. AdminJwtAuthGuard (controller-level on AdminController)
    └─ Re-validates token as admin-jwt strategy (secondary check)
@@ -71,7 +71,8 @@ No `Authorization` header required (`@Public()`). Rate-limited to **10 requests 
       "id": "<uuid>",
       "email": "admin@gilmoretechnologies.com",
       "fullName": "Kwame Asante",
-      "role": "super_admin"
+      "permissions": ["view_dashboard", "manage_admins", "..."],
+      "regionScope": null
     }
   }
 }
@@ -109,17 +110,23 @@ The `apiFetch` helper in `lib/api-client.ts` attaches this header automatically 
 
 ---
 
-## 3. Role Model
+## 3. Permission Model
 
-| Role             | Level | Capabilities                                                             |
-| ---------------- | ----- | ------------------------------------------------------------------------ |
-| `super_admin`    | L1    | Full access — all endpoints, user bans, admin account management         |
-| `regional_admin` | L2    | Verification queue, live map, user list, provider reports, overview KPIs |
-| `ops_admin`      | L3    | Live map, disputes, user list/suspend, manual job assignment, config     |
-| `support_agent`  | L4    | User list (read-only), disputes (read + resolve)                         |
+There are **no fixed roles**. Each admin holds an explicit `permissions: string[]` set,
+assigned by a super admin (= any admin holding `manage_admins`). The full catalogue and its
+UI grouping live in the admin panel's `lib/roles.ts` (`PERMISSION_GROUPS`); the canonical
+list of permission keys is mirrored in `docs/admin-module.md` → _Permission Catalogue_.
 
-Roles are enforced by `RolesGuard` reading the `@Roles()` decorator on each controller method.
-A mismatch returns **403 Forbidden** — _not_ 401.
+Permissions are enforced by `PermissionsGuard` reading the `@RequirePermissions(...)`
+decorator on each controller method against `req.user.permissions`. A mismatch returns
+**403 Forbidden** — _not_ 401.
+
+**Migration:** existing admins were seeded with the permission set their old role granted
+(per the old role→permission matrix), so nobody lost access at cutover. The founding admin
+holds the full catalogue.
+
+**Anti-lockout:** the backend rejects an admin editing their **own** permissions and
+rejects removing `manage_admins` from the **last** admin that holds it.
 
 ---
 
@@ -382,18 +389,18 @@ Sample `data`:
 
 ### 4.7 Admin Account Management
 
-All endpoints in this section are `super_admin` only.
+All endpoints in this section require the `manage_admins` permission.
 
-| Method | Path                                  | Description                                      |
-| ------ | ------------------------------------- | ------------------------------------------------ |
-| GET    | `/v1/admin/admins`                    | List all admin accounts (excluding soft-deleted) |
-| GET    | `/v1/admin/admins/:id`                | Get a single admin by ID                         |
-| POST   | `/v1/admin/admins`                    | Create a new admin account                       |
-| PATCH  | `/v1/admin/admins/:id/role`           | Reassign role (cannot change own role)           |
-| PATCH  | `/v1/admin/admins/:id/deactivate`     | Block login immediately (reversible)             |
-| PATCH  | `/v1/admin/admins/:id/reactivate`     | Restore login access                             |
-| PATCH  | `/v1/admin/admins/:id/reset-password` | Set a new password for any admin                 |
-| DELETE | `/v1/admin/admins/:id`                | Soft-delete (cannot delete own account)          |
+| Method | Path                                  | Description                                       |
+| ------ | ------------------------------------- | ------------------------------------------------- |
+| GET    | `/v1/admin/admins`                    | List all admin accounts (excluding soft-deleted)  |
+| GET    | `/v1/admin/admins/:id`                | Get a single admin by ID                          |
+| POST   | `/v1/admin/admins`                    | Create a new admin account                        |
+| PATCH  | `/v1/admin/admins/:id/permissions`    | Replace permission set (cannot edit own; cannot remove last `manage_admins`) |
+| PATCH  | `/v1/admin/admins/:id/deactivate`     | Block login immediately (reversible)              |
+| PATCH  | `/v1/admin/admins/:id/reactivate`     | Restore login access                              |
+| PATCH  | `/v1/admin/admins/:id/reset-password` | Set a new password for any admin                  |
+| DELETE | `/v1/admin/admins/:id`                | Soft-delete (cannot delete own account)           |
 
 **POST /admin/admins** — request body:
 
@@ -401,18 +408,17 @@ All endpoints in this section are `super_admin` only.
 {
   "email": "ops@gilmoretechnologies.com",
   "fullName": "Abena Asante",
-  "role": "ops_admin",
+  "permissions": ["view_dashboard", "view_disputes", "resolve_dispute"],
   "password": "SecurePass123!",
-  "regionScope": "ashanti" // optional; required for regional_admin
+  "regionScope": "ashanti" // optional; limits this admin's data to one region
 }
 ```
 
-**PATCH /admin/admins/:id/role** — request body:
+**PATCH /admin/admins/:id/permissions** — request body (full replacement set):
 
 ```json
 {
-  "role": "regional_admin",
-  "regionScope": "ashanti" // optional
+  "permissions": ["view_dashboard", "view_users", "suspend_user"]
 }
 ```
 

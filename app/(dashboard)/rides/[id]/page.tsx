@@ -94,7 +94,7 @@ function ActionDialog({ open, title, description, confirmLabel, confirmClass, on
 export default function RideDetailPage({ params }: { params: { id: string } }) {
   const { id: rideId } = params
   const admin = getAdminUser()
-  const canIntervene = can(admin?.role ?? null, 'view_rides') && admin?.role !== 'support_agent'
+  const canIntervene = can(admin?.permissions ?? null, 'intervene_ride')
 
   const [ride, setRide] = useState<RideDetail | null>(null)
   const [loading, setLoading] = useState(true)

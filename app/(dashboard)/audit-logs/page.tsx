@@ -3,7 +3,7 @@
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { useState, useEffect, useCallback } from 'react'
-import { Search, RefreshCw, ChevronLeft, ChevronRight, Shield } from 'lucide-react'
+import { Search, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -23,20 +23,7 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   'admin_deactivated':  { label: 'Admin Deactivated',  color: 'bg-gray-100 text-gray-600' },
   'admin_reactivated':  { label: 'Admin Reactivated',  color: 'bg-emerald-100 text-emerald-700' },
   'admin_role_changed': { label: 'Role Changed',       color: 'bg-blue-100 text-blue-700' },
-}
-
-const ROLE_COLORS: Record<string, string> = {
-  super_admin:    'bg-amber-100 text-amber-700',
-  regional_admin: 'bg-teal-100 text-teal-700',
-  ops_admin:      'bg-blue-100 text-blue-700',
-  support_agent:  'bg-gray-100 text-gray-600',
-}
-
-const ROLE_LABELS: Record<string, string> = {
-  super_admin:    'Super Admin',
-  regional_admin: 'Regional Admin',
-  ops_admin:      'Ops Admin',
-  support_agent:  'Support Agent',
+  'admin_permissions_changed': { label: 'Permissions Changed', color: 'bg-blue-100 text-blue-700' },
 }
 
 function formatDate(iso: string) {
@@ -250,12 +237,7 @@ export default function AuditLogsPage() {
                         </Avatar>
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{entry.admin.fullName}</p>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <Shield className="h-3 w-3 text-gray-300" />
-                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${ROLE_COLORS[entry.admin.role] ?? 'bg-gray-100 text-gray-600'}`}>
-                              {ROLE_LABELS[entry.admin.role] ?? entry.admin.role}
-                            </span>
-                          </div>
+                          <p className="text-xs text-gray-400 truncate">{entry.admin.email}</p>
                         </div>
                       </div>
                     </TableCell>

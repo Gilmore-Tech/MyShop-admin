@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Mail, Phone, Calendar, Star, Pencil, Check, X, Loader2, RotateCcw, ShieldOff, UserX, FileText, ExternalLink, CheckCircle, XCircle, ChevronDown, ChevronUp, Car, Tag, TrendingUp, XOctagon, IdCard, Lock, Unlock } from 'lucide-react'
+import { Mail, Phone, Calendar, Star, Pencil, Check, X, Loader2, RotateCcw, ShieldOff, ShieldCheck, UserX, FileText, ExternalLink, CheckCircle, XCircle, ChevronDown, ChevronUp, Car, Tag, TrendingUp, XOctagon, IdCard, Lock, Unlock, LogOut, Trash2 } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
-import { updateUser, reinstateUser, suspendUser, banUser, getProviderDocuments, reviewVerification, reviewClientKyc, getUser, unlockPayoutMethod, type PlatformUser, type UserProviderDocument, type UserProviderGroup } from '@/lib/api'
+import { updateUser, reinstateUser, suspendUser, banUser, deleteUser, forceLogoutUser, getProviderDocuments, reviewVerification, reviewClientKyc, getUser, unlockPayoutMethod, liftVerificationSuspension, type PlatformUser, type UserProviderDocument, type UserProviderGroup } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { VerifyClientKycDialog, clientKycBadge } from './verify-client-kyc-dialog'
@@ -435,7 +435,7 @@ function VerifyProviderDialog({
   )
 }
 
-type ActionDialogType = 'suspend' | 'ban' | 'reinstate'
+type ActionDialogType = 'suspend' | 'ban' | 'delete' | 'reinstate' | 'force_logout' | 'lift_verification'
 
 interface UserProfileSheetProps {
   user: PlatformUser | null
@@ -491,6 +491,9 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
   const canUnlockPayout = can('unlock_payout_method')
   const canSuspend = can('suspend_user')
   const canBan = can('ban_user')
+  const canDelete = can('delete_user')
+  const canForceLogout = can('force_logout_user')
+  const canLiftVerification = can('lift_verification_suspension')
 
   function startEdit() {
     if (!u) return
@@ -540,7 +543,22 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
       let updated: PlatformUser | undefined
       if (actionDialog === 'suspend') updated = await suspendUser(u.id, actionReason.trim()) as PlatformUser
       else if (actionDialog === 'ban') updated = await banUser(u.id, actionReason.trim()) as PlatformUser
+      else if (actionDialog === 'delete') updated = await deleteUser(u.id, actionReason.trim()) as PlatformUser
       else if (actionDialog === 'reinstate') updated = await reinstateUser(u.id, actionReason.trim() || undefined) as PlatformUser
+      else if (actionDialog === 'force_logout') await forceLogoutUser(u.id, actionReason.trim())
+      else if (actionDialog === 'lift_verification') {
+        // Suspension can sit on either the driver or artisan sub-profile (or
+        // both, if the user holds both roles). Lift whichever is currently
+        // suspended; if both are, lift both in sequence.
+        if (u.driver?.verificationStatus === 'suspended') {
+          await liftVerificationSuspension(u.driver.id, 'driver', actionReason.trim())
+        }
+        if (u.artisan?.verificationStatus === 'suspended') {
+          await liftVerificationSuspension(u.artisan.id, 'artisan', actionReason.trim())
+        }
+        // Refetch the user so the sheet shows the new verification status.
+        updated = await getUser(u.id)
+      }
       setActionDialog(null)
       if (updated) onUpdate?.(updated)
     } catch (err) {
@@ -1017,10 +1035,20 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
               )}
 
               {/* Account actions */}
-              {!editing && (canSuspend || canBan) && (
+              {!editing && (canSuspend || canBan || canDelete || canForceLogout || canLiftVerification) && (
                 <div>
                   <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Account Actions</p>
                   <div className="flex flex-col gap-2">
+                    {canLiftVerification && (u.driver?.verificationStatus === 'suspended' || u.artisan?.verificationStatus === 'suspended') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="justify-start gap-2 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                        onClick={() => openAction('lift_verification')}
+                      >
+                        <ShieldCheck className="h-4 w-4" /> Lift Verification Suspension
+                      </Button>
+                    )}
                     {canSuspend && u.status === 'suspended' && (
                       <Button
                         variant="outline"
@@ -1029,6 +1057,16 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                         onClick={() => openAction('reinstate')}
                       >
                         <RotateCcw className="h-4 w-4" /> Reinstate Account
+                      </Button>
+                    )}
+                    {canForceLogout && u.status !== 'banned' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="justify-start gap-2 text-blue-700 border-blue-200 hover:bg-blue-50"
+                        onClick={() => openAction('force_logout')}
+                      >
+                        <LogOut className="h-4 w-4" /> Force Logout (All Devices)
                       </Button>
                     )}
                     {canSuspend && u.status !== 'suspended' && u.status !== 'banned' && (
@@ -1041,7 +1079,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                         <UserX className="h-4 w-4" /> Suspend Account
                       </Button>
                     )}
-                    {canBan && u.status !== 'banned' && (
+                    {canBan && u.status !== 'banned' && u.status !== 'deleted' && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -1049,6 +1087,16 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                         onClick={() => openAction('ban')}
                       >
                         <ShieldOff className="h-4 w-4" /> Ban Permanently
+                      </Button>
+                    )}
+                    {canDelete && u.status !== 'banned' && u.status !== 'deleted' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="justify-start gap-2 text-gray-700 border-gray-300 hover:bg-gray-50"
+                        onClick={() => openAction('delete')}
+                      >
+                        <Trash2 className="h-4 w-4" /> Delete Account
                       </Button>
                     )}
                   </div>
@@ -1068,14 +1116,31 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
       <Dialog open={!!actionDialog} onOpenChange={open => { if (!open) setActionDialog(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className={actionDialog === 'ban' ? 'text-red-600' : actionDialog === 'suspend' ? 'text-orange-600' : 'text-emerald-700'}>
-              {actionDialog === 'reinstate' ? 'Reinstate' : actionDialog === 'ban' ? 'Ban' : 'Suspend'} {user?.fullName}
+            <DialogTitle className={
+              actionDialog === 'ban' ? 'text-red-600'
+              : actionDialog === 'delete' ? 'text-gray-700'
+              : actionDialog === 'suspend' ? 'text-orange-600'
+              : actionDialog === 'force_logout' ? 'text-blue-700'
+              : 'text-emerald-700'
+            }>
+              {actionDialog === 'reinstate' ? 'Reinstate'
+                : actionDialog === 'ban' ? 'Ban'
+                : actionDialog === 'delete' ? 'Delete'
+                : actionDialog === 'force_logout' ? 'Force Logout'
+                : actionDialog === 'lift_verification' ? 'Lift verification suspension for'
+                : 'Suspend'} {user?.fullName}
             </DialogTitle>
             <DialogDescription>
               {actionDialog === 'reinstate'
                 ? 'Restore this user\'s access to the platform.'
                 : actionDialog === 'ban'
                 ? 'This will permanently ban the user. This action is hard to reverse.'
+                : actionDialog === 'delete'
+                ? 'Soft-deletes the account. Use for housekeeping (duplicate / test) or when the user has requested removal. Data is retained 90 days; outstanding clawbacks must be settled first.'
+                : actionDialog === 'force_logout'
+                ? 'Revoke every active session for this user. They will be signed out on every device and must log in again — use after verifying identity over the phone.'
+                : actionDialog === 'lift_verification'
+                ? 'Restores the provider\'s verification status to "approved", lifting an auto-suspension from the rating or cancellation engine. They\'ll be able to go online again.'
                 : 'This will suspend the user. You can reinstate them later.'
               }
             </DialogDescription>
@@ -1099,12 +1164,23 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
               onClick={handleActionConfirm}
               className={actionDialog === 'ban'
                 ? 'bg-red-600 hover:bg-red-700 text-white'
+                : actionDialog === 'delete'
+                ? 'bg-gray-700 hover:bg-gray-800 text-white'
                 : actionDialog === 'suspend'
                 ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                : actionDialog === 'force_logout'
+                ? 'bg-blue-600 hover:bg-blue-700 text-white'
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white'
               }
             >
-              {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : `Confirm ${actionDialog === 'reinstate' ? 'Reinstatement' : actionDialog === 'ban' ? 'Ban' : 'Suspension'}`}
+              {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : `Confirm ${
+                actionDialog === 'reinstate' ? 'Reinstatement'
+                : actionDialog === 'ban' ? 'Ban'
+                : actionDialog === 'delete' ? 'Deletion'
+                : actionDialog === 'force_logout' ? 'Force Logout'
+                : actionDialog === 'lift_verification' ? 'Lift Suspension'
+                : 'Suspension'
+              }`}
             </Button>
           </DialogFooter>
         </DialogContent>

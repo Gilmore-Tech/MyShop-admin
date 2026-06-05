@@ -38,8 +38,9 @@ function StalenessFlag({ hours }: { hours: number }) {
 export default function ArtisanJobsPage() {
   const router = useRouter()
   const adminUser = getAdminUser()
-  const isRegional = adminUser?.role === 'regional_admin'
-  const lockedRegion = isRegional ? (adminUser?.regionScope ?? null) : null
+  // An admin scoped to a region only sees/acts on that region's jobs. Region
+  // scope is now independent of any role — it's driven solely by regionScope.
+  const lockedRegion = adminUser?.regionScope ?? null
 
   const [jobs, setJobs] = useState<AdminJob[]>([])
   const [total, setTotal] = useState(0)
@@ -85,7 +86,7 @@ export default function ArtisanJobsPage() {
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      await deleteJob(deleteTarget.id)
+      await deleteJob(deleteTarget.id, 'Deleted from artisan jobs admin queue')
       setJobs(prev => prev.filter(j => j.id !== deleteTarget.id))
       setTotal(prev => prev - 1)
     } catch {
@@ -99,7 +100,7 @@ export default function ArtisanJobsPage() {
   async function handleDeleteAllStale() {
     setDeletingAll(true)
     try {
-      await Promise.all(staleJobs.map(j => deleteJob(j.id)))
+      await Promise.all(staleJobs.map(j => deleteJob(j.id, 'Bulk cleanup — job idle for 24+ hours')))
       const staleIds = new Set(staleJobs.map(j => j.id))
       setJobs(prev => prev.filter(j => !staleIds.has(j.id)))
       setTotal(prev => prev - staleJobs.length)

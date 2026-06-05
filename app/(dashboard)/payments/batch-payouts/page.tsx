@@ -32,7 +32,8 @@ function BatchStatusIcon({ status }: { status: string }) {
 }
 
 export default function BatchPayoutsPage() {
-  const { isSuper } = useRole()
+  const { can } = useRole()
+  const canForceRun = can('run_batch_payouts')
 
   const [batches, setBatches] = useState<BatchPayoutRun[]>([])
   const [page, setPage] = useState(1)
@@ -128,7 +129,7 @@ export default function BatchPayoutsPage() {
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          {isSuper && (
+          {canForceRun && (
             <Button
               size="sm"
               className="text-white gap-2"

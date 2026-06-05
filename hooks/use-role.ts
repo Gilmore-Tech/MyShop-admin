@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { getAdminUser } from '@/lib/api-client'
-import { can, type AdminRole, type Permission } from '@/lib/roles'
+import { can, type Permission } from '@/lib/roles'
 
 export function useRole() {
-  const [role, setRole] = useState<AdminRole | null>(() => {
+  const [permissions, setPermissions] = useState<Permission[] | null>(() => {
     if (typeof window === 'undefined') return null
-    return (getAdminUser()?.role as AdminRole) ?? null
+    return getAdminUser()?.permissions ?? null
   })
   const [adminName, setAdminName] = useState<string>(() => {
     if (typeof window === 'undefined') return ''
@@ -16,14 +16,13 @@ export function useRole() {
 
   useEffect(() => {
     const user = getAdminUser()
-    setRole((user?.role as AdminRole) ?? null)
+    setPermissions(user?.permissions ?? null)
     setAdminName(user?.fullName ?? '')
   }, [])
 
   return {
-    role,
+    permissions,
     adminName,
-    isSuper: role === 'super_admin',
-    can: (permission: Permission) => can(role, permission),
+    can: (permission: Permission) => can(permissions, permission),
   }
 }

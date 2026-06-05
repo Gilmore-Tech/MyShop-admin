@@ -159,15 +159,6 @@ function NotificationPanel({
   )
 }
 
-// ─── Role labels ──────────────────────────────────────────────────────────────
-
-const ROLE_LABELS: Record<string, string> = {
-  super_admin: 'Super Admin',
-  regional_admin: 'Regional Admin',
-  ops_admin: 'Ops Admin',
-  support_agent: 'Support Agent',
-}
-
 function adminInitials(name: string) {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
 }
@@ -315,7 +306,7 @@ export default function Header() {
                   {admin?.fullName ?? 'Admin User'}
                 </p>
                 <p className="text-xs text-text-secondary leading-tight">
-                  {admin ? (ROLE_LABELS[admin.role] ?? admin.role) : 'Super Admin'}
+                  {admin?.email ?? 'Administrator'}
                 </p>
               </div>
             </button>

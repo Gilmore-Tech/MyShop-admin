@@ -2,7 +2,7 @@
 
 import { PageGuard } from '@/components/common/page-guard'
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, MoreHorizontal, Shield, Clock, RefreshCw, KeyRound, Trash2, UserCheck, UserX } from 'lucide-react'
+import { Plus, Search, MoreHorizontal, Shield, Clock, RefreshCw, KeyRound, Trash2, UserCheck, UserX, Eye, Pencil } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,16 +10,17 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
+import { PermissionPicker, GrantedPermissions } from '@/components/admin/permission-picker'
 import {
- listAdmins, createAdmin, reassignAdminRole, deactivateAdmin,
+ listAdmins, createAdmin, updateAdminPermissions, deactivateAdmin,
  reactivateAdmin, resetAdminPassword, deleteAdmin,
- type AdminAccount, type AdminRole,
+ type AdminAccount,
 } from '@/lib/api'
-import { ApiError } from '@/lib/api-client'
+import { ApiError, getAdminUser } from '@/lib/api-client'
+import { PERMISSION_LABELS, type Permission } from '@/lib/roles'
 
 function initials(name: string) {
  return name.split('').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -30,25 +31,20 @@ function formatDate(iso: string | null) {
  return new Date(iso).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
 }
 
-const ROLES: AdminRole[] = ['super_admin','regional_admin','ops_admin','support_agent']
-
-const roleColors: Record<AdminRole, string> = {
- super_admin:'bg-amber-100 text-amber-700',
- regional_admin:'bg-teal-100 text-teal-700',
- ops_admin:'bg-blue-100 text-blue-700',
- support_agent:'bg-gray-100 text-gray-600',
-}
-
-const roleLabels: Record<AdminRole, string> = {
- super_admin:'Super Admin',
- regional_admin:'Regional Admin',
- ops_admin:'Ops Admin',
- support_agent:'Support Agent',
+// Compact summary of a permission set for the table cell: first couple of
+// labels plus an overflow count.
+function permissionSummary(perms: Permission[]): string {
+ if (!perms || perms.length === 0) return 'No permissions'
+ const labels = perms.map(p => PERMISSION_LABELS[p] ?? p)
+ const shown = labels.slice(0, 2).join(', ')
+ const extra = labels.length - 2
+ return extra > 0 ? `${shown} +${extra}` : shown
 }
 
 type DialogMode =
  | { type:'create' }
- | { type:'role'; admin: AdminAccount }
+ | { type:'view'; admin: AdminAccount }
+ | { type:'permissions'; admin: AdminAccount }
  | { type:'reset-password'; admin: AdminAccount }
  | { type:'delete'; admin: AdminAccount }
 
@@ -65,13 +61,14 @@ export default function AdminAccountsPage() {
  // ── Create form state
  const [newEmail, setNewEmail] = useState('')
  const [newFullName, setNewFullName] = useState('')
- const [newRole, setNewRole] = useState<AdminRole>('support_agent')
  const [newPassword, setNewPassword] = useState('')
  const [newRegion, setNewRegion] = useState('')
+ const [newPermissions, setNewPermissions] = useState<Permission[]>(['view_dashboard'])
 
- // ── Role reassign state
- const [editRole, setEditRole] = useState<AdminRole>('support_agent')
- const [editRegion, setEditRegion] = useState('')
+ // ── Permission edit state
+ const [editPermissions, setEditPermissions] = useState<Permission[]>([])
+
+ const currentAdminId = getAdminUser()?.id ?? null
 
  // ── Reset password state
  const [newPw, setNewPw] = useState('')
@@ -97,13 +94,12 @@ export default function AdminAccountsPage() {
  if (mode.type ==='delete') {
  setDeleteConfirm('')
  }
- if (mode.type ==='role') {
- setEditRole(mode.admin.role)
- setEditRegion(mode.admin.regionScope ??'')
+ if (mode.type ==='permissions') {
+ setEditPermissions(mode.admin.permissions ?? [])
  }
  if (mode.type ==='create') {
- setNewEmail(''); setNewFullName(''); setNewRole('support_agent')
- setNewPassword(''); setNewRegion('')
+ setNewEmail(''); setNewFullName('')
+ setNewPassword(''); setNewRegion(''); setNewPermissions(['view_dashboard'])
  }
  if (mode.type ==='reset-password') {
  setNewPw(''); setConfirmPw('')
@@ -119,9 +115,9 @@ export default function AdminAccountsPage() {
  if (dialog.type ==='create') {
  if (!newEmail || !newFullName || !newPassword)
  { setSubmitError('Email, full name and password are required.'); setSubmitting(false); return }
- await createAdmin({ email: newEmail.trim(), fullName: newFullName.trim(), role: newRole, password: newPassword, regionScope: newRegion || undefined })
- } else if (dialog.type ==='role') {
- await reassignAdminRole(dialog.admin.id, editRole, editRegion || undefined)
+ await createAdmin({ email: newEmail.trim(), fullName: newFullName.trim(), permissions: newPermissions, password: newPassword, regionScope: newRegion || undefined })
+ } else if (dialog.type ==='permissions') {
+ await updateAdminPermissions(dialog.admin.id, editPermissions)
  } else if (dialog.type ==='reset-password') {
  if (newPw.length < 8) { setSubmitError('Password must be at least 8 characters.'); setSubmitting(false); return }
  if (newPw !== confirmPw) { setSubmitError('Passwords do not match.'); setSubmitting(false); return }
@@ -192,7 +188,7 @@ export default function AdminAccountsPage() {
  <TableHeader>
  <TableRow className="bg-gray-50">
  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Admin</TableHead>
- <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Role</TableHead>
+ <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Permissions</TableHead>
  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Region</TableHead>
  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</TableHead>
  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Login</TableHead>
@@ -232,12 +228,17 @@ export default function AdminAccountsPage() {
  </div>
  </TableCell>
  <TableCell>
- <div className="flex items-center gap-1.5">
- <Shield className="h-3.5 w-3.5 text-slate-400" />
- <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${roleColors[admin.role]}`}>
- {roleLabels[admin.role]}
+ <button
+ type="button"
+ onClick={() => openDialog({ type:'view', admin })}
+ className="flex items-center gap-1.5 text-left group"
+ title="View all permissions"
+ >
+ <Shield className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+ <span className="text-xs text-gray-600 group-hover:text-orange-600 group-hover:underline">
+ {permissionSummary(admin.permissions)}
  </span>
- </div>
+ </button>
  </TableCell>
  <TableCell className="text-sm text-gray-500">{admin.regionScope ??'—'}</TableCell>
  <TableCell>
@@ -258,8 +259,11 @@ export default function AdminAccountsPage() {
  </Button>
  </DropdownMenuTrigger>
  <DropdownMenuContent align="end">
- <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'role', admin })}>
- <Shield className="h-4 w-4" /> Edit Role
+ <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'view', admin })}>
+ <Eye className="h-4 w-4" /> View Permissions
+ </DropdownMenuItem>
+ <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'permissions', admin })}>
+ <Shield className="h-4 w-4" /> Edit Permissions
  </DropdownMenuItem>
  <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'reset-password', admin })}>
  <KeyRound className="h-4 w-4" /> Reset Password
@@ -303,23 +307,16 @@ export default function AdminAccountsPage() {
  <Input type="email" placeholder="kwame@myshop.com.gh" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
  </div>
  <div className="space-y-1.5">
- <Label>Role</Label>
- <Select value={newRole} onValueChange={v => setNewRole(v as AdminRole)}>
- <SelectTrigger><SelectValue /></SelectTrigger>
- <SelectContent>
- {ROLES.map(r => <SelectItem key={r} value={r}>{roleLabels[r]}</SelectItem>)}
- </SelectContent>
- </Select>
- </div>
- {(newRole ==='regional_admin') && (
- <div className="space-y-1.5">
- <Label>Region Scope <span className="text-gray-400 text-xs">(optional)</span></Label>
- <Input placeholder="e.g. Ashanti" value={newRegion} onChange={e => setNewRegion(e.target.value)} />
- </div>
- )}
- <div className="space-y-1.5">
  <Label>Password</Label>
  <Input type="password" placeholder="Min 8 characters" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+ </div>
+ <div className="space-y-1.5">
+ <Label>Region Scope <span className="text-gray-400 text-xs">(optional)</span></Label>
+ <Input placeholder="e.g. Ashanti — limits this admin's data to one region" value={newRegion} onChange={e => setNewRegion(e.target.value)} />
+ </div>
+ <div className="space-y-1.5">
+ <Label>Permissions</Label>
+ <PermissionPicker value={newPermissions} onChange={setNewPermissions} />
  </div>
  {submitError && <p className="text-xs text-red-600">{submitError}</p>}
  </div>
@@ -332,26 +329,58 @@ export default function AdminAccountsPage() {
  </DialogContent>
  </Dialog>
 
- {/* ── Edit Role Dialog ─────────────────────────────────────────────────── */}
- <Dialog open={dialog?.type ==='role'} onOpenChange={open => { if (!open) setDialog(null) }}>
- <DialogContent className="max-w-sm">
+ {/* ── View Permissions Dialog ──────────────────────────────────────────── */}
+ <Dialog open={dialog?.type ==='view'} onOpenChange={open => { if (!open) setDialog(null) }}>
+ <DialogContent className="max-w-md">
  <DialogHeader>
- <DialogTitle>Edit Role — {dialog?.type ==='role' ? dialog.admin.fullName :''}</DialogTitle>
+ <DialogTitle>
+ Permissions — {dialog?.type ==='view' ? dialog.admin.fullName :''}
+ </DialogTitle>
  </DialogHeader>
- <div className="space-y-4 py-2">
- <div className="space-y-1.5">
- <Label>Role</Label>
- <Select value={editRole} onValueChange={v => setEditRole(v as AdminRole)}>
- <SelectTrigger><SelectValue /></SelectTrigger>
- <SelectContent>
- {ROLES.map(r => <SelectItem key={r} value={r}>{roleLabels[r]}</SelectItem>)}
- </SelectContent>
- </Select>
+ <div className="py-2 space-y-3">
+ {dialog?.type ==='view' && (
+ <>
+ <p className="text-xs text-gray-400">
+ {dialog.admin.permissions.length} permission{dialog.admin.permissions.length === 1 ?'' :'s'} granted
+ {dialog.admin.regionScope ? ` · scoped to ${dialog.admin.regionScope}` :''}
+ </p>
+ <GrantedPermissions value={dialog.admin.permissions} />
+ </>
+ )}
  </div>
- <div className="space-y-1.5">
- <Label>Region Scope <span className="text-gray-400 text-xs">(optional)</span></Label>
- <Input placeholder="e.g. Ashanti" value={editRegion} onChange={e => setEditRegion(e.target.value)} />
- </div>
+ <DialogFooter>
+ <Button variant="outline" onClick={() => setDialog(null)}>Close</Button>
+ <Button
+ onClick={() => { if (dialog?.type ==='view') openDialog({ type:'permissions', admin: dialog.admin }) }}
+ className="gap-2 text-white"
+ style={{ backgroundColor:'#F5A623' }}
+ >
+ <Pencil className="h-4 w-4" /> Edit Permissions
+ </Button>
+ </DialogFooter>
+ </DialogContent>
+ </Dialog>
+
+ {/* ── Edit Permissions Dialog ──────────────────────────────────────────── */}
+ <Dialog open={dialog?.type ==='permissions'} onOpenChange={open => { if (!open) setDialog(null) }}>
+ <DialogContent className="max-w-md">
+ <DialogHeader>
+ <DialogTitle>Edit Permissions — {dialog?.type ==='permissions' ? dialog.admin.fullName :''}</DialogTitle>
+ </DialogHeader>
+ <div className="space-y-3 py-2">
+ {dialog?.type ==='permissions' && dialog.admin.id === currentAdminId && (
+ <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
+ You can&apos;t remove your own <strong>Manage admins</strong> permission.
+ </p>
+ )}
+ <p className="text-xs text-gray-400">
+ Changes take effect on this admin&apos;s next sign-in.
+ </p>
+ <PermissionPicker
+ value={editPermissions}
+ onChange={setEditPermissions}
+ disabledKeys={dialog?.type ==='permissions' && dialog.admin.id === currentAdminId ? ['manage_admins'] : []}
+ />
  {submitError && <p className="text-xs text-red-600">{submitError}</p>}
  </div>
  <DialogFooter>

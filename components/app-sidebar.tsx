@@ -7,13 +7,14 @@ import {
   Settings, Smartphone, ShieldCheck, Car,
   CreditCard, Megaphone, BarChart3, UserCog, ChevronDown, LogOut,
   LineChart, Tag, ClipboardList, ShieldAlert, Activity, IdCard,
+  BookOpen, KeyRound, Ticket,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { getOverviewReport, getEmergencyAlerts, getClientKycQueue, getUnassignedJobs, getHighBidQueue } from '@/lib/api'
+import { getOverviewReport, getEmergencyAlerts, getClientKycQueue, getUnassignedJobs, getHighBidQueue, listSessionRecoveryRequests } from '@/lib/api'
 import { FEATURES } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
-import { ROLE_LABELS, type Permission } from '@/lib/roles'
+import { type Permission } from '@/lib/roles'
 
 type ChildItem = { title: string; href: string; permission?: Permission; badge?: number; badgeVariant?: 'red' | 'amber' }
 
@@ -107,13 +108,14 @@ function NavLink({ item, can }: { item: NavItem; can: (p: Permission) => boolean
 }
 
 export default function AppSidebar() {
-  const { can, role, adminName } = useRole()
+  const { can, adminName } = useRole()
   const [pendingVerifications, setPendingVerifications] = useState<number | null>(null)
   const [openDisputes, setOpenDisputes] = useState<number | null>(null)
   const [unacknowledgedEmergencies, setUnacknowledgedEmergencies] = useState<number | null>(null)
   const [pendingClientKyc, setPendingClientKyc] = useState<number | null>(null)
   const [unassignedJobsCount, setUnassignedJobsCount] = useState<number | null>(null)
   const [highBidCount, setHighBidCount] = useState<number | null>(null)
+  const [pendingRecoveryCount, setPendingRecoveryCount] = useState<number | null>(null)
 
   useEffect(() => {
     function loadCounts() {
@@ -137,6 +139,9 @@ export default function AppSidebar() {
           .then(bids => setHighBidCount(bids.length))
           .catch(() => {})
       }
+      listSessionRecoveryRequests({ status: 'pending', limit: 1 })
+        .then(res => setPendingRecoveryCount(res.total))
+        .catch(() => {})
     }
     loadCounts()
     const id = setInterval(loadCounts, 60_000)
@@ -150,6 +155,7 @@ export default function AppSidebar() {
     { title: 'Verification Queue',   href: '/verifications', icon: BadgeCheck,       permission: 'view_verifications', badge: pendingVerifications ?? undefined },
     { title: 'Client KYC Queue',     href: '/users/clients/kyc-queue', icon: IdCard,    permission: 'view_verifications', badge: pendingClientKyc ?? undefined },
     { title: 'Disputes & Incidents', href: '/disputes',      icon: Scale,            permission: 'view_disputes',      badge: openDisputes ?? undefined },
+    { title: 'Account Recovery',     href: '/account-recovery', icon: KeyRound,      permission: 'view_session_recovery', badge: pendingRecoveryCount ?? undefined },
     { title: 'Emergency Alerts',     href: '/emergency',     icon: ShieldAlert,      permission: 'view_emergency',     badge: unacknowledgedEmergencies ?? undefined },
     { title: 'Activity Feed',        href: '/activity',      icon: Activity,         permission: 'view_activity' },
     { title: 'User Management',      href: '/users/clients', icon: Users,            permission: 'view_users' },
@@ -182,6 +188,8 @@ export default function AppSidebar() {
       ],
     },
     { title: 'Announcements', href: '/announcements', icon: Megaphone, permission: 'send_announcement' },
+    { title: 'Promotions',    href: '/promotions',    icon: Ticket,    permission: 'view_promotions' },
+    { title: 'Help Center',   href: '/help/articles', icon: BookOpen,  permission: 'view_help_articles' },
     { title: 'Reports',       href: '/reports',       icon: BarChart3, permission: 'view_reports' },
     { title: 'Admin Accounts',href: '/admin-accounts',icon: UserCog,   permission: 'manage_admins' },
   ]
@@ -193,8 +201,6 @@ export default function AppSidebar() {
   const initials = adminName
     ? adminName.split(' ').slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('')
     : '?'
-
-  const roleLabel = role ? ROLE_LABELS[role] : 'Admin'
 
   return (
     <aside className="w-56 shrink-0 h-screen bg-white flex flex-col">
@@ -231,7 +237,7 @@ export default function AppSidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-gray-800 truncate leading-tight">{adminName || 'Admin'}</p>
-            <p className="text-xs text-gray-400 truncate">{roleLabel}</p>
+            <p className="text-xs text-gray-400 truncate">Administrator</p>
           </div>
         </div>
         <Link href="/login">

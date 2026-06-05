@@ -14,10 +14,10 @@ interface PageGuardProps {
  * Wrap the page content (not the layout) with this component.
  */
 export function PageGuard({ permission, children }: PageGuardProps) {
-  const { can, role } = useRole()
+  const { can, permissions } = useRole()
 
-  // role is null on first SSR render — wait until hydration resolves
-  if (role === null) return null
+  // permissions is null on first SSR render — wait until hydration resolves
+  if (permissions === null) return null
 
   if (!can(permission)) return <AccessDenied />
 

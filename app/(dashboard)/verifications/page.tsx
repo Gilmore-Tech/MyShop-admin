@@ -189,6 +189,7 @@ function DocumentStep({
   onNext,
   onFinish,
   saving,
+  saveError,
 }: {
   doc: ProviderDocument
   index: number
@@ -200,6 +201,7 @@ function DocumentStep({
   onNext: () => void
   onFinish: () => void
   saving: boolean
+  saveError: string | null
 }) {
   const defaultAction: 'approve' | 'reject' = doc.status === 'rejected' ? 'reject' : 'approve'
   const [action, setAction] = useState<'approve' | 'reject'>(existingReview?.action ?? defaultAction)
@@ -319,6 +321,16 @@ function DocumentStep({
         <p className="flex items-center gap-1.5 text-xs text-red-600">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />{error}
         </p>
+      )}
+
+      {saveError && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+          <AlertCircle className="h-3.5 w-3.5 text-red-500 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-red-700">Save failed</p>
+            <p className="text-xs text-red-600 mt-0.5">{saveError}</p>
+          </div>
+        </div>
       )}
 
       {/* Navigation */}
@@ -502,17 +514,28 @@ function ReviewDrawer({
   const [currentIndex, setCurrentIndex] = useState(0)
   const [reviews, setReviews] = useState<Map<string, DocReview>>(new Map())
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [step, setStep] = useState<'docs' | 'final'>('docs')
   const [submitting, setSubmitting] = useState(false)
 
   const currentDoc = documents[currentIndex]
 
+  // Clear save error when the user navigates to a different document.
+  useEffect(() => { setSaveError(null) }, [currentIndex])
+
   async function handleDocSave(review: DocReview) {
     if (!currentDoc) return
     setSaving(true)
+    setSaveError(null)
     try {
       await reviewDocument(currentDoc.id, item.provider_type, review.action, review.reason || (review.action === 'approve' ? 'Approved.' : ''))
       setReviews(prev => new Map(prev).set(currentDoc.id, review))
+    } catch (err) {
+      const e = err as { status?: number; code?: string; message?: string }
+      console.error('[verifications] reviewDocument failed', { docId: currentDoc.id, status: e?.status, code: e?.code, message: e?.message, error: err })
+      const status = e?.status ? `${e.status} ` : ''
+      const code = e?.code && e.code !== String(e?.status) ? ` (${e.code})` : ''
+      setSaveError(`${status}${e?.message ?? 'Failed to save document review.'}${code}`)
     } finally {
       setSaving(false)
     }
@@ -593,6 +616,7 @@ function ReviewDrawer({
               onNext={() => setCurrentIndex(i => Math.min(documents.length - 1, i + 1))}
               onFinish={() => setStep('final')}
               saving={saving}
+              saveError={saveError}
             />
           ) : step === 'final' ? (
             <FinalDecisionStep
@@ -782,7 +806,7 @@ export default function VerificationsPage() {
       {reviewing && (
         <ReviewDrawer
           item={reviewing}
-          onClose={() => setReviewing(null)}
+          onClose={() => { setReviewing(null); load() }}
           onDone={() => { setReviewing(null); load() }}
         />
       )}

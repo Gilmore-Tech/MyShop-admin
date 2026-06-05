@@ -1,8 +1,9 @@
 'use client'
 
 import { PageGuard } from '@/components/common/page-guard'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { Search, Loader2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
@@ -14,6 +15,8 @@ import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { listTransactions, type AdminTransaction } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { formatTransactionAmount } from '@/lib/money'
+import { paymentMethodLabel } from '@/lib/payment-labels'
 
 const txTypeColors: Record<string, string> = {
   collection: 'bg-blue-100 text-blue-700',
@@ -23,10 +26,6 @@ const txTypeColors: Record<string, string> = {
   tip: 'bg-emerald-100 text-emerald-700',
 }
 
-function formatGhs(pesewas: number) {
-  return 'GHS ' + (pesewas / 100).toFixed(2)
-}
-
 function formatDateTime(iso: string) {
   return new Date(iso).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
@@ -34,53 +33,110 @@ function formatDateTime(iso: string) {
   })
 }
 
-const STATUS_OPTIONS = ['pending', 'completed', 'failed', 'refunded'] as const
+const STATUS_OPTIONS = ['pending', 'escrowed', 'completed', 'failed', 'refunded', 'disputed'] as const
+const SEARCH_DEBOUNCE_MS = 300
+const POLL_INTERVAL_MS = 30_000
+
+// Date-range filtering is hidden until the backend `/admin/payments/transactions`
+// DTO accepts `from`/`to` (currently rejects them with a VALIDATION_ERROR via
+// class-validator's forbidNonWhitelisted). Re-enable by:
+//   1. Re-importing DateRangeFilter, presetToRange, DEFAULT_DATE_RANGE, DateRangePresetKey
+//   2. Restoring the `range` URL param + filter UI + the `from`/`to` fields in
+//      the listTransactions call.
+// See docs/backend-spec-payment-panel.md (transactions endpoint additions).
 
 export default function TransactionsPage() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  // Filter state is the URL — useSearchParams is the source of truth so links
+  // are shareable. Spec §4.1: "Filters debounce 300ms, write to URL".
+  const typeFilter = searchParams.get('type') ?? 'all'
+  const statusFilter = searchParams.get('status') ?? 'all'
+  const urlSearch = searchParams.get('search') ?? ''
+  const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1)
+
+  // Search has its own local state so typing doesn't cause an immediate URL
+  // write — debounced below.
+  const [searchInput, setSearchInput] = useState(urlSearch)
+
   const [transactions, setTransactions] = useState<AdminTransaction[]>([])
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<AdminTransaction | null>(null)
   const LIMIT = 50
 
-  const fetchTransactions = useCallback(() => {
-    setLoading(true)
-    setError('')
-    listTransactions({
-      type: typeFilter === 'all' ? undefined : typeFilter,
-      status: statusFilter === 'all' ? undefined : statusFilter,
-      search: search || undefined,
-      page,
-      limit: LIMIT,
-    })
-      .then(res => {
-        setTransactions(res.items)
-        setTotal(res.total)
-        setTotalPages(res.totalPages)
+  // ── URL writers ────────────────────────────────────────────────────────────
+  const setParams = useCallback((updates: Record<string, string | null>) => {
+    const next = new URLSearchParams(searchParams.toString())
+    for (const [key, value] of Object.entries(updates)) {
+      if (value == null || value === '' || value === 'all') next.delete(key)
+      else next.set(key, value)
+    }
+    // Filter changes (other than the page itself) reset pagination.
+    const isFilterChange = Object.keys(updates).some(k => k !== 'page')
+    if (isFilterChange) next.delete('page')
+    const qs = next.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }, [router, pathname, searchParams])
+
+  // ── Debounced search → URL ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (searchInput === urlSearch) return
+    const id = setTimeout(() => {
+      setParams({ search: searchInput || null })
+    }, SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(id)
+  }, [searchInput, urlSearch, setParams])
+
+  // ── Fetch ──────────────────────────────────────────────────────────────────
+  const fetchTransactions = useCallback(
+    (silent = false) => {
+      if (!silent) setLoading(true)
+      setError('')
+      return listTransactions({
+        type: typeFilter === 'all' ? undefined : typeFilter,
+        status: statusFilter === 'all' ? undefined : statusFilter,
+        search: urlSearch || undefined,
+        page,
+        limit: LIMIT,
       })
-      .catch(err => {
-        setTransactions([])
-        setTotal(0)
-        setTotalPages(1)
-        if (err instanceof ApiError) {
-          setError(err.status === 404
-            ? 'Transactions endpoint is not yet available on the backend.'
-            : err.message)
-        } else {
-          setError('Failed to load transactions.')
-        }
-      })
-      .finally(() => setLoading(false))
-  }, [typeFilter, statusFilter, search, page])
+        .then(res => {
+          setTransactions(res.items)
+          setTotal(res.total)
+          setTotalPages(res.totalPages)
+        })
+        .catch(err => {
+          setTransactions([])
+          setTotal(0)
+          setTotalPages(1)
+          if (err instanceof ApiError) {
+            setError(err.status === 404
+              ? 'Transactions endpoint is not yet available on the backend.'
+              : err.message)
+          } else {
+            setError('Failed to load transactions.')
+          }
+        })
+        .finally(() => { if (!silent) setLoading(false) })
+    },
+    [typeFilter, statusFilter, urlSearch, page],
+  )
 
   useEffect(() => { fetchTransactions() }, [fetchTransactions])
-  useEffect(() => { setPage(1) }, [typeFilter, statusFilter, search])
+
+  // ── 30s background poll ────────────────────────────────────────────────────
+  // Keeps the feed fresh without disrupting the user. Pauses while a row drawer
+  // is open so a refetch doesn't replace the row out from under them.
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  useEffect(() => {
+    if (selected) return
+    pollRef.current = setInterval(() => fetchTransactions(true), POLL_INTERVAL_MS)
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [fetchTransactions, selected])
 
   return (
      <PageGuard permission="view_payments">
@@ -99,9 +155,14 @@ export default function TransactionsPage() {
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
-          <Input placeholder="Search TX ID, party, booking…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+          <Input
+            placeholder="Search TX ID, party, booking…"
+            className="pl-9"
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+          />
         </div>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
+        <Select value={typeFilter} onValueChange={v => setParams({ type: v })}>
           <SelectTrigger className="w-40 bg-white"><SelectValue placeholder="Type" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
@@ -112,7 +173,7 @@ export default function TransactionsPage() {
             <SelectItem value="tip">Tip</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={v => setParams({ status: v })}>
           <SelectTrigger className="w-36 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
@@ -121,7 +182,8 @@ export default function TransactionsPage() {
             ))}
           </SelectContent>
         </Select>
-        <Button variant="outline" size="sm" onClick={fetchTransactions} disabled={loading} className="gap-1.5">
+        {/* Date-range filter hidden until backend accepts from/to (see top of file). */}
+        <Button variant="outline" size="sm" onClick={() => fetchTransactions()} disabled={loading} className="gap-1.5">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -135,7 +197,7 @@ export default function TransactionsPage() {
             <p className="font-medium">Couldn&apos;t load transactions</p>
             <p className="text-xs mt-0.5">{error}</p>
           </div>
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={fetchTransactions}>Retry</Button>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => fetchTransactions()}>Retry</Button>
         </div>
       )}
 
@@ -182,10 +244,10 @@ export default function TransactionsPage() {
                       {tx.type}
                     </span>
                   </TableCell>
-                  <TableCell className={`text-right text-sm font-semibold ${tx.type === 'refund' || tx.type === 'clawback' ? 'text-red-600' : tx.type === 'payout' ? 'text-purple-600' : 'text-gray-900'}`}>
-                    {tx.type === 'refund' || tx.type === 'payout' ? '−' : '+'}{formatGhs(tx.amountPesewas)}
+                  <TableCell className={`text-right text-sm font-semibold tabular-nums ${tx.type === 'refund' || tx.type === 'clawback' ? 'text-red-600' : tx.type === 'payout' ? 'text-purple-600' : 'text-gray-900'}`}>
+                    {formatTransactionAmount(tx.amountPesewas, tx.type)}
                   </TableCell>
-                  <TableCell className="text-sm text-gray-500">{tx.method}</TableCell>
+                  <TableCell className="text-sm text-gray-500">{paymentMethodLabel(tx.method)}</TableCell>
                   <TableCell><StatusBadge status={tx.status} /></TableCell>
                   <TableCell className="font-mono text-sm text-slate-500">
                     {tx.bookingId
@@ -203,8 +265,18 @@ export default function TransactionsPage() {
             {loading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : `Page ${page} of ${totalPages} (${total} total)`}
           </p>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage(p => p - 1)}>Previous</Button>
-            <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage(p => p + 1)}>Next</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || loading}
+              onClick={() => setParams({ page: String(page - 1) })}
+            >Previous</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || loading}
+              onClick={() => setParams({ page: String(page + 1) })}
+            >Next</Button>
           </div>
         </div>
       </div>
@@ -257,12 +329,12 @@ function TransactionDetailDialog({ tx, onClose }: { tx: AdminTransaction | null;
             <Row
               label="Amount"
               value={
-                <span className={`font-semibold ${tx.type === 'refund' || tx.type === 'clawback' ? 'text-red-600' : tx.type === 'payout' ? 'text-purple-600' : 'text-gray-900'}`}>
-                  {tx.type === 'refund' || tx.type === 'payout' ? '−' : '+'}{formatGhs(tx.amountPesewas)}
+                <span className={`font-semibold tabular-nums ${tx.type === 'refund' || tx.type === 'clawback' ? 'text-red-600' : tx.type === 'payout' ? 'text-purple-600' : 'text-gray-900'}`}>
+                  {formatTransactionAmount(tx.amountPesewas, tx.type)}
                 </span>
               }
             />
-            <Row label="Method" value={tx.method} />
+            <Row label="Method" value={paymentMethodLabel(tx.method)} />
             <Row label="Created" value={formatDateTime(tx.createdAt)} />
             <Row label="Party" value={tx.party ?? '—'} />
             <Row

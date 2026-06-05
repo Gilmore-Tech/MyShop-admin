@@ -54,51 +54,47 @@
 
 ---
 
-## Role Model (4 Levels)
+## Permission Model (Granular)
 
-| Level | Role           | Description                                    |
-| ----- | -------------- | ---------------------------------------------- |
-| L1    | super_admin    | Full access — all endpoints, admin CRUD, bans  |
-| L2    | regional_admin | Verification queue, live map, reports, users   |
-| L3    | ops_admin      | Job assignment, live map, disputes, users      |
-| L4    | support_agent  | Disputes only (read + resolve), user list (RO) |
+> **Changed:** the fixed 4-role model (`super_admin` / `regional_admin` / `ops_admin` /
+> `support_agent`) has been **replaced** by per-admin granular permissions. There is no
+> role concept anymore. A super admin (= any admin holding `manage_admins`) creates other
+> admins and assigns each one an explicit set of permissions. `regionScope` remains as an
+> orthogonal, optional data-scope field, independent of permissions.
 
-### Permission Matrix (Frontend)
+Each admin holds an explicit `permissions: Permission[]`. The backend carries this set in
+the JWT and enforces it server-side via `@RequirePermissions(...)`; the frontend uses it
+only for nav/button visibility. The full catalogue (and its grouping for the picker UI) is
+defined in `lib/roles.ts` (`PERMISSION_GROUPS`).
 
-Defined in `lib/roles.ts`. Each permission maps to the roles that hold it.
+### Permission Catalogue (grouped)
 
-| Permission           | L1 | L2 | L3 | L4 | Enforced by                        |
-| -------------------- | -- | -- | -- | -- | ---------------------------------- |
-| `view_dashboard`     | ✅ | ✅ | ✅ | ✅ | PageGuard (dashboard page)         |
-| `view_analytics`     | ✅ |    |    |    | PageGuard (analytics page)         |
-| `view_live_map`      | ✅ | ✅ | ✅ |    | PageGuard (live-map page)          |
-| `view_verifications` | ✅ | ✅ |    |    | PageGuard (verifications page)     |
-| `review_verification`| ✅ | ✅ |    |    | API-level (backend guard)          |
-| `view_disputes`      | ✅ |    | ✅ | ✅ | PageGuard (disputes page)          |
-| `resolve_dispute`    | ✅ |    | ✅ | ✅ | API-level (backend guard)          |
-| `view_users`         | ✅ | ✅ | ✅ | ✅ | PageGuard (users/* pages)          |
-| `suspend_user`       | ✅ | ✅ | ✅ |    | API-level (backend guard)          |
-| `ban_user`           | ✅ |    |    |    | RoleGate (Ban button hidden)       |
-| `view_categories`    | ✅ |    | ✅ |    | PageGuard (categories page)        |
-| `edit_categories`    | ✅ |    |    |    | RoleGate (Add/Edit buttons hidden) |
-| `view_jobs`          | ✅ |    | ✅ |    | PageGuard (artisan-jobs page)      |
-| `assign_job`         | ✅ |    | ✅ |    | PageGuard (manual-assignment page) |
-| `view_payments`      | ✅ |    |    |    | PageGuard (payments/* pages)       |
-| `view_reports`       | ✅ | ✅ |    |    | PageGuard (reports page)           |
-| `view_config`        | ✅ |    |    |    | PageGuard (configuration page)     |
-| `view_ussd`          | ✅ |    |    |    | PageGuard (ussd page)              |
-| `send_announcement`  | ✅ |    | ✅ |    | PageGuard (announcements page)     |
-| `manage_admins`      | ✅ |    |    |    | PageGuard (admin-accounts page)    |
-| `review_bid`         | ✅ |    | ✅ |    | API-level (backend guard)          |
-| `view_rides`         | ✅ | ✅ | ✅ |    | PageGuard (rides page)             |
+| Group                | Permissions                                                                                  |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| Dashboard & Analytics| `view_dashboard`, `view_analytics`, `view_activity`, `view_reports`                          |
+| Live Monitoring      | `view_live_map`, `view_emergency`, `resolve_welfare_check`                                   |
+| Verification         | `view_verifications`, `review_verification`, `lift_verification_suspension`                   |
+| Disputes & Recovery  | `view_disputes`, `resolve_dispute`, `view_session_recovery`, `resolve_session_recovery`      |
+| Users                | `view_users`, `suspend_user`, `ban_user`, `delete_user`, `force_logout_user`, `unlock_payout_method` |
+| Categories           | `view_categories`, `edit_categories`, `delete_category`                                      |
+| Jobs & Rides         | `view_jobs`, `assign_job`, `delete_job`, `review_bid`, `view_rides`, `intervene_ride`        |
+| Payments             | `view_payments`, `run_batch_payouts`                                                         |
+| Config & USSD        | `view_config`, `view_ussd`                                                                   |
+| Comms & Help         | `send_announcement`, `view_promotions`, `manage_promotions`, `view_help_articles`, `edit_help_articles`, `delete_help_articles` |
+| Admin & Audit        | `manage_admins`, `view_audit_logs`                                                           |
 
-### Frontend Role Files
+`intervene_ride` (cancel / force-complete a ride) and `run_batch_payouts` (force-run a payout
+batch) replace the former role-name proxy checks. Page access is gated by `PageGuard`; inline
+actions by `RoleGate`; the backend re-checks every mutating endpoint.
+
+### Frontend Permission Files
 
 | File                                     | Purpose                                                   |
 | ---------------------------------------- | --------------------------------------------------------- |
-| `lib/roles.ts`                           | `AdminRole`, `Permission` types, `PERMISSIONS` map, `can()`, `ROLE_LABELS` |
-| `hooks/use-role.ts`                      | `useRole()` — reads admin from localStorage, exposes `can()`, `role`, `adminName` |
-| `components/common/access-denied.tsx`    | 403 screen with role label and "Go to Dashboard" link     |
+| `lib/roles.ts`                           | `Permission` type, `PERMISSION_GROUPS`, `PERMISSION_LABELS`, `ALL_PERMISSIONS`, `can(permissions, permission)` |
+| `hooks/use-role.ts`                      | `useRole()` — reads admin from localStorage, exposes `can()`, `permissions`, `adminName` |
+| `components/admin/permission-picker.tsx` | Grouped-checkbox picker used by the Create / Edit Permissions dialogs |
+| `components/common/access-denied.tsx`    | 403 screen with "Go to Dashboard" link                    |
 | `components/common/role-gate.tsx`        | Inline conditional renderer: hides children when no permission |
 | `components/common/page-guard.tsx`       | Full-page guard: renders `<AccessDenied>` when permission missing |
 
@@ -112,7 +108,7 @@ Defined in `lib/roles.ts`. Each permission maps to the roles that hold it.
 | Access token expiry  | 8 hours                      |
 | Refresh token expiry | 30 days                      |
 | Passport strategy    | `admin-jwt`                  |
-| JWT payload          | `sub`, `email`, `role`       |
+| JWT payload          | `sub`, `email`, `permissions` (was `role`) |
 | Frontend storage     | `localStorage` — keys: `myshop_admin_token`, `myshop_admin_refresh`, `myshop_admin_user` |
 
 ---
@@ -404,23 +400,26 @@ async updateUser(userId: string, dto: UpdateUserDto, admin: AdminJwtPayload) {
 
 ---
 
-### Admin Account Management (`/v1/admin/admins/`) — super_admin only
+### Admin Account Management (`/v1/admin/admins/`) — requires `manage_admins`
 
-| Method | Path                                  | Roles | Description             | Status |
-| ------ | ------------------------------------- | ----- | ----------------------- | ------ |
-| GET    | `/v1/admin/admins`                    | L1    | List all admins         | ✅     |
-| GET    | `/v1/admin/admins/:id`                | L1    | Get admin by ID         | ✅     |
-| POST   | `/v1/admin/admins`                    | L1    | Create admin account    | ✅     |
-| PATCH  | `/v1/admin/admins/:id/role`           | L1    | Update admin role       | ✅     |
-| PATCH  | `/v1/admin/admins/:id/deactivate`     | L1    | Block login immediately | ✅     |
-| PATCH  | `/v1/admin/admins/:id/reactivate`     | L1    | Restore login access    | ✅     |
-| PATCH  | `/v1/admin/admins/:id/reset-password` | L1    | Reset admin password    | ✅     |
-| DELETE | `/v1/admin/admins/:id`                | L1    | Soft-delete admin       | ✅     |
+| Method | Path                                  | Permission     | Description                  | Status |
+| ------ | ------------------------------------- | -------------- | ---------------------------- | ------ |
+| GET    | `/v1/admin/admins`                    | `manage_admins`| List all admins              | ✅     |
+| GET    | `/v1/admin/admins/:id`                | `manage_admins`| Get admin by ID              | ✅     |
+| POST   | `/v1/admin/admins`                    | `manage_admins`| Create admin account         | ✅     |
+| PATCH  | `/v1/admin/admins/:id/permissions`    | `manage_admins`| Replace admin permission set | ⬜     |
+| PATCH  | `/v1/admin/admins/:id/deactivate`     | `manage_admins`| Block login immediately      | ✅     |
+| PATCH  | `/v1/admin/admins/:id/reactivate`     | `manage_admins`| Restore login access         | ✅     |
+| PATCH  | `/v1/admin/admins/:id/reset-password` | `manage_admins`| Reset admin password         | ✅     |
+| DELETE | `/v1/admin/admins/:id`                | `manage_admins`| Soft-delete admin            | ✅     |
+
+> `PATCH /:id/permissions` replaces the former `PATCH /:id/role`. Backend must reject editing
+> your **own** permissions and removing `manage_admins` from the **last** holder (anti-lockout).
 
 **DTOs:**
 
-- `CreateAdminDto`: `email` (unique), `fullName`, `role` (4 admin roles), `password` (min 8 chars)
-- `UpdateAdminRoleDto`: `role` (enum of 4 roles)
+- `CreateAdminDto`: `email` (unique), `fullName`, `permissions` (`Permission[]`), `password` (min 8 chars), `regionScope?`
+- `UpdateAdminPermissionsDto`: `permissions` (`Permission[]`)
 - `ResetAdminPasswordDto`: `newPassword` (min 8 chars)
 
 **Business Rules:**

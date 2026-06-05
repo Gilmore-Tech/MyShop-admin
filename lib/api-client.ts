@@ -3,6 +3,7 @@
  * Base URL: https://myshop-api-2hy2.onrender.com/v1
  * Auth: Bearer JWT (admin-jwt strategy)
  */
+import type { Permission } from './roles'
 
 // In the browser during local dev, route through the Next.js rewrite proxy to avoid CORS.
 // In production (or when NEXT_PUBLIC_API_URL is set), hit the API directly.
@@ -80,7 +81,7 @@ export interface AdminUser {
   id: string
   email: string
   fullName: string
-  role: 'super_admin' | 'regional_admin' | 'ops_admin' | 'support_agent'
+  permissions: Permission[]
   regionScope: string | null
 }
 
@@ -98,6 +99,11 @@ interface ApiOptions extends RequestInit {
 // the dashboard hides any UI tied to a backend endpoint that isn't shipped yet.
 export const FEATURES = {
   highBidReview: process.env.NEXT_PUBLIC_FEATURE_HIGH_BID_REVIEW === 'true',
+  // Best-effort interim distance annotation on the manual-assignment page
+  // using /admin/live-map as the artisan-location source. See
+  // docs/backend-spec-nearby-artisan-search.md (Option C). Drop this once the
+  // backend ships first-class distance on /admin/artisans/search.
+  nearbyArtisanHaversine: process.env.NEXT_PUBLIC_FEATURE_NEARBY_ARTISAN_HAVERSINE === 'true',
 } as const
 
 

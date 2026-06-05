@@ -3,14 +3,21 @@
 import { useState, useEffect, useCallback } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
-import { Plus, Pencil, ToggleLeft, ToggleRight, Loader2, Search, Tag, ChevronRight, AlertTriangle } from 'lucide-react'
+import { Plus, Pencil, ToggleLeft, ToggleRight, Loader2, Search, Tag, ChevronRight, AlertTriangle, CornerDownRight, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Textarea } from '@/components/ui/textarea'
 import { PageHeader } from '@/components/common/page-header'
-import { getCategories, createCategory, updateCategory, type Category } from '@/lib/api'
+import { getCategories, createCategory, updateCategory, deleteCategory, type Category, type CategoryDeleteConflict } from '@/lib/api'
+import { ApiError } from '@/lib/api-client'
+
+// Backend validation: /^[a-z0-9]+(?:_[a-z0-9]+)*$/
+const ICON_NAME_PATTERN = /^[a-z0-9]+(?:_[a-z0-9]+)*$/
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -65,11 +72,17 @@ type FormState = {
   slug: string
   minBid: string
   highBidFlag: string
+  // 'none' = top-level. Empty string isn't used so an unselected radix Select
+  // value doesn't collide with the "no parent" choice.
+  parentId: string
+  iconName: string
+  sortOrder: string
 }
 
 const EMPTY_FORM: FormState = {
   name: '', slug: '',
   minBid: '30.00', highBidFlag: '5000.00',
+  parentId: 'none', iconName: '', sortOrder: '0',
 }
 
 // ── Category Dialog ───────────────────────────────────────────────────────────
@@ -77,11 +90,17 @@ const EMPTY_FORM: FormState = {
 function CategoryDialog({
   open,
   category,
+  defaultParentId,
+  allCategories,
   onClose,
   onSaved,
 }: {
   open: boolean
   category: Category | null
+  /** Pre-fill the Parent picker when opening from a parent row's "Add subcategory". */
+  defaultParentId?: string | null
+  /** Top-level categories used to populate the Parent picker. */
+  allCategories: Category[]
   onClose: () => void
   onSaved: (saved: Category) => void
 }) {
@@ -98,12 +117,27 @@ function CategoryDialog({
         slug: category.slug,
         minBid: pesewasToGhs(category.minBidPesewas),
         highBidFlag: pesewasToGhs(category.highBidFlagPesewas),
+        parentId: category.parentId ?? 'none',
+        iconName: category.iconName ?? '',
+        sortOrder: String(category.sortOrder ?? 0),
       })
     } else {
-      setForm(EMPTY_FORM)
+      setForm({
+        ...EMPTY_FORM,
+        parentId: defaultParentId ?? 'none',
+      })
     }
     setError('')
-  }, [open, category])
+  }, [open, category, defaultParentId])
+
+  // Only top-level (parent-less, active) categories can themselves act as
+  // parents — backend Prisma schema doesn't enforce depth, but keeping the tree
+  // 2-deep matches the mobile client's model and prevents weird nesting.
+  const parentOptions = allCategories.filter(c => c.parentId === null && c.id !== category?.id)
+  const isSubcategory = form.parentId !== 'none'
+  // Don't let an edit move a category between parents (backend doesn't accept
+  // parentId on UpdateCategoryDto either).
+  const parentLocked = isEdit
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(f => ({ ...f, [key]: value }))
@@ -121,21 +155,38 @@ function CategoryDialog({
     e.preventDefault()
     const name = form.name.trim()
     const slug = form.slug.trim()
+    const iconName = form.iconName.trim()
     const minBidPesewas = ghsToPesewas(form.minBid)
     const highBidFlagPesewas = ghsToPesewas(form.highBidFlag)
+    const sortOrder = Number(form.sortOrder)
 
     if (!name) { setError('Name is required.'); return }
     if (!slug) { setError('Slug is required.'); return }
+    if (iconName && !ICON_NAME_PATTERN.test(iconName)) {
+      setError('Icon name must be lowercase snake_case (e.g. "handyman", "laptop_mac").')
+      return
+    }
     if (isNaN(minBidPesewas) || minBidPesewas <= 0) { setError('Minimum bid must be a positive amount.'); return }
     if (isNaN(highBidFlagPesewas) || highBidFlagPesewas <= 0) { setError('High-bid flag threshold must be a positive amount.'); return }
     if (highBidFlagPesewas <= minBidPesewas) { setError('High-bid flag must be greater than the minimum bid.'); return }
+    if (!Number.isFinite(sortOrder) || sortOrder < 0 || sortOrder > 999) {
+      setError('Sort order must be between 0 and 999.')
+      return
+    }
 
     setSaving(true)
     setError('')
     try {
       const saved = isEdit
-        ? await updateCategory(category!.id, { name, slug, minBidPesewas, highBidFlagPesewas }) as Category
-        : await createCategory({ name, slug, minBidPesewas, highBidFlagPesewas }) as Category
+        ? await updateCategory(category!.id, {
+            name, slug, minBidPesewas, highBidFlagPesewas, sortOrder,
+            ...(iconName ? { iconName } : {}),
+          }) as Category
+        : await createCategory({
+            name, slug, minBidPesewas, highBidFlagPesewas, sortOrder,
+            ...(form.parentId !== 'none' ? { parentId: form.parentId } : {}),
+            ...(iconName ? { iconName } : {}),
+          }) as Category
       onSaved(saved)
       onClose()
     } catch (err: unknown) {
@@ -149,19 +200,50 @@ function CategoryDialog({
     <Dialog open={open} onOpenChange={open => { if (!open) onClose() }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit Category' : 'New Service Category'}</DialogTitle>
+          <DialogTitle>
+            {isEdit ? 'Edit Category'
+              : isSubcategory ? 'New Subcategory'
+              : 'New Service Category'}
+          </DialogTitle>
           <DialogDescription>
-            {isEdit ? 'Update the category details.' : 'Add a new artisan service category to the marketplace.'}
+            {isEdit ? 'Update the category details.'
+              : isSubcategory ? 'Add a subcategory under an existing parent.'
+              : 'Add a new artisan service category to the marketplace.'}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+          {/* Parent picker */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Parent</Label>
+            <Select
+              value={form.parentId}
+              onValueChange={v => set('parentId', v)}
+              disabled={parentLocked}
+            >
+              <SelectTrigger className="bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— Top-level category —</SelectItem>
+                {parentOptions.map(p => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-gray-400">
+              {parentLocked
+                ? 'Parent cannot be changed after creation.'
+                : 'Choose "Top-level" for a new umbrella category, or a parent for a subcategory.'}
+            </p>
+          </div>
+
           {/* Name + Slug */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</Label>
               <Input
-                placeholder="e.g. Plumbing"
+                placeholder={isSubcategory ? 'e.g. Laptop Repair' : 'e.g. Plumbing'}
                 value={form.name}
                 onChange={e => handleNameChange(e.target.value)}
                 maxLength={60}
@@ -170,12 +252,40 @@ function CategoryDialog({
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Slug</Label>
               <Input
-                placeholder="plumbing"
+                placeholder={isSubcategory ? 'repair-laptop' : 'plumbing'}
                 value={form.slug}
                 onChange={e => set('slug', slugify(e.target.value))}
                 maxLength={60}
                 className="font-mono text-sm"
               />
+            </div>
+          </div>
+
+          {/* Icon + sort order */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Material Icon</Label>
+              <Input
+                placeholder="e.g. handyman, laptop_mac"
+                value={form.iconName}
+                onChange={e => set('iconName', e.target.value.toLowerCase())}
+                maxLength={60}
+                className="font-mono text-sm"
+              />
+              <p className="text-[11px] text-gray-400">
+                Lowercase snake_case (Flutter <code>Icons.X</code>). Optional.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sort Order</Label>
+              <Input
+                type="number"
+                min={0}
+                max={999}
+                value={form.sortOrder}
+                onChange={e => set('sortOrder', e.target.value)}
+              />
+              <p className="text-[11px] text-gray-400">Lower = first (0–999).</p>
             </div>
           </div>
 
@@ -240,6 +350,165 @@ function CategoryDialog({
   )
 }
 
+// ── Delete dialog ─────────────────────────────────────────────────────────────
+
+function DeleteCategoryDialog({
+  category, onClose, onDeleted,
+}: {
+  category: Category | null
+  onClose: () => void
+  onDeleted: (deletedId: string) => void
+}) {
+  const [reason, setReason] = useState('')
+  const [force, setForce] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [conflict, setConflict] = useState<CategoryDeleteConflict | null>(null)
+
+  // Reset on open / category change.
+  useEffect(() => {
+    setReason('')
+    setForce(false)
+    setError('')
+    setConflict(null)
+  }, [category?.id])
+
+  if (!category) return null
+
+  const reasonValid = reason.trim().length >= 10
+  // Job-block is unbypassable; force only helps when only artisans/subcategories block.
+  const blockedByJobs = conflict?.code === 'CATEGORY_HAS_JOBS'
+  const canSubmit = reasonValid && !submitting && !blockedByJobs
+
+  async function handleDelete() {
+    if (!category) return
+    setError('')
+    setConflict(null)
+    setSubmitting(true)
+    try {
+      await deleteCategory(category.id, { reason: reason.trim(), force })
+      onDeleted(category.id)
+      onClose()
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 409) {
+        const details = (err as unknown as { details?: CategoryDeleteConflict }).details
+        // Surface counts from the 409 body when present. ApiError today doesn't
+        // carry a typed details field; if backend wraps in the standard envelope
+        // we fall back to inferring from the message.
+        if (details && typeof details === 'object') {
+          setConflict({
+            code: details.code ?? (err.message.includes('JOBS') ? 'CATEGORY_HAS_JOBS' : 'CATEGORY_IN_USE'),
+            artisansCount: details.artisansCount ?? 0,
+            jobsCount: details.jobsCount ?? 0,
+            subcategoryCount: details.subcategoryCount ?? 0,
+          })
+        } else {
+          setConflict({
+            code: err.message.includes('JOBS') ? 'CATEGORY_HAS_JOBS' : 'CATEGORY_IN_USE',
+            artisansCount: 0, jobsCount: 0, subcategoryCount: 0,
+          })
+        }
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Failed to delete category.')
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open={!!category} onOpenChange={open => { if (!open) onClose() }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-red-600 flex items-center gap-2">
+            <Trash2 className="h-4 w-4" /> Delete &ldquo;{category.name}&rdquo;
+          </DialogTitle>
+          <DialogDescription>
+            This permanently removes the category. Historical jobs always block deletion to preserve audit records.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-1">
+          {conflict && (
+            <div className={`rounded-lg p-3 space-y-2 ${
+              blockedByJobs ? 'bg-red-50 border border-red-100' : 'bg-amber-50 border border-amber-100'
+            }`}>
+              <p className={`text-xs font-semibold uppercase tracking-wide ${
+                blockedByJobs ? 'text-red-700' : 'text-amber-700'
+              }`}>
+                {blockedByJobs ? 'Cannot delete — historical jobs exist' : 'Category is in use'}
+              </p>
+              <ul className="text-xs text-gray-700 space-y-0.5 list-disc list-inside">
+                {conflict.artisansCount > 0 && <li>{conflict.artisansCount} artisan{conflict.artisansCount === 1 ? '' : 's'} offer{conflict.artisansCount === 1 ? 's' : ''} this category</li>}
+                {conflict.subcategoryCount > 0 && <li>{conflict.subcategoryCount} subcategor{conflict.subcategoryCount === 1 ? 'y' : 'ies'} under this category</li>}
+                {conflict.jobsCount > 0 && <li className="text-red-700 font-medium">{conflict.jobsCount} historical job{conflict.jobsCount === 1 ? '' : 's'} reference{conflict.jobsCount === 1 ? 's' : ''} it</li>}
+              </ul>
+              {blockedByJobs ? (
+                <p className="text-[11px] text-red-700 leading-snug">
+                  Use <strong>Deactivate</strong> instead — that hides it from new bookings without breaking historical data.
+                </p>
+              ) : (
+                <p className="text-[11px] text-amber-700 leading-snug">
+                  Tick &ldquo;Force&rdquo; below to remove artisan mappings and cascade-delete subcategories.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Reason <span className="text-gray-400">(min 10 chars, audit-logged)</span>
+            </Label>
+            <Textarea
+              rows={3}
+              placeholder="Describe why this category is being deleted…"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              className="text-sm"
+            />
+            <p className={`text-[11px] ${reasonValid ? 'text-emerald-600' : 'text-gray-400'}`}>
+              {reason.trim().length} / 10 characters
+            </p>
+          </div>
+
+          {!blockedByJobs && conflict && (
+            <label className="flex items-start gap-2 cursor-pointer">
+              <Checkbox
+                checked={force}
+                onCheckedChange={v => setForce(v === true)}
+                className="mt-0.5"
+              />
+              <span className="text-xs text-gray-700 leading-snug">
+                <span className="font-medium text-red-700">Force delete:</span> remove artisan mappings and cascade-delete subcategories. This cannot be undone.
+              </span>
+            </label>
+          )}
+
+          {error && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-700">{error}</p>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            disabled={!canSubmit || (conflict?.code === 'CATEGORY_IN_USE' && !force)}
+            onClick={handleDelete}
+            className="bg-red-600 hover:bg-red-700 text-white gap-2"
+            title={blockedByJobs ? 'Historical jobs prevent deletion. Deactivate the category instead.' : undefined}
+          >
+            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {force ? 'Force Delete' : 'Delete'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CategoriesPage() {
@@ -248,7 +517,9 @@ export default function CategoriesPage() {
   const [search, setSearch] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Category | null>(null)
+  const [creatingUnder, setCreatingUnder] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [deletingCategory, setDeletingCategory] = useState<Category | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -260,8 +531,13 @@ export default function CategoriesPage() {
 
   useEffect(() => { load() }, [load])
 
-  function openCreate() { setEditing(null); setDialogOpen(true) }
-  function openEdit(cat: Category) { setEditing(cat); setDialogOpen(true) }
+  function openCreate() { setEditing(null); setCreatingUnder(null); setDialogOpen(true) }
+  function openEdit(cat: Category) { setEditing(cat); setCreatingUnder(null); setDialogOpen(true) }
+  function openCreateSubcategory(parent: Category) {
+    setEditing(null)
+    setCreatingUnder(parent.id)
+    setDialogOpen(true)
+  }
 
   function handleSaved(saved: Category) {
     setCategories(prev => {
@@ -273,6 +549,22 @@ export default function CategoriesPage() {
       }
       return [...prev, saved]
     })
+  }
+
+  function handleDeleted(deletedId: string) {
+    // Drop the row and any of its descendants (matches backend cascade).
+    const dropped = new Set<string>([deletedId])
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const c of categories) {
+        if (c.parentId && dropped.has(c.parentId) && !dropped.has(c.id)) {
+          dropped.add(c.id)
+          grew = true
+        }
+      }
+    }
+    setCategories(prev => prev.filter(c => !dropped.has(c.id)))
   }
 
   async function handleToggle(cat: Category) {
@@ -395,9 +687,16 @@ export default function CategoriesPage() {
                             <Tag className={`h-3.5 w-3.5 ${isChild ? 'text-purple-400' : 'text-orange-400'}`} />
                           </div>
                         )}
-                        <span className={`text-sm ${isChild ? 'text-gray-600' : 'font-medium text-gray-900'}`}>
-                          {cat.name}
-                        </span>
+                        <div className="flex flex-col min-w-0">
+                          <span className={`text-sm ${isChild ? 'text-gray-600' : 'font-medium text-gray-900'}`}>
+                            {cat.name}
+                          </span>
+                          {cat.iconName && (
+                            <span className="text-[10px] font-mono text-gray-400 truncate" title={`Icons.${cat.iconName}`}>
+                              {cat.iconName}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -425,6 +724,17 @@ export default function CategoriesPage() {
                     <TableCell>
                       <div className="flex items-center gap-1 justify-end">
                         <RoleGate permission="edit_categories">
+                          {!isChild && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-gray-400 hover:text-orange-600"
+                              onClick={() => openCreateSubcategory(cat)}
+                              title="Add subcategory"
+                            >
+                              <CornerDownRight className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -449,6 +759,17 @@ export default function CategoriesPage() {
                             : <ToggleLeft className="h-4 w-4" />
                           }
                         </Button>
+                        <RoleGate permission="delete_category">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-gray-400 hover:text-red-600"
+                            onClick={() => setDeletingCategory(cat)}
+                            title="Delete category"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </RoleGate>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -468,8 +789,16 @@ export default function CategoriesPage() {
       <CategoryDialog
         open={dialogOpen}
         category={editing}
+        defaultParentId={creatingUnder}
+        allCategories={categories}
         onClose={() => setDialogOpen(false)}
         onSaved={handleSaved}
+      />
+
+      <DeleteCategoryDialog
+        category={deletingCategory}
+        onClose={() => setDeletingCategory(null)}
+        onDeleted={handleDeleted}
       />
     </div>
     </PageGuard>
