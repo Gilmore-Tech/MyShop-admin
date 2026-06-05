@@ -7,11 +7,11 @@ import { Label } from '@/components/ui/label'
 
 export function clientKycBadge(status: string) {
   if (status === 'verified')
-    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700"><CheckCircle className="h-3 w-3" />Verified</span>
+    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600"><CheckCircle className="h-3 w-3" />Verified</span>
   if (status === 'rejected')
-    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-red-100 text-red-700"><XCircle className="h-3 w-3" />Rejected</span>
+    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600"><XCircle className="h-3 w-3" />Rejected</span>
   if (status === 'pending_review')
-    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending Review</span>
+    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">Pending Review</span>
   return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Not Submitted</span>
 }
 
@@ -40,7 +40,7 @@ export function VerifyClientKycDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 pt-5 pb-4 border-b border-gray-100 shrink-0">
           <DialogTitle className="text-base font-semibold text-gray-900">
-            Review Ghana Card{fullName ? ` — ${fullName}` : ''}
+            Review Ghana Card{fullName ? ` - ${fullName}` : ''}
           </DialogTitle>
           <DialogDescription className="text-xs text-gray-400">
             Inspect the client&apos;s submitted Ghana Card image, then approve or reject.
@@ -111,7 +111,7 @@ export function VerifyClientKycDialog({
                 <textarea
                   className="mt-1.5 w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-20 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200"
                   placeholder={action === 'approve'
-                    ? 'Card verified — name and number match (optional).'
+                    ? 'Card verified - name and number match (optional).'
                     : 'e.g. Image is blurry. Please re-upload a clearer photo of the front.'}
                   value={reason}
                   onChange={e => onReasonChange(e.target.value)}

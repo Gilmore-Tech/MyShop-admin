@@ -13,17 +13,17 @@ import { getAuditLogs, listAdmins, type AuditLogEntry, type AdminAccount } from 
 import { ApiError } from '@/lib/api-client'
 
 const ACTION_LABELS: Record<string, { label: string; color: string }> = {
-  'document.approved':  { label: 'Document Approved',  color: 'bg-emerald-100 text-emerald-700' },
-  'document.rejected':  { label: 'Document Rejected',  color: 'bg-red-100 text-red-700' },
-  'user_suspended':     { label: 'User Suspended',     color: 'bg-amber-100 text-amber-700' },
-  'user_banned':        { label: 'User Banned',        color: 'bg-red-100 text-red-700' },
-  'user_reinstated':    { label: 'User Reinstated',    color: 'bg-emerald-100 text-emerald-700' },
-  'user_updated':       { label: 'User Updated',       color: 'bg-blue-100 text-blue-700' },
-  'admin_created':      { label: 'Admin Created',      color: 'bg-purple-100 text-purple-700' },
+  'document.approved':  { label: 'Document Approved',  color: 'bg-gray-100 text-gray-600' },
+  'document.rejected':  { label: 'Document Rejected',  color: 'bg-gray-100 text-gray-600' },
+  'user_suspended':     { label: 'User Suspended',     color: 'bg-gray-100 text-gray-600' },
+  'user_banned':        { label: 'User Banned',        color: 'bg-gray-100 text-gray-600' },
+  'user_reinstated':    { label: 'User Reinstated',    color: 'bg-gray-100 text-gray-600' },
+  'user_updated':       { label: 'User Updated',       color: 'bg-gray-100 text-gray-600' },
+  'admin_created':      { label: 'Admin Created',      color: 'bg-gray-100 text-gray-600' },
   'admin_deactivated':  { label: 'Admin Deactivated',  color: 'bg-gray-100 text-gray-600' },
-  'admin_reactivated':  { label: 'Admin Reactivated',  color: 'bg-emerald-100 text-emerald-700' },
-  'admin_role_changed': { label: 'Role Changed',       color: 'bg-blue-100 text-blue-700' },
-  'admin_permissions_changed': { label: 'Permissions Changed', color: 'bg-blue-100 text-blue-700' },
+  'admin_reactivated':  { label: 'Admin Reactivated',  color: 'bg-gray-100 text-gray-600' },
+  'admin_role_changed': { label: 'Role Changed',       color: 'bg-gray-100 text-gray-600' },
+  'admin_permissions_changed': { label: 'Permissions Changed', color: 'bg-gray-100 text-gray-600' },
 }
 
 function formatDate(iso: string) {
@@ -56,13 +56,13 @@ function ActionBadge({ action }: { action: string }) {
 
 function DetailsCell({ entry }: { entry: AuditLogEntry }) {
   const d = entry.details
-  if (!d) return <span className="text-gray-300">—</span>
+  if (!d) return <span className="text-gray-300">-</span>
   const parts: string[] = []
   if (d.documentType) parts.push(String(d.documentType).replace(/_/g, ' '))
   if (d.providerType) parts.push(String(d.providerType))
   if (d.reason && d.reason !== 'Approved.' && d.reason !== 'Rejected.') parts.push(`"${d.reason}"`)
   if (parts.length === 0) parts.push(JSON.stringify(d))
-  return <span className="text-sm text-gray-500 capitalize">{parts.join(' · ')}</span>
+  return <span className="text-sm text-gray-500 capitalize">{parts.join(' - ')}</span>
 }
 
 const LIMIT = 20
@@ -254,7 +254,7 @@ export default function AuditLogsPage() {
                     </TableCell>
                     <TableCell><DetailsCell entry={entry} /></TableCell>
                     <TableCell className="text-xs text-gray-400 font-mono">
-                      {entry.ipAddress ?? '—'}
+                      {entry.ipAddress ?? '-'}
                     </TableCell>
                   </TableRow>
                 ))
@@ -267,7 +267,7 @@ export default function AuditLogsPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between mt-4">
             <p className="text-sm text-gray-400">
-              Page {page} of {totalPages} · {total} total entries
+              Page {page} of {totalPages} - {total} total entries
             </p>
             <div className="flex items-center gap-2">
               <Button

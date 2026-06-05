@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, use } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
@@ -23,12 +23,12 @@ import {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtGhs(pesewas: number | null | undefined) {
-  if (pesewas == null) return '—'
+  if (pesewas == null) return '-'
   return 'GHS ' + (pesewas / 100).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function fmtDate(iso: string | null | undefined) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   return new Date(iso).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
@@ -46,12 +46,12 @@ function TimelineRow({ label, value, highlight }: { label: string; value: string
     <div className="flex items-center gap-3 py-1.5">
       <div className="w-2 h-2 rounded-full bg-gray-200 shrink-0" />
       <span className="text-xs text-gray-400 w-36 shrink-0">{label}</span>
-      <span className="text-xs text-gray-300">—</span>
+      <span className="text-xs text-gray-300">-</span>
     </div>
   )
   return (
     <div className="flex items-center gap-3 py-1.5">
-      <div className={`w-2 h-2 rounded-full shrink-0 ${highlight ? 'bg-orange-400' : 'bg-emerald-500'}`} />
+      <div className={`w-2 h-2 rounded-full shrink-0 ${highlight ? 'bg-gray-400' : 'bg-gray-400'}`} />
       <span className="text-xs text-gray-500 w-36 shrink-0">{label}</span>
       <span className={`text-xs font-medium ${highlight ? 'text-orange-600' : 'text-gray-700'}`}>{value}</span>
     </div>
@@ -69,12 +69,12 @@ function BidCard({ bid, isAssigned, onAssign, assigning, onUnexpire, unexpiring 
   unexpiring: boolean
 }) {
   const statusColors: Record<string, string> = {
-    pending: 'bg-amber-100 text-amber-700',
-    accepted: 'bg-emerald-100 text-emerald-700',
-    rejected: 'bg-red-100 text-red-600',
+    pending: 'bg-gray-100 text-gray-600',
+    accepted: 'bg-gray-100 text-gray-600',
+    rejected: 'bg-gray-100 text-gray-600',
     expired: 'bg-gray-100 text-gray-500',
     bid_expired: 'bg-gray-100 text-gray-500',
-    admin_review: 'bg-purple-100 text-purple-700',
+    admin_review: 'bg-gray-100 text-gray-600',
   }
   const isExpired = bid.status === 'expired' || bid.status === 'bid_expired' || bid.status?.toLowerCase().includes('expir')
   return (
@@ -82,7 +82,7 @@ function BidCard({ bid, isAssigned, onAssign, assigning, onUnexpire, unexpiring 
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-900 truncate">{bid.artisanName ?? 'Unknown Artisan'}</p>
-          <p className="text-xs text-gray-500">{bid.artisanPhone ?? '—'}</p>
+          <p className="text-xs text-gray-500">{bid.artisanPhone ?? '-'}</p>
         </div>
         <div className="text-right shrink-0">
           <p className={`text-sm font-bold ${isExpired ? 'text-gray-400' : 'text-gray-900'}`}>{fmtGhs(bid.amountPesewas)}</p>
@@ -98,7 +98,7 @@ function BidCard({ bid, isAssigned, onAssign, assigning, onUnexpire, unexpiring 
         <p className="text-[11px] text-gray-400">
           Submitted {fmtDateShort(bid.createdAt)}
           {isExpired && bid.expiresAt && (
-            <span className="ml-1.5 text-gray-400">· expired {fmtDateShort(bid.expiresAt)}</span>
+            <span className="ml-1.5 text-gray-400">- expired {fmtDateShort(bid.expiresAt)}</span>
           )}
         </p>
         <div className="flex items-center gap-1.5">
@@ -275,8 +275,8 @@ function CancelJobDialog({ open, onClose, onConfirm, loading }: {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function JobDetailPage({ params }: { params: { id: string } }) {
-  const { id: jobId } = params
+export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: jobId } = use(params)
   const router = useRouter()
 
   const [job, setJob] = useState<JobDetail | null>(null)
@@ -372,7 +372,7 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
       <div>
         <PageHeader
           title="Job Details"
-          subtitle={job ? `#${job.id.slice(-8).toUpperCase()} · ${job.category?.name ?? ''}` : 'Loading…'}
+          subtitle={job ? `#${job.id.slice(-8).toUpperCase()} - ${job.category?.name ?? ''}` : 'Loading…'}
           actions={
             <Link href="/artisan-jobs">
               <Button variant="outline" size="sm" className="gap-1.5">
@@ -405,7 +405,7 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
                 </span>
               )}
               {job.assignedByAdmin && (
-                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
                   Manually Assigned
                 </span>
               )}
@@ -454,7 +454,7 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <Tag className="h-4 w-4 text-orange-400" /> Job Overview
+                      <Tag className="h-4 w-4 text-gray-600" /> Job Overview
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
@@ -465,7 +465,7 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Category</p>
-                        <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-medium">
+                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
                           {job.category.name}
                         </span>
                       </div>
@@ -520,7 +520,7 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4 text-amber-400" /> Supplement Request
+                        <AlertTriangle className="h-4 w-4 text-gray-600" /> Supplement Request
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2">
@@ -572,12 +572,12 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <User className="h-4 w-4 text-blue-400" /> Client
+                      <User className="h-4 w-4 text-gray-600" /> Client
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-1">
-                    <p className="text-sm font-semibold text-gray-900">{job.client.name ?? '—'}</p>
-                    <p className="text-xs text-gray-500">{job.client.phone ?? '—'}</p>
+                    <p className="text-sm font-semibold text-gray-900">{job.client.name ?? '-'}</p>
+                    <p className="text-xs text-gray-500">{job.client.phone ?? '-'}</p>
                   </CardContent>
                 </Card>
 
@@ -585,18 +585,18 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <Wrench className="h-4 w-4 text-orange-400" /> Artisan
+                      <Wrench className="h-4 w-4 text-gray-600" /> Artisan
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {job.artisan ? (
                       <div className="space-y-1">
-                        <p className="text-sm font-semibold text-gray-900">{job.artisan.name ?? '—'}</p>
-                        <p className="text-xs text-gray-500">{job.artisan.phone ?? '—'}</p>
+                        <p className="text-sm font-semibold text-gray-900">{job.artisan.name ?? '-'}</p>
+                        <p className="text-xs text-gray-500">{job.artisan.phone ?? '-'}</p>
                         <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${
                           job.artisan.verificationStatus === 'approved'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-amber-100 text-amber-700'
+                            ? 'bg-gray-100 text-gray-600'
+                            : 'bg-gray-100 text-gray-600'
                         }`}>
                           {job.artisan.verificationStatus}
                         </span>
@@ -614,7 +614,7 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center justify-between">
                       <span className="flex items-center gap-2">
-                        <Hammer className="h-4 w-4 text-purple-400" /> Bids
+                        <Hammer className="h-4 w-4 text-gray-600" /> Bids
                       </span>
                       <span className="text-xs font-normal text-gray-400">{job.bids.length} total</span>
                     </CardTitle>

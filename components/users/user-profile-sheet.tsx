@@ -38,11 +38,11 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
 
 function docStatusBadge(status: string) {
   if (status === 'approved' || status === 'confirmed')
-    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700"><CheckCircle className="h-3 w-3" />Approved</span>
+    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600"><CheckCircle className="h-3 w-3" />Approved</span>
   if (status === 'rejected')
-    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-red-100 text-red-700"><XCircle className="h-3 w-3" />Rejected</span>
+    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600"><XCircle className="h-3 w-3" />Rejected</span>
   if (status === 'pending_review')
-    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending Review</span>
+    return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">Pending Review</span>
   return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Awaiting Upload</span>
 }
 
@@ -75,7 +75,7 @@ function DocumentCard({ doc }: { doc: UserProviderDocument }) {
             <FileText className="h-3.5 w-3.5 text-gray-400 shrink-0" />
             <span className="text-sm font-medium text-gray-900 truncate">{doc.label || doc.documentType}</span>
             {doc.version > 1 && (
-              <span className="text-[10px] bg-blue-50 text-blue-600 px-1 rounded font-medium shrink-0">v{doc.version}</span>
+              <span className="text-[10px] bg-gray-100 text-gray-600 px-1 rounded font-medium shrink-0">v{doc.version}</span>
             )}
           </div>
           {docStatusBadge(doc.status)}
@@ -263,7 +263,7 @@ function VerifyProviderDialog({
         {/* Header */}
         <DialogHeader className="px-6 pt-5 pb-4 border-b border-gray-100 shrink-0">
           <DialogTitle className="text-base font-semibold text-gray-900 capitalize">
-            Review {providerType} — {user?.fullName}
+            Review {providerType} - {user?.fullName}
           </DialogTitle>
           <DialogDescription className="text-xs text-gray-400">
             Review the provider details and documents before making a decision.
@@ -280,10 +280,10 @@ function VerifyProviderDialog({
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Vehicle</p>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { label: 'Make & Model', value: [driver.vehicleMake, driver.vehicleModel].filter(Boolean).join(' ') || '—' },
-                    { label: 'Year', value: driver.vehicleYear ?? '—' },
-                    { label: 'Plate Number', value: driver.vehiclePlate ?? '—' },
-                    { label: 'Color', value: driver.vehicleColor ?? '—' },
+                    { label: 'Make & Model', value: [driver.vehicleMake, driver.vehicleModel].filter(Boolean).join(' ') || '-' },
+                    { label: 'Year', value: driver.vehicleYear ?? '-' },
+                    { label: 'Plate Number', value: driver.vehiclePlate ?? '-' },
+                    { label: 'Color', value: driver.vehicleColor ?? '-' },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
                       <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
@@ -296,8 +296,8 @@ function VerifyProviderDialog({
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Licence</p>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { label: 'Licence Number', value: driver.licenceNumber ?? '—' },
-                    { label: 'Expiry', value: driver.licenceExpiry ? new Date(driver.licenceExpiry).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—' },
+                    { label: 'Licence Number', value: driver.licenceNumber ?? '-' },
+                    { label: 'Expiry', value: driver.licenceExpiry ? new Date(driver.licenceExpiry).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-' },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
                       <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
@@ -310,8 +310,8 @@ function VerifyProviderDialog({
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Payout</p>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { label: 'Preference', value: driver.payoutPreference ?? '—' },
-                    { label: 'Method', value: driver.payoutMethod ?? '—' },
+                    { label: 'Preference', value: driver.payoutPreference ?? '-' },
+                    { label: 'Method', value: driver.payoutMethod ?? '-' },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
                       <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
@@ -329,12 +329,12 @@ function VerifyProviderDialog({
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Business Info</p>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { label: 'Business Name', value: artisan.businessName ?? '—' },
-                    { label: 'Display Name', value: artisan.displayName ?? '—' },
-                    { label: 'Categories', value: artisan.categories?.join(', ') || '—' },
-                    { label: 'Service Radius', value: artisan.serviceRadius != null ? `${artisan.serviceRadius} km` : '—' },
-                    { label: 'Capacity', value: artisan.shopCapacity ?? '—' },
-                    { label: 'Max Concurrent Jobs', value: artisan.maxConcurrentJobs ?? '—' },
+                    { label: 'Business Name', value: artisan.businessName ?? '-' },
+                    { label: 'Display Name', value: artisan.displayName ?? '-' },
+                    { label: 'Categories', value: artisan.categories?.join(', ') || '-' },
+                    { label: 'Service Radius', value: artisan.serviceRadius != null ? `${artisan.serviceRadius} km` : '-' },
+                    { label: 'Capacity', value: artisan.shopCapacity ?? '-' },
+                    { label: 'Max Concurrent Jobs', value: artisan.maxConcurrentJobs ?? '-' },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
                       <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
@@ -347,8 +347,8 @@ function VerifyProviderDialog({
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Payout</p>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { label: 'Preference', value: artisan.payoutPreference ?? '—' },
-                    { label: 'Method', value: artisan.payoutMethod ?? '—' },
+                    { label: 'Preference', value: artisan.payoutPreference ?? '-' },
+                    { label: 'Method', value: artisan.payoutMethod ?? '-' },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
                       <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
@@ -670,11 +670,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
   }
 
   const roles = u?.roles ?? []
-  const roleColor = roles.includes('driver')
-    ? 'bg-green-100 text-green-700'
-    : roles.includes('artisan')
-    ? 'bg-purple-100 text-purple-700'
-    : 'bg-blue-100 text-blue-700'
+  const roleColor = 'bg-gray-100 text-gray-600'
 
   return (
     <>
@@ -733,11 +729,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                       <div className="flex flex-wrap items-center gap-1.5 mt-1">
                         <StatusBadge status={u.status} />
                         {roles.map(r => (
-                          <span key={r} className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${
-                            r === 'client' ? 'bg-blue-100 text-blue-700'
-                            : r === 'driver' ? 'bg-green-100 text-green-700'
-                            : 'bg-purple-100 text-purple-700'
-                          }`}>{r}</span>
+                          <span key={r} className="text-[11px] px-1.5 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">{r}</span>
                         ))}
                       </div>
                     </>
@@ -823,7 +815,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">Online Status</span>
                       {u.driver.onlineStatus === 'online'
-                        ? <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Online</span>
+                        ? <span className="flex items-center gap-1.5 text-xs text-gray-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-gray-400" />Online</span>
                         : <span className="text-xs text-gray-400">Offline</span>}
                     </div>
 
@@ -878,7 +870,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                         <span className="flex items-center gap-1.5 text-gray-900 text-xs capitalize">
                           {u.driver.payoutMethod ?? <span className="text-gray-400 italic">Not set</span>}
                           {u.driver.payoutLocked && (
-                            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">
                               <Lock className="h-2.5 w-2.5" />Locked
                             </span>
                           )}
@@ -937,7 +929,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">Online Status</span>
                       {u.artisan.onlineStatus === 'online'
-                        ? <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Online</span>
+                        ? <span className="flex items-center gap-1.5 text-xs text-gray-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-gray-400" />Online</span>
                         : <span className="text-xs text-gray-400">Offline</span>}
                     </div>
 
@@ -956,7 +948,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                         {(u.artisan.categories ?? []).length > 0
                           ? <div className="flex flex-wrap gap-1 justify-end">
                               {(u.artisan.categories ?? []).map(cat => (
-                                <span key={cat} className="text-[10px] bg-purple-50 text-purple-700 border border-purple-100 px-1.5 py-0.5 rounded-full">{cat}</span>
+                                <span key={cat} className="text-[10px] bg-gray-100 text-gray-600 border border-gray-200 px-1.5 py-0.5 rounded-full">{cat}</span>
                               ))}
                             </div>
                           : <span className="text-xs text-gray-400 italic ml-auto">Not set</span>}
@@ -986,7 +978,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                         <span className="flex items-center gap-1.5 text-gray-900 text-xs capitalize">
                           {u.artisan.payoutMethod ?? <span className="text-gray-400 italic">Not set</span>}
                           {u.artisan.payoutLocked && (
-                            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">
                               <Lock className="h-2.5 w-2.5" />Locked
                             </span>
                           )}
@@ -1138,7 +1130,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                 : actionDialog === 'delete'
                 ? 'Soft-deletes the account. Use for housekeeping (duplicate / test) or when the user has requested removal. Data is retained 90 days; outstanding clawbacks must be settled first.'
                 : actionDialog === 'force_logout'
-                ? 'Revoke every active session for this user. They will be signed out on every device and must log in again — use after verifying identity over the phone.'
+                ? 'Revoke every active session for this user. They will be signed out on every device and must log in again - use after verifying identity over the phone.'
                 : actionDialog === 'lift_verification'
                 ? 'Restores the provider\'s verification status to "approved", lifting an auto-suspension from the rating or cancellation engine. They\'ll be able to go online again.'
                 : 'This will suspend the user. You can reinstate them later.'
@@ -1218,7 +1210,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
               <Label className="text-xs text-gray-500">Reason <span className="text-gray-400">(optional)</span></Label>
               <textarea
                 className="mt-1.5 w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-20 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200"
-                placeholder="e.g. User contacted support — lost access to MoMo number…"
+                placeholder="e.g. User contacted support - lost access to MoMo number…"
                 value={unlockReason}
                 onChange={e => setUnlockReason(e.target.value)}
               />

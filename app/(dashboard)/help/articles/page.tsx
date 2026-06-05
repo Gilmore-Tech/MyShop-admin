@@ -254,7 +254,7 @@ export default function HelpArticlesPage() {
                       {categoryById.get(a.categoryId)?.title ?? a.categorySlug}
                     </TableCell>
                     <TableCell>
-                      <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full whitespace-nowrap">
                         {AUDIENCE_LABEL[a.audience]}
                       </span>
                     </TableCell>

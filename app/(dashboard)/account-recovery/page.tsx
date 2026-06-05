@@ -38,7 +38,7 @@ const STATUS_OPTIONS: Array<{ value: 'all' | SessionRecoveryStatus; label: strin
 ]
 
 function formatDateTime(iso: string | null) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   return new Date(iso).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -56,7 +56,7 @@ function ageLabel(iso: string): string {
 }
 
 function shortDevice(id: string | null): string {
-  if (!id) return '—'
+  if (!id) return '-'
   return id.length > 12 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id
 }
 
@@ -156,7 +156,7 @@ export default function AccountRecoveryPage() {
           <Info className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
           <p>
             Triggered when a user tries to log into a role that&apos;s already active on another device.
-            Verify identity (Ghana Card photo, vehicle/categories, history) before approving — approval revokes
+            Verify identity (Ghana Card photo, vehicle/categories, history) before approving - approval revokes
             the old session and lets the new device complete OTP login.
           </p>
         </div>
@@ -233,7 +233,7 @@ export default function AccountRecoveryPage() {
                     <TableCell>
                       {r.userType ? (
                         <StatusBadge status={r.userType} />
-                      ) : <span className="text-gray-300 text-xs">—</span>}
+                      ) : <span className="text-gray-300 text-xs">-</span>}
                     </TableCell>
                     <TableCell className="text-sm font-mono text-gray-600 flex items-center gap-1.5">
                       <Phone className="h-3 w-3 text-gray-400" />
@@ -405,7 +405,7 @@ function RecoveryDetailDrawer({
                   tone="amber"
                   rows={[
                     ['Device ID', detail.requestingDeviceId, true],
-                    ['IP', detail.requestingIp ?? '—', false],
+                    ['IP', detail.requestingIp ?? '-', false],
                     ['Raised', formatDateTime(detail.createdAt), false],
                   ]}
                 />
@@ -413,9 +413,9 @@ function RecoveryDetailDrawer({
                   title="Logged-in device"
                   tone="blue"
                   rows={[
-                    ['Role', detail.currentSessionRole ?? '—', false],
-                    ['Device ID', detail.currentSessionDeviceId ?? '—', true],
-                    ['Device info', detail.currentSessionDeviceInfo ?? '—', false],
+                    ['Role', detail.currentSessionRole ?? '-', false],
+                    ['Device ID', detail.currentSessionDeviceId ?? '-', true],
+                    ['Device info', detail.currentSessionDeviceInfo ?? '-', false],
                     ['Logged in', formatDateTime(detail.currentSessionLoggedInAt), false],
                   ]}
                 />
@@ -430,7 +430,7 @@ function RecoveryDetailDrawer({
                   <div>
                     <p className="text-sm text-amber-800 font-medium">No matching user record</p>
                     <p className="text-xs text-amber-700 mt-0.5">
-                      This phone has no active user account. Approval is disabled — verify and dismiss instead.
+                      This phone has no active user account. Approval is disabled - verify and dismiss instead.
                     </p>
                   </div>
                 </div>
@@ -445,7 +445,7 @@ function RecoveryDetailDrawer({
                       ? 'Old session revoked.'
                       : detail.resolvedAction === 'dismissed'
                         ? 'Dismissed without revoking.'
-                        : detail.status === 'expired' ? 'Expired.' : '—'}
+                        : detail.status === 'expired' ? 'Expired.' : '-'}
                   </p>
                   {detail.resolvedAt && (
                     <p className="text-xs text-gray-500 flex items-center gap-1.5">
@@ -492,8 +492,8 @@ function RecoveryDetailDrawer({
                       disabled={!canApprove || submitting != null}
                       onClick={handleApprove}
                       title={
-                        !detail.userId ? 'No matching user — cannot revoke a session.'
-                        : !revokeRole ? 'Role unknown — cannot revoke.'
+                        !detail.userId ? 'No matching user - cannot revoke a session.'
+                        : !revokeRole ? 'Role unknown - cannot revoke.'
                         : undefined
                       }
                     >
@@ -525,8 +525,8 @@ function SessionPanel({
   tone: 'amber' | 'blue'
   rows: Array<[string, string, boolean /* mono */]>
 }) {
-  const ring = tone === 'amber' ? 'border-amber-200 bg-amber-50/40' : 'border-blue-200 bg-blue-50/40'
-  const titleClr = tone === 'amber' ? 'text-amber-700' : 'text-blue-700'
+  const ring = 'border-gray-200 bg-gray-50/40'
+  const titleClr = 'text-gray-600'
   return (
     <div className={`rounded-lg border ${ring} p-3 space-y-2`}>
       <p className={`text-[11px] font-semibold uppercase tracking-widest flex items-center gap-1.5 ${titleClr}`}>
@@ -578,22 +578,22 @@ function IdentityPanel({ detail }: { detail: SessionRecoveryRequestDetail }) {
         <Stat label="Registered" value={formatDateTime(i.registeredAt)} />
         {detail.userType === 'driver' && (
           <>
-            <Stat label="Verification" value={i.verificationStatus ?? '—'} />
-            <Stat label="Completed rides" value={i.completedRidesCount?.toString() ?? '—'} />
+            <Stat label="Verification" value={i.verificationStatus ?? '-'} />
+            <Stat label="Completed rides" value={i.completedRidesCount?.toString() ?? '-'} />
             {i.vehicle && (
               <Stat
                 label="Vehicle"
                 value={[i.vehicle.color, i.vehicle.make, i.vehicle.model, i.vehicle.plate]
-                  .filter(Boolean).join(' ') || '—'}
+                  .filter(Boolean).join(' ') || '-'}
               />
             )}
           </>
         )}
         {detail.userType === 'artisan' && (
           <>
-            <Stat label="Verification" value={i.verificationStatus ?? '—'} />
-            <Stat label="Completed jobs" value={i.completedJobsCount?.toString() ?? '—'} />
-            <Stat label="Categories" value={(i.categories ?? []).join(', ') || '—'} />
+            <Stat label="Verification" value={i.verificationStatus ?? '-'} />
+            <Stat label="Completed jobs" value={i.completedJobsCount?.toString() ?? '-'} />
+            <Stat label="Categories" value={(i.categories ?? []).join(', ') || '-'} />
           </>
         )}
         {detail.userType === 'client' && (

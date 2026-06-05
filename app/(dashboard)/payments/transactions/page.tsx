@@ -19,11 +19,11 @@ import { formatTransactionAmount } from '@/lib/money'
 import { paymentMethodLabel } from '@/lib/payment-labels'
 
 const txTypeColors: Record<string, string> = {
-  collection: 'bg-blue-100 text-blue-700',
-  payout: 'bg-purple-100 text-purple-700',
-  refund: 'bg-orange-100 text-orange-700',
-  clawback: 'bg-red-100 text-red-700',
-  tip: 'bg-emerald-100 text-emerald-700',
+  collection: 'bg-gray-100 text-gray-600',
+  payout: 'bg-gray-100 text-gray-600',
+  refund: 'bg-gray-100 text-gray-600',
+  clawback: 'bg-gray-100 text-gray-600',
+  tip: 'bg-gray-100 text-gray-600',
 }
 
 function formatDateTime(iso: string) {
@@ -252,9 +252,9 @@ export default function TransactionsPage() {
                   <TableCell className="font-mono text-sm text-slate-500">
                     {tx.bookingId
                       ? <BookingLink type={tx.bookingType} id={tx.bookingId} />
-                      : '—'}
+                      : '-'}
                   </TableCell>
-                  <TableCell className="text-sm">{tx.party ?? '—'}</TableCell>
+                  <TableCell className="text-sm">{tx.party ?? '-'}</TableCell>
                 </TableRow>
               ))
             )}
@@ -336,13 +336,13 @@ function TransactionDetailDialog({ tx, onClose }: { tx: AdminTransaction | null;
             />
             <Row label="Method" value={paymentMethodLabel(tx.method)} />
             <Row label="Created" value={formatDateTime(tx.createdAt)} />
-            <Row label="Party" value={tx.party ?? '—'} />
+            <Row label="Party" value={tx.party ?? '-'} />
             <Row
               label="Booking"
               value={
                 tx.bookingId ? (
                   <BookingLink type={tx.bookingType} id={tx.bookingId} />
-                ) : '—'
+                ) : '-'
               }
             />
             {tx.bookingType && (

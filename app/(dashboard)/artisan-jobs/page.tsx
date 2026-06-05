@@ -120,10 +120,10 @@ export default function ArtisanJobsPage() {
         subtitle={lockedRegion ? `Artisan service bookings · ${lockedRegion} region` : 'Manage all artisan service bookings'}
         actions={
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 bg-purple-50 rounded-lg px-3 py-1.5">
-              <Wrench className="h-3.5 w-3.5 text-purple-500" />
-              <span className="text-sm font-semibold text-purple-700">{activeCount}</span>
-              <span className="text-xs text-purple-400">active</span>
+            <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+              <Wrench className="h-3.5 w-3.5 text-gray-600" />
+              <span className="text-sm font-semibold text-gray-700">{activeCount}</span>
+              <span className="text-xs text-gray-400">active</span>
             </div>
             {staleJobs.length > 0 && (
               <div className="flex items-center gap-2 bg-red-50 rounded-lg px-3 py-1.5">
@@ -195,7 +195,7 @@ export default function ArtisanJobsPage() {
 
         {/* Region filter: locked for regional admins, selectable for super/ops */}
         {lockedRegion ? (
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-purple-100 text-purple-700">
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-gray-100 text-gray-600">
             <MapPin className="h-3 w-3" /> {lockedRegion}
           </span>
         ) : (
@@ -260,34 +260,34 @@ export default function ArtisanJobsPage() {
                     {job.staleHours > 0 && <StalenessFlag hours={job.staleHours} />}
                   </TableCell>
                   <TableCell className="text-sm text-gray-500 whitespace-nowrap">{formatDateTime(job.createdAt)}</TableCell>
-                  <TableCell className="text-sm font-medium text-gray-800">{job.clientName ?? '—'}</TableCell>
+                  <TableCell className="text-sm font-medium text-gray-800">{job.clientName ?? '-'}</TableCell>
                   <TableCell className="text-sm text-gray-500">
                     {job.artisanName
                       ? job.artisanName
-                      : <span className="text-amber-600 font-semibold">⚠ Unassigned</span>
+                      : <span className="text-amber-600 font-semibold flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Unassigned</span>
                     }
                   </TableCell>
                   <TableCell>
-                    <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-medium">
-                      {job.categoryName ?? '—'}
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
+                      {job.categoryName ?? '-'}
                     </span>
                   </TableCell>
                   {!lockedRegion && (
                     <TableCell>
                       {job.region
-                        ? <span className="inline-flex items-center gap-1 text-xs text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full font-medium"><MapPin className="h-2.5 w-2.5" />{job.region}</span>
-                        : <span className="text-gray-300">—</span>
+                        ? <span className="inline-flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full font-medium"><MapPin className="h-2.5 w-2.5" />{job.region}</span>
+                        : <span className="text-gray-300">-</span>
                       }
                     </TableCell>
                   )}
                   <TableCell><StatusBadge status={job.status} /></TableCell>
                   <TableCell className="text-right text-sm font-semibold text-gray-800">
-                    {job.agreedPricePesewas != null ? formatGhs(job.agreedPricePesewas) : '—'}
+                    {job.agreedPricePesewas != null ? formatGhs(job.agreedPricePesewas) : '-'}
                   </TableCell>
                   <TableCell className="text-right text-sm">
                     {job.supplementPesewas && job.supplementPesewas > 0
                       ? <span className="text-amber-600 font-semibold">+{formatGhs(job.supplementPesewas)}</span>
-                      : <span className="text-gray-400">—</span>
+                      : <span className="text-gray-400">-</span>
                     }
                   </TableCell>
                   <TableCell><StatusBadge status={job.paymentStatus ?? 'pending'} /></TableCell>

@@ -19,7 +19,7 @@ function formatGhs(pesewas: number) {
 }
 
 function formatDateTime(iso: string) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   return new Date(iso).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -124,7 +124,7 @@ export default function HighBidReviewPage() {
           actions={
             <div className="flex items-center gap-2">
               {reviewedCount > 0 && (
-                <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full font-medium">
+                <span className="text-xs bg-gray-100 text-gray-600 border border-gray-200 px-2.5 py-1 rounded-full font-medium">
                   {reviewedCount} reviewed this session
                 </span>
               )}
@@ -226,14 +226,14 @@ export default function HighBidReviewPage() {
                           <span className="font-mono text-sm font-bold text-orange-600">
                             BID-{bid.id.slice(-8).toUpperCase()}
                           </span>
-                          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
                             Awaiting Review
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 text-xs text-gray-400">
                           <Clock className="h-3 w-3" />
                           <span>{formatDateTime(bid.submittedAt)}</span>
-                          <span className="text-gray-300">·</span>
+                          <span className="text-gray-300">-</span>
                           <span>{timeAgo(bid.submittedAt)}</span>
                         </div>
                       </div>
@@ -260,7 +260,7 @@ export default function HighBidReviewPage() {
                             {icon}{label}
                           </p>
                           <p className={`text-sm font-medium text-gray-800 truncate ${mono ? 'font-mono text-orange-600' : ''}`}>
-                            {value || '—'}
+                            {value || '-'}
                           </p>
                         </div>
                       ))}
@@ -301,7 +301,7 @@ export default function HighBidReviewPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle className={dialog?.decision === 'approved' ? 'text-emerald-700' : 'text-red-600'}>
-                {dialog?.decision === 'approved' ? 'Approve' : 'Reject'} Bid — {dialog && formatGhs(dialog.bid.amountPesewas)}
+                {dialog?.decision === 'approved' ? 'Approve' : 'Reject'} Bid - {dialog && formatGhs(dialog.bid.amountPesewas)}
               </DialogTitle>
               <DialogDescription>
                 {dialog?.decision === 'approved'

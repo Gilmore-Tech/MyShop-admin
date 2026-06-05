@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Raleway, Roboto } from 'next/font/google'
 import './globals.css'
+import EnvBanner from '@/components/env-banner'
 
 const raleway = Raleway({
   variable: '--font-raleway',
@@ -23,8 +24,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${raleway.variable} ${roboto.variable} antialiased`}>
-        {children}
+      <body className={`${raleway.variable} ${roboto.variable} antialiased flex flex-col h-screen overflow-hidden`}>
+        <div className="flex-1 min-h-0">
+          {children}
+        </div>
+        <EnvBanner />
       </body>
     </html>
   )

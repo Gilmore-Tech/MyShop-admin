@@ -14,10 +14,10 @@ import { sendAnnouncement, getAnnouncementHistory, sendSms, type AnnouncementTop
 import { ApiError } from '@/lib/api-client'
 
 const AUDIENCE: { value: AnnouncementTopic; label: string; sub: string; icon: React.ElementType; colors: string; active: string }[] = [
-  { value: 'all_users', label: 'All Users', sub: 'Clients · Drivers · Artisans', icon: Users, colors: ' text-gray-600 hover: hover:bg-gray-50', active: ' bg-orange-50 text-orange-700 ring-1 ring-orange-100' },
-  { value: 'clients', label: 'Clients', sub: 'App users who book', icon: User, colors: ' text-gray-600 hover: hover:bg-gray-50', active: ' bg-blue-50 text-blue-700 ring-1 ring-blue-100' },
-  { value: 'drivers', label: 'Drivers', sub: 'Registered ride drivers', icon: Car, colors: ' text-gray-600 hover: hover:bg-gray-50', active: ' bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' },
-  { value: 'artisans', label: 'Artisans', sub: 'Service providers', icon: Wrench, colors: ' text-gray-600 hover: hover:bg-gray-50', active: ' bg-purple-50 text-purple-700 ring-1 ring-purple-100' },
+  { value: 'all_users', label: 'All Users', sub: 'Clients - Drivers - Artisans', icon: Users, colors: ' text-gray-600 hover: hover:bg-gray-50', active: ' bg-gray-100 text-gray-700 ring-1 ring-gray-200' },
+  { value: 'clients', label: 'Clients', sub: 'App users who book', icon: User, colors: ' text-gray-600 hover: hover:bg-gray-50', active: ' bg-gray-100 text-gray-700 ring-1 ring-gray-200' },
+  { value: 'drivers', label: 'Drivers', sub: 'Registered ride drivers', icon: Car, colors: ' text-gray-600 hover: hover:bg-gray-50', active: ' bg-gray-100 text-gray-700 ring-1 ring-gray-200' },
+  { value: 'artisans', label: 'Artisans', sub: 'Service providers', icon: Wrench, colors: ' text-gray-600 hover: hover:bg-gray-50', active: ' bg-gray-100 text-gray-700 ring-1 ring-gray-200' },
 ]
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -79,7 +79,7 @@ export default function AnnouncementsPage() {
 
       if (smsChannels.includes(channel)) {
         const result = await sendSms(topic as SmsAudience, `MyShop: ${body.trim()}`)
-        setSuccess(`Sent to ${label} — ${result.sent.toLocaleString()} SMS delivered, ${result.failed} failed.`)
+        setSuccess(`Sent to ${label} - ${result.sent.toLocaleString()} SMS delivered, ${result.failed} failed.`)
       } else {
         setSuccess(`Message sent to ${label}.`)
       }
@@ -121,7 +121,7 @@ export default function AnnouncementsPage() {
         {/* ── Compose panel ────────────────────────────────────────────────── */}
         <div className="xl:col-span-2 bg-white rounded-xl shadow-sm p-5 flex flex-col">
           <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
-            <Send className="h-4 w-4" style={{ color: '#F5A623' }} />
+            <Send className="h-4 w-4 text-gray-600" />
             Compose Message
           </h2>
 
@@ -209,7 +209,7 @@ export default function AnnouncementsPage() {
                 {body && <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">{body}</p>}
                 <div className="flex items-center gap-1.5 mt-2">
                   <selectedAudience.icon className="h-3 w-3 text-slate-400" />
-                  <p className="text-[10px] text-slate-400">{selectedAudience.label} · {CHANNEL_LABELS[channel]}</p>
+                  <p className="text-[10px] text-slate-400">{selectedAudience.label} - {CHANNEL_LABELS[channel]}</p>
                 </div>
               </div>
             )}
@@ -273,7 +273,7 @@ export default function AnnouncementsPage() {
                         <p className="truncate">{a.title}</p>
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full whitespace-nowrap">{a.audience}</span>
+                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full whitespace-nowrap">{a.audience}</span>
                       </TableCell>
                       <TableCell className="text-xs text-gray-500 whitespace-nowrap">{a.channel}</TableCell>
                       <TableCell className="text-xs text-gray-500 whitespace-nowrap">{formatDateTime(a.sentAt)}</TableCell>
@@ -285,7 +285,7 @@ export default function AnnouncementsPage() {
                             <span className="text-gray-400 font-normal ml-1 text-xs">({Math.round(a.opened / a.delivered * 100)}%)</span>
                           </span>
                         ) : (
-                          <span className="text-sm text-gray-400">—</span>
+                          <span className="text-sm text-gray-400">-</span>
                         )}
                       </TableCell>
                     </TableRow>

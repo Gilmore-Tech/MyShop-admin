@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
 import {
   Users, Car, Wrench, AlertTriangle,
   CheckCircle2, Phone, Navigation, TriangleAlert, ChevronRight,
-  UserCheck, TrendingUp, CheckCheck, Scale,
+  UserCheck, TrendingUp, Scale,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -25,20 +25,20 @@ function activityMeta(item: ActivityItem): {
   switch (item.eventType) {
     case 'ride_completed':
     case 'job_completed':
-      return { statusText: 'completed', statusColor: 'text-emerald-600 bg-emerald-50' }
+      return { statusText: 'completed', statusColor: 'text-gray-600 bg-gray-100' }
     case 'ride_cancelled':
-      return { statusText: 'cancelled', statusColor: 'text-gray-500 bg-gray-100' }
+      return { statusText: 'cancelled', statusColor: 'text-gray-600 bg-gray-100' }
     case 'ride_disputed':
     case 'job_disputed':
       return { statusText: 'disputed', statusColor: 'text-red-600 bg-red-50' }
     case 'escrow_released':
-      return { statusText: 'released', statusColor: 'text-blue-600 bg-blue-50' }
+      return { statusText: 'released', statusColor: 'text-gray-600 bg-gray-100' }
     case 'sos_triggered':
       return { statusText: 'emergency', statusColor: 'text-red-600 bg-red-50' }
     case 'kyc_submitted':
-      return { statusText: 'pending', statusColor: 'text-amber-600 bg-amber-50' }
+      return { statusText: 'pending', statusColor: 'text-gray-600 bg-gray-100' }
     case 'dispute_resolved':
-      return { statusText: 'resolved', statusColor: 'text-blue-600 bg-blue-50' }
+      return { statusText: 'resolved', statusColor: 'text-gray-600 bg-gray-100' }
     default:
       return { statusText: 'event', statusColor: 'text-gray-500 bg-gray-100' }
   }
@@ -49,11 +49,9 @@ function actorInitials(name: string | null): string {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
 }
 
-function actorColor(role: ActivityItem['actorRole']): string {
-  if (role === 'driver') return '#46535D'
-  if (role === 'artisan') return '#8B5CF6'
-  if (role === 'system') return '#9CA3AF'
-  return '#F5A623'
+function actorColor(_role: ActivityItem['actorRole']): string {
+  // Avatars are monochrome — single neutral gray regardless of role.
+  return '#9CA3AF'
 }
 
 function formatAmount(pesewas: number): string {
@@ -70,11 +68,9 @@ function timeAgo(iso: string): string {
 
 // ─── Footer status bar ────────────────────────────────────────────────────────
 const serviceStatus = [
-  { label: 'Payment API Provider', value: 'Active', ok: true },
-  { label: 'KYC Documents', value: 'Online', ok: true },
-  { label: 'OTP Engine', value: 'Operational', ok: true },
-  { label: 'KYC Agent Grade', value: 'Tier 2 Grade 3', ok: true },
-  { label: 'Hours of Running', value: 'Officer Log', ok: true },
+  { label: 'Payments', value: 'Operational' },
+  { label: 'KYC Service', value: 'Online' },
+  { label: 'OTP Engine', value: 'Operational' },
 ]
 
 // ─── Avatar circle ────────────────────────────────────────────────────────────
@@ -86,6 +82,57 @@ function Avatar({ initials, color = '#F5A623' }: { initials: string; color?: str
     >
       {initials}
     </div>
+  )
+}
+
+// ─── Primary "pulse" stat card ────────────────────────────────────────────────
+function StatCard({
+  icon: Icon, label, value, sub, bg, color, loading, compact = false,
+}: {
+  icon: React.ElementType; label: string; value: string; sub?: string | null
+  bg: string; color: string; loading: boolean; compact?: boolean
+}) {
+  return (
+    <div className="bg-white rounded-xl shadow-sm p-4 flex items-start gap-3">
+      <div className={`${compact ? 'w-8 h-8' : 'w-9 h-9'} rounded-lg ${bg} flex items-center justify-center shrink-0`}>
+        <Icon className={`${compact ? 'h-4 w-4' : 'h-[18px] w-[18px]'} ${color}`} />
+      </div>
+      <div className="min-w-0">
+        <p className={`${compact ? 'text-lg' : 'text-2xl'} font-bold leading-tight ${loading ? 'text-gray-300' : 'text-gray-900'}`}>{value}</p>
+        <p className="text-xs text-gray-400 font-medium mt-0.5 truncate">{label}</p>
+        {sub && <p className="text-[11px] text-emerald-600 font-medium mt-1">{sub}</p>}
+      </div>
+    </div>
+  )
+}
+
+// ─── Actionable "needs attention" card ────────────────────────────────────────
+function AttentionCard({
+  icon: Icon, label, value, href, cta, accent, loading,
+}: {
+  icon: React.ElementType; label: string; value: number; href: string
+  cta: string; accent: 'red' | 'amber'; loading: boolean
+}) {
+  const active = value > 0
+  const tone = accent === 'red'
+    ? { ring: 'border-red-200 bg-red-50/60 hover:bg-red-50', icon: 'bg-red-100 text-red-500', num: 'text-red-600', cta: 'text-red-600' }
+    : { ring: 'border-amber-200 bg-amber-50/60 hover:bg-amber-50', icon: 'bg-amber-100 text-amber-500', num: 'text-amber-600', cta: 'text-amber-600' }
+  const calm = { ring: 'border-gray-100 bg-white hover:bg-gray-50', icon: 'bg-emerald-50 text-emerald-500', num: 'text-gray-800', cta: 'text-gray-400' }
+  const s = active ? tone : calm
+  return (
+    <Link href={href} className={`group rounded-xl border ${s.ring} p-4 flex items-center gap-3.5 transition-colors`}>
+      <div className={`w-11 h-11 rounded-xl ${s.icon} flex items-center justify-center shrink-0`}>
+        {active ? <Icon className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-2xl font-bold leading-tight ${loading ? 'text-gray-300' : s.num}`}>{loading ? '-' : value}</p>
+        <p className="text-xs text-gray-500 font-medium mt-0.5">{label}</p>
+      </div>
+      <span className={`flex items-center gap-0.5 text-xs font-semibold shrink-0 ${s.cta}`}>
+        <span className="hidden sm:inline">{active ? cta : 'All clear'}</span>
+        <ChevronRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
+      </span>
+    </Link>
   )
 }
 
@@ -137,19 +184,25 @@ export default function DashboardPage() {
     return 'GHS ' + ghs.toFixed(0)
   }
 
-  const kpis = [
-    // Row 1 — registrations & live ops
-    { label: 'Registered Clients',  value: overview ? overview.registeredClients.toLocaleString()  : '—', icon: Users,         color: 'text-blue-600',    bg: 'bg-blue-50',    alert: false },
-    { label: 'Registered Drivers',  value: overview ? overview.registeredDrivers.toLocaleString()  : '—', icon: Car,           color: 'text-slate-600',   bg: 'bg-slate-100',  alert: false },
-    { label: 'Registered Artisans', value: overview ? overview.registeredArtisans.toLocaleString() : '—', icon: Wrench,        color: 'text-violet-600',  bg: 'bg-violet-50',  alert: false },
-    { label: 'Active Trips',        value: overview ? overview.activeRides.toString()               : '—', icon: Navigation,    color: 'text-sky-600',     bg: 'bg-sky-50',     alert: false },
-    { label: 'Active Jobs',         value: overview ? overview.activeJobs.toString()                : '—', icon: UserCheck,     color: 'text-orange-500',  bg: 'bg-orange-50',  alert: false },
-    // Row 2 — revenue & health
-    { label: 'Commission (month)',  value: overview ? fmtGhs(overview.commissionRevenue.monthGhs)   : '—', icon: TrendingUp,    color: 'text-emerald-600', bg: 'bg-emerald-50', alert: false },
-    { label: 'Commission (week)',   value: overview ? fmtGhs(overview.commissionRevenue.weekGhs)    : '—', icon: CheckCheck,    color: 'text-emerald-500', bg: 'bg-emerald-50', alert: false },
-    { label: 'Payment Success',     value: overview ? overview.paymentSuccessRatePct + '%'          : '—', icon: CheckCircle2,  color: 'text-teal-600',    bg: 'bg-teal-50',    alert: false },
-    { label: 'Pending KYC',         value: overview ? overview.pendingVerifications.toString()      : '—', icon: AlertTriangle, color: 'text-amber-500',   bg: 'bg-amber-50',   alert: (overview?.pendingVerifications ?? 0) > 0 },
-    { label: 'Open Disputes',       value: overview ? overview.openDisputes.toString()              : '—', icon: Scale,         color: 'text-red-500',     bg: 'bg-red-50',     alert: (overview?.openDisputes ?? 0) > 0 },
+  // Actionable items — surfaced first so admins see what needs doing.
+  const attention = [
+    { label: 'Pending KYC reviews', value: overview?.pendingVerifications ?? 0, href: '/verifications', icon: AlertTriangle, accent: 'amber' as const, cta: 'Review queue' },
+    { label: 'Open disputes',       value: overview?.openDisputes ?? 0,         href: '/disputes',      icon: Scale,         accent: 'red'   as const, cta: 'Resolve' },
+  ]
+
+  // The live pulse of the platform — 4 metrics that matter most right now.
+  const primaryKpis = [
+    { label: 'Active trips',   value: overview ? overview.activeRides.toString()             : '-', sub: null, icon: Navigation,   color: 'text-gray-600', bg: 'bg-gray-100' },
+    { label: 'Active jobs',    value: overview ? overview.activeJobs.toString()              : '-', sub: null, icon: UserCheck,    color: 'text-gray-600', bg: 'bg-gray-100' },
+    { label: 'Commission (month)', value: overview ? fmtGhs(overview.commissionRevenue.monthGhs) : '-', sub: overview ? `${fmtGhs(overview.commissionRevenue.weekGhs)} this week` : null, icon: TrendingUp, color: 'text-gray-600', bg: 'bg-gray-100' },
+    { label: 'Payment success', value: overview ? overview.paymentSuccessRatePct + '%'        : '-', sub: null, icon: CheckCircle2, color: 'text-gray-600', bg: 'bg-gray-100' },
+  ]
+
+  // Secondary context — registration scale, lower visual weight.
+  const registrations = [
+    { label: 'Clients',  value: overview ? overview.registeredClients.toLocaleString()  : '-', icon: Users,  color: 'text-gray-600', bg: 'bg-gray-100' },
+    { label: 'Drivers',  value: overview ? overview.registeredDrivers.toLocaleString()  : '-', icon: Car,    color: 'text-gray-600', bg: 'bg-gray-100' },
+    { label: 'Artisans', value: overview ? overview.registeredArtisans.toLocaleString() : '-', icon: Wrench, color: 'text-gray-600', bg: 'bg-gray-100' },
   ]
 
   const growthData = revenueData.slice(-14).map(d => ({
@@ -170,40 +223,61 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex flex-col gap-5 pb-0 -mb-6">
+    <div className="flex flex-col gap-6 pb-0 -mb-6">
 
       {/* ── Page title ───────────────────────────────────────────────────── */}
       <div>
         <h1 className="text-xl font-bold text-gray-900">Operations Overview</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Real-time snapshot — Ashanti Region pilot</p>
+        <p className="text-sm text-gray-400 mt-0.5">Real-time snapshot - Ashanti Region pilot</p>
       </div>
 
-      {/* ── KPI strip ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-5 gap-3 auto-rows-fr">
-        {kpis.map(kpi => {
-          const Icon = kpi.icon
-          return (
-            <div key={kpi.label} className="bg-white rounded-xl shadow-sm p-4 flex items-start justify-between relative">
-              <div>
-                <p className="text-xs text-gray-400 font-medium mb-1">{kpi.label}</p>
-                <p className={`text-2xl font-bold ${loadingKpis ? 'text-gray-300' : 'text-gray-900'}`}>{kpi.value}</p>
-              </div>
-              <div className={`w-9 h-9 rounded-lg ${kpi.bg} flex items-center justify-center shrink-0`}>
-                <Icon className={`h-4.5 w-4.5 ${kpi.color}`} />
-              </div>
-              {kpi.alert && (
-                <span className="absolute -top-1.5 -right-1.5 w-2.5 h-2.5 rounded-full bg-red-500" />
-              )}
-            </div>
-          )
-        })}
-      </div>
+      {/* ── Needs attention — actionable items first ─────────────────────── */}
+      <section className="space-y-2.5">
+        <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Needs attention</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {attention.map(a => (
+            <AttentionCard
+              key={a.label}
+              icon={a.icon} label={a.label} value={a.value}
+              href={a.href} cta={a.cta} accent={a.accent} loading={loadingKpis}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* ── Today at a glance — live pulse ───────────────────────────────── */}
+      <section className="space-y-2.5">
+        <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Today at a glance</h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {primaryKpis.map(kpi => (
+            <StatCard
+              key={kpi.label}
+              icon={kpi.icon} label={kpi.label} value={kpi.value} sub={kpi.sub}
+              bg={kpi.bg} color={kpi.color} loading={loadingKpis}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* ── Registered users — secondary context ─────────────────────────── */}
+      {/* <section className="space-y-2.5">
+        <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Registered users</h2>
+        <div className="grid grid-cols-3 gap-3">
+          {registrations.map(r => (
+            <StatCard
+              key={r.label}
+              icon={r.icon} label={r.label} value={r.value}
+              bg={r.bg} color={r.color} loading={loadingKpis} compact
+            />
+          ))}
+        </div>
+      </section> */}
 
       {/* ── Row 2: Growth Trends + Compliance ───────────────────────────── */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
         {/* Growth Trends */}
-        <div className="col-span-3 bg-white rounded-xl shadow-sm p-5">
+        <div className="lg:col-span-3 bg-white rounded-xl shadow-sm p-5">
           <div className="flex items-center justify-between mb-1">
             <div>
               <h2 className="text-sm font-semibold text-gray-800">Growth Trends</h2>
@@ -236,7 +310,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Compliance Status */}
-        <div className="col-span-2 bg-white rounded-xl shadow-sm p-5 flex flex-col gap-4">
+        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm p-5 flex flex-col gap-4">
           <div>
             <h2 className="text-sm font-semibold text-gray-800">Compliance Status</h2>
             <p className="text-xs text-gray-400">KYC &amp; Police Clearance</p>
@@ -281,10 +355,10 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Row 3: Activity + Safety Console ───────────────────────────── */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
         {/* Recent Platform Activity */}
-        <div className="col-span-3 bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="lg:col-span-3 bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3.5">
             <div>
               <h2 className="text-sm font-semibold text-gray-800">Recent Platform Activity</h2>
@@ -293,7 +367,8 @@ export default function DashboardPage() {
             <Link href="/rides" className="text-xs font-medium" style={{ color: '#F5A623' }}>View Full Logs</Link>
           </div>
 
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px]">
             <thead className="bg-gray-50 border-y border-gray-100">
               <tr>
                 <th className="px-5 py-2 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Actor</th>
@@ -329,7 +404,7 @@ export default function DashboardPage() {
                   <td colSpan={4} className="px-5 py-10 text-center text-sm text-gray-400">No recent activity</td>
                 </tr>
               ) : (
-                activity.map(item => {
+                activity.slice(0, 6).map(item => {
                   const { statusText, statusColor } = activityMeta(item)
                   const roleLabel = item.actorRole.charAt(0).toUpperCase() + item.actorRole.slice(1)
                   return (
@@ -372,17 +447,18 @@ export default function DashboardPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
 
         {/* Safety Console */}
-        <div className="col-span-2 bg-white rounded-xl shadow-sm overflow-hidden flex flex-col">
+        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm overflow-hidden flex flex-col">
           <div className="flex items-center justify-between px-5 py-3.5">
             <div>
               <h2 className="text-sm font-semibold text-gray-800">Safety Console</h2>
-              <p className="text-xs text-gray-400">Critical alerts requiring immediate action</p>
+              <p className="text-xs text-gray-400">Active emergencies</p>
             </div>
-            <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> LIVE
+            <span className="flex items-center gap-1 text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-pulse" /> LIVE
             </span>
           </div>
 
@@ -415,58 +491,41 @@ export default function DashboardPage() {
               emergencies
                 .filter(e => !e.acknowledgedAt)
                 .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
-                .map(alert => (
-                  <div
-                    key={alert.id}
-                    className={`px-4 py-3.5 ${alert.type === 'sos' ? 'bg-red-50/60' : ''}`}
-                  >
-                    {alert.type === 'sos' && (
-                      <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded uppercase tracking-wide mb-2 inline-block">
-                        ⚠ EMERGENCY SOS
-                      </span>
-                    )}
-                    {alert.type === 'welfare_check' && (
-                      <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase tracking-wide mb-2 inline-block">
-                        WELFARE CHECK
-                      </span>
-                    )}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5
-                          ${alert.type === 'sos' ? 'bg-red-100' : 'bg-amber-100'}`}>
-                          {alert.type === 'sos'
-                            ? <Phone className="h-3.5 w-3.5 text-red-500" />
-                            : <Navigation className="h-3.5 w-3.5 text-amber-500" />
-                          }
-                        </div>
-                        <div className="min-w-0">
-                          <p className={`text-sm font-semibold truncate ${alert.type === 'sos' ? 'text-red-700' : 'text-gray-800'}`}>
-                            {alert.actorName ?? 'Unknown'}{alert.actorRole ? ` (${alert.actorRole.charAt(0).toUpperCase() + alert.actorRole.slice(1)})` : ''}
-                          </p>
-                          {alert.locationDescription && (
-                            <p className="text-xs text-gray-500 mt-0.5">Located: {alert.locationDescription}</p>
-                          )}
-                          {alert.bookingId && (
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              {alert.bookingType === 'ride' ? 'Ride' : 'Job'} #{alert.bookingId.slice(-6).toUpperCase()}
-                            </p>
-                          )}
-                          <p className="text-xs text-gray-400 mt-0.5">{timeAgo(alert.occurredAt)}</p>
-                        </div>
+                .slice(0, 6)
+                .map(alert => {
+                  const sos = alert.type === 'sos'
+                  return (
+                    <div
+                      key={alert.id}
+                      className={`px-4 py-2.5 flex items-center gap-3 ${sos ? 'bg-red-50/50' : ''}`}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${sos ? 'bg-red-100' : 'bg-amber-100'}`}>
+                        {sos
+                          ? <Phone className="h-4 w-4 text-red-500" />
+                          : <Navigation className="h-4 w-4 text-amber-500" />
+                        }
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">
+                          {alert.actorName ?? 'Unknown'}
+                        </p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {sos ? 'SOS' : 'Welfare check'} - {timeAgo(alert.occurredAt)}
+                        </p>
                       </div>
                       <button
                         onClick={() => handleAcknowledge(alert.id)}
-                        className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors
-                          ${alert.type === 'sos'
+                        className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${
+                          sos
                             ? 'bg-red-500 text-white hover:bg-red-600'
                             : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                          }`}
+                        }`}
                       >
-                        {alert.type === 'sos' ? 'Respond' : 'Acknowledge'}
+                        {sos ? 'Respond' : 'Ack'}
                       </button>
                     </div>
-                  </div>
-                ))
+                  )
+                })
             )}
           </div>
 

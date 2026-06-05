@@ -4,10 +4,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Radio, BadgeCheck, Scale, Users,
-  Settings, Smartphone, ShieldCheck, Car,
-  CreditCard, Megaphone, BarChart3, UserCog, ChevronDown, LogOut,
-  LineChart, Tag, ClipboardList, ShieldAlert, Activity, IdCard,
-  BookOpen, KeyRound, Ticket,
+  Settings, Car, CreditCard, Megaphone, BarChart3, UserCog,
+  ChevronDown, LogOut, ClipboardList, BookOpen, Ticket,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -49,6 +47,13 @@ function NavLink({ item, can }: { item: NavItem; can: (p: Permission) => boolean
 
   if (item.children) {
     const visibleChildren = item.children.filter(c => !c.permission || can(c.permission))
+    // Hide the whole group if permissions filter out every child
+    if (visibleChildren.length === 0) return null
+
+    // A group is "active" when any of its children match the current route
+    const groupActive = visibleChildren.some(
+      c => pathname === c.href || pathname.startsWith(c.href + '/')
+    )
     // Roll up child badges onto the parent when collapsed
     const childBadgeTotal = visibleChildren.reduce((sum, c) => sum + (c.badge ?? 0), 0)
     const parentBadge = (item.badge ?? 0) + (open ? 0 : childBadgeTotal)
@@ -59,33 +64,36 @@ function NavLink({ item, can }: { item: NavItem; can: (p: Permission) => boolean
           onClick={() => setOpen(v => !v)}
           className={cn(
             'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors',
-            isActive ? 'bg-orange-50 text-orange-500 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+            groupActive ? 'bg-orange-50 text-orange-600 font-semibold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
           )}
         >
-          <item.icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-orange-500' : 'text-gray-400')} />
+          <item.icon className={cn('h-4 w-4 shrink-0', groupActive ? 'text-orange-500' : 'text-gray-400')} />
           <span className="flex-1 text-left">{item.title}</span>
           {parentBadge > 0 && <Badge count={parentBadge} variant="red" />}
-          <ChevronDown className={cn('h-3 w-3 text-gray-400 transition-transform', open && 'rotate-180')} />
+          <ChevronDown className={cn('h-3.5 w-3.5 text-gray-400 transition-transform', open && 'rotate-180')} />
         </button>
         {open && (
-          <div className="ml-6 mt-0.5 space-y-0.5 pl-3">
-            {visibleChildren.map(child => (
-              <Link
-                key={child.href}
-                href={child.href}
-                className={cn(
-                  'flex items-center px-2 py-1.5 rounded text-sm transition-colors',
-                  pathname === child.href || pathname.startsWith(child.href + '/')
-                    ? 'text-orange-500 font-medium'
-                    : 'text-gray-400 hover:text-gray-700'
-                )}
-              >
-                <span className="flex-1">{child.title}</span>
-                {child.badge != null && child.badge > 0 && (
-                  <Badge count={child.badge} variant={child.badgeVariant ?? 'red'} />
-                )}
-              </Link>
-            ))}
+          <div className="ml-[1.4rem] mt-1 mb-1 space-y-0.5 border-l border-gray-100 pl-3">
+            {visibleChildren.map(child => {
+              const childActive = pathname === child.href || pathname.startsWith(child.href + '/')
+              return (
+                <Link
+                  key={child.href}
+                  href={child.href}
+                  className={cn(
+                    'flex items-center px-2.5 py-1.5 rounded-md text-sm transition-colors',
+                    childActive
+                      ? 'text-orange-600 font-medium bg-orange-50/60'
+                      : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                  )}
+                >
+                  <span className="flex-1">{child.title}</span>
+                  {child.badge != null && child.badge > 0 && (
+                    <Badge count={child.badge} variant={child.badgeVariant ?? 'red'} />
+                  )}
+                </Link>
+              )
+            })}
           </div>
         )}
       </div>
@@ -148,54 +156,105 @@ export default function AppSidebar() {
     return () => clearInterval(id)
   }, [])
 
-  const primaryNav: NavItem[] = [
-    { title: 'Dashboard',            href: '/dashboard',     icon: LayoutDashboard, permission: 'view_dashboard' },
-    { title: 'Analytics',            href: '/analytics',     icon: LineChart,        permission: 'view_analytics' },
-    { title: 'Live Monitoring',      href: '/live-map',      icon: Radio,            permission: 'view_live_map' },
-    { title: 'Verification Queue',   href: '/verifications', icon: BadgeCheck,       permission: 'view_verifications', badge: pendingVerifications ?? undefined },
-    { title: 'Client KYC Queue',     href: '/users/clients/kyc-queue', icon: IdCard,    permission: 'view_verifications', badge: pendingClientKyc ?? undefined },
-    { title: 'Disputes & Incidents', href: '/disputes',      icon: Scale,            permission: 'view_disputes',      badge: openDisputes ?? undefined },
-    { title: 'Account Recovery',     href: '/account-recovery', icon: KeyRound,      permission: 'view_session_recovery', badge: pendingRecoveryCount ?? undefined },
-    { title: 'Emergency Alerts',     href: '/emergency',     icon: ShieldAlert,      permission: 'view_emergency',     badge: unacknowledgedEmergencies ?? undefined },
-    { title: 'Activity Feed',        href: '/activity',      icon: Activity,         permission: 'view_activity' },
-    { title: 'User Management',      href: '/users/clients', icon: Users,            permission: 'view_users' },
-    { title: 'Marketplace Config',   href: '/configuration', icon: Settings,         permission: 'view_config' },
-    { title: 'USSD & SMS Logs',      href: '/ussd',          icon: Smartphone,       permission: 'view_ussd' },
-    { title: 'System Settings',      href: '/system-settings',icon: ShieldCheck,      permission: 'manage_admins' },
-    { title: 'Audit Logs',           href: '/audit-logs',    icon: ClipboardList,    permission: 'view_audit_logs' },
-  ]
-
-  const secondaryNav: NavItem[] = [
+  // Sidebar is organised into labelled sections; multi-page areas collapse into groups.
+  const navSections: { label: string; items: NavItem[] }[] = [
     {
-      title: 'Trips & Rides', href: '/rides', icon: Car, permission: 'view_rides',
-      children: [
-        { title: 'All Rides',         href: '/rides' },
-        { title: 'Artisan Jobs',      href: '/artisan-jobs' },
-        { title: 'Manual Assignment', href: '/artisan-jobs/manual-assignment', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
-        ...(FEATURES.highBidReview
-          ? [{ title: 'High Bid Review', href: '/artisan-jobs/high-bid-review', permission: 'review_bid' as const, badge: highBidCount ?? undefined }]
-          : []),
+      label: 'Overview',
+      items: [
+        { title: 'Dashboard',  href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
+        {
+          title: 'Operations', href: '/live-map', icon: Radio,
+          children: [
+            { title: 'Live Monitoring', href: '/live-map',  permission: 'view_live_map' },
+            { title: 'Activity Feed',   href: '/activity',  permission: 'view_activity' },
+            { title: 'Emergency Alerts',href: '/emergency', permission: 'view_emergency', badge: unacknowledgedEmergencies ?? undefined },
+          ],
+        },
+        {
+          title: 'Insights', href: '/analytics', icon: BarChart3,
+          children: [
+            { title: 'Analytics', href: '/analytics', permission: 'view_analytics' },
+            { title: 'Reports',   href: '/reports',   permission: 'view_reports' },
+          ],
+        },
       ],
     },
-    { title: 'Service Categories', href: '/categories',    icon: Tag,      permission: 'view_categories' },
     {
-      title: 'Payments', href: '/payments', icon: CreditCard, permission: 'view_payments',
-      children: [
-        { title: 'Transactions',  href: '/payments/transactions' },
-        { title: 'Revenue',       href: '/payments/revenue' },
-        { title: 'Batch Payouts', href: '/payments/batch-payouts' },
-        { title: 'Clawbacks',     href: '/payments/clawbacks' },
+      label: 'Marketplace',
+      items: [
+        {
+          title: 'Trips & Services', href: '/rides', icon: Car, permission: 'view_rides',
+          children: [
+            { title: 'All Rides',          href: '/rides' },
+            { title: 'Artisan Jobs',       href: '/artisan-jobs' },
+            { title: 'Manual Assignment',  href: '/artisan-jobs/manual-assignment', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
+            ...(FEATURES.highBidReview
+              ? [{ title: 'High Bid Review', href: '/artisan-jobs/high-bid-review', permission: 'review_bid' as const, badge: highBidCount ?? undefined }]
+              : []),
+            { title: 'Service Categories', href: '/categories', permission: 'view_categories' },
+          ],
+        },
+        {
+          title: 'Payments', href: '/payments', icon: CreditCard, permission: 'view_payments',
+          children: [
+            { title: 'Transactions',  href: '/payments/transactions' },
+            { title: 'Revenue',       href: '/payments/revenue' },
+            { title: 'Batch Payouts', href: '/payments/batch-payouts' },
+            { title: 'Clawbacks',     href: '/payments/clawbacks' },
+          ],
+        },
       ],
     },
-    { title: 'Announcements', href: '/announcements', icon: Megaphone, permission: 'send_announcement' },
-    { title: 'Promotions',    href: '/promotions',    icon: Ticket,    permission: 'view_promotions' },
-    { title: 'Help Center',   href: '/help/articles', icon: BookOpen,  permission: 'view_help_articles' },
-    { title: 'Reports',       href: '/reports',       icon: BarChart3, permission: 'view_reports' },
-    { title: 'Admin Accounts',href: '/admin-accounts',icon: UserCog,   permission: 'manage_admins' },
+    {
+      label: 'Trust & Safety',
+      items: [
+        {
+          title: 'Verifications', href: '/verifications', icon: BadgeCheck,
+          children: [
+            { title: 'Verification Queue', href: '/verifications',           permission: 'view_verifications',    badge: pendingVerifications ?? undefined },
+            { title: 'Client KYC Queue',   href: '/users/clients/kyc-queue',  permission: 'view_verifications',    badge: pendingClientKyc ?? undefined },
+            { title: 'Account Recovery',   href: '/account-recovery',         permission: 'view_session_recovery', badge: pendingRecoveryCount ?? undefined },
+          ],
+        },
+        { title: 'Disputes & Incidents', href: '/disputes', icon: Scale, permission: 'view_disputes', badge: openDisputes ?? undefined },
+        { title: 'User Management',      href: '/users/clients', icon: Users, permission: 'view_users' },
+      ],
+    },
+    {
+      label: 'Engagement',
+      items: [
+        { title: 'Announcements', href: '/announcements', icon: Megaphone, permission: 'send_announcement' },
+        { title: 'Promotions',    href: '/promotions',    icon: Ticket,    permission: 'view_promotions' },
+        { title: 'Help Center',   href: '/help/articles', icon: BookOpen,  permission: 'view_help_articles' },
+      ],
+    },
+    {
+      label: 'System',
+      items: [
+        {
+          title: 'Configuration', href: '/configuration', icon: Settings,
+          children: [
+            { title: 'Marketplace Config', href: '/configuration',   permission: 'view_config' },
+            { title: 'USSD & SMS Logs',    href: '/ussd',            permission: 'view_ussd' },
+            { title: 'System Settings',    href: '/system-settings', permission: 'manage_admins' },
+          ],
+        },
+        { title: 'Audit Logs',      href: '/audit-logs',    icon: ClipboardList, permission: 'view_audit_logs' },
+        { title: 'Admin Accounts',  href: '/admin-accounts', icon: UserCog,      permission: 'manage_admins' },
+      ],
+    },
   ]
 
-  const visiblePrimary = primaryNav.filter(item => !item.permission || can(item.permission))
-  const visibleSecondary = secondaryNav.filter(item => !item.permission || can(item.permission))
+  // A section is visible if at least one of its items survives permission filtering.
+  function itemVisible(item: NavItem): boolean {
+    if (item.children) {
+      return item.children.some(c => !c.permission || can(c.permission))
+    }
+    return !item.permission || can(item.permission)
+  }
+  const visibleSections = navSections
+    .map(s => ({ ...s, items: s.items.filter(itemVisible) }))
+    .filter(s => s.items.length > 0)
 
   // Initials from name
   const initials = adminName
@@ -216,17 +275,16 @@ export default function AppSidebar() {
         </div>
       </div>
 
-      {/* Primary Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
-        {visiblePrimary.map(item => <NavLink key={item.href} item={item} can={can} />)}
-
-        {/* Divider + secondary nav */}
-        {visibleSecondary.length > 0 && (
-          <div className="pt-3 mt-2">
-            <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-widest px-3 mb-2">More</p>
-            {visibleSecondary.map(item => <NavLink key={item.href} item={item} can={can} />)}
+      {/* Sectioned Nav */}
+      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-5">
+        {visibleSections.map(section => (
+          <div key={section.label} className="space-y-0.5">
+            <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-widest px-3 mb-1.5">
+              {section.label}
+            </p>
+            {section.items.map(item => <NavLink key={item.href} item={item} can={can} />)}
           </div>
-        )}
+        ))}
       </nav>
 
       {/* User footer */}

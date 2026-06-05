@@ -3,9 +3,10 @@ import { type NextRequest, NextResponse } from 'next/server'
 const UPSTREAM =
   process.env.UPSTREAM_API_URL ?? 'https://myshop-api-2hy2.onrender.com/v1'
 
-async function handler(req: NextRequest, { params }: { params: { path: string[] } }) {
+async function handler(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params
   const url = new URL(req.url)
-  const upstream = `${UPSTREAM}/${params.path.join('/')}${url.search}`
+  const upstream = `${UPSTREAM}/${path.join('/')}${url.search}`
 
   const headers = new Headers()
   const authHeader = req.headers.get('authorization')

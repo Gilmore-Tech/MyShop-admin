@@ -225,7 +225,7 @@ function CategoryDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">— Top-level category —</SelectItem>
+                <SelectItem value="none">- Top-level category -</SelectItem>
                 {parentOptions.map(p => (
                   <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                 ))}
@@ -285,7 +285,7 @@ function CategoryDialog({
                 value={form.sortOrder}
                 onChange={e => set('sortOrder', e.target.value)}
               />
-              <p className="text-[11px] text-gray-400">Lower = first (0–999).</p>
+              <p className="text-[11px] text-gray-400">Lower = first (0-999).</p>
             </div>
           </div>
 
@@ -436,7 +436,7 @@ function DeleteCategoryDialog({
               <p className={`text-xs font-semibold uppercase tracking-wide ${
                 blockedByJobs ? 'text-red-700' : 'text-amber-700'
               }`}>
-                {blockedByJobs ? 'Cannot delete — historical jobs exist' : 'Category is in use'}
+                {blockedByJobs ? 'Cannot delete - historical jobs exist' : 'Category is in use'}
               </p>
               <ul className="text-xs text-gray-700 space-y-0.5 list-disc list-inside">
                 {conflict.artisansCount > 0 && <li>{conflict.artisansCount} artisan{conflict.artisansCount === 1 ? '' : 's'} offer{conflict.artisansCount === 1 ? 's' : ''} this category</li>}
@@ -445,7 +445,7 @@ function DeleteCategoryDialog({
               </ul>
               {blockedByJobs ? (
                 <p className="text-[11px] text-red-700 leading-snug">
-                  Use <strong>Deactivate</strong> instead — that hides it from new bookings without breaking historical data.
+                  Use <strong>Deactivate</strong> instead - that hides it from new bookings without breaking historical data.
                 </p>
               ) : (
                 <p className="text-[11px] text-amber-700 leading-snug">
@@ -613,15 +613,15 @@ export default function CategoriesPage() {
       {/* Stats strip */}
       <div className="flex items-center gap-4 mb-4 text-sm">
         <div className="bg-white rounded-lg px-3 py-1.5 shadow-sm flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+          <span className="w-2 h-2 rounded-full bg-gray-400" />
           <span className="text-gray-600">{activeCount} active</span>
         </div>
         <div className="bg-white rounded-lg px-3 py-1.5 shadow-sm flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-gray-300" />
+          <span className="w-2 h-2 rounded-full bg-gray-400" />
           <span className="text-gray-600">{categories.length - activeCount} inactive</span>
         </div>
         <div className="bg-white rounded-lg px-3 py-1.5 shadow-sm flex items-center gap-2">
-          <span className="text-gray-600">{categories.filter(c => !c.parentId).length} top-level · {subCount} subcategories</span>
+          <span className="text-gray-600">{categories.filter(c => !c.parentId).length} top-level - {subCount} subcategories</span>
         </div>
         <div className="relative max-w-xs ml-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
@@ -683,8 +683,8 @@ export default function CategoriesPage() {
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={cat.iconUrl} alt="" className="w-7 h-7 rounded-md object-cover shrink-0" />
                         ) : (
-                          <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${isChild ? 'bg-purple-50' : 'bg-orange-50'}`}>
-                            <Tag className={`h-3.5 w-3.5 ${isChild ? 'text-purple-400' : 'text-orange-400'}`} />
+                          <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-gray-100">
+                            <Tag className="h-3.5 w-3.5 text-gray-600" />
                           </div>
                         )}
                         <div className="flex flex-col min-w-0">
@@ -714,10 +714,8 @@ export default function CategoriesPage() {
                       {cat.sortOrder}
                     </TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${
-                        cat.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${cat.isActive ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                        <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
                         {cat.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </TableCell>
@@ -781,7 +779,7 @@ export default function CategoriesPage() {
 
         <div className="px-4 py-3 bg-gray-50">
           <p className="text-xs text-gray-400">
-            {loading ? '—' : `${displayList.length} of ${categories.length} categories`}
+            {loading ? '-' : `${displayList.length} of ${categories.length} categories`}
           </p>
         </div>
       </div>

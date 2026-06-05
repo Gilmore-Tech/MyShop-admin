@@ -56,8 +56,8 @@ function KpiCard({ label, value, sub, icon: Icon, trend, trendUp }: {
  <Card>
  <div className="flex items-start justify-between mb-3">
  <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">{label}</p>
- <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
- <Icon className="h-4 w-4" style={{ color: C.gold }} />
+ <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+ <Icon className="h-4 w-4 text-gray-600" />
  </div>
  </div>
  <p className="text-2xl font-bold text-gray-900">{value}</p>
@@ -263,7 +263,7 @@ export default function AnalyticsPage() {
  name: a.name,
  jobs: a.completedJobsCount,
  rating: a.avgRating ?? 0,
- earnings: a.supplementRatePct != null ? `${a.supplementRatePct.toFixed(0)}% suppl.` : '—',
+ earnings: a.supplementRatePct != null ? `${a.supplementRatePct.toFixed(0)}% suppl.` : '-',
  }))
 
  return (
@@ -274,7 +274,7 @@ export default function AnalyticsPage() {
  <div className="flex items-center justify-between">
  <div>
  <h1 className="text-xl font-bold text-gray-900">Analytics &amp; Insights</h1>
- <p className="text-sm text-gray-400 mt-0.5">Platform performance — Ashanti Region pilot</p>
+ <p className="text-sm text-gray-400 mt-0.5">Platform performance - Ashanti Region pilot</p>
  </div>
  <div className="flex items-center gap-3">
  <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
@@ -398,7 +398,7 @@ export default function AnalyticsPage() {
  </div>
  {bookingTotal > 0 && peakDay && (
  <div className="flex items-center gap-2 shrink-0">
- <span className="text-[11px] bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">Peak: {peakDay.day}</span>
+ <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">Peak: {peakDay.day}</span>
  <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">{bookingTotal} total</span>
  </div>
  )}
@@ -427,7 +427,7 @@ export default function AnalyticsPage() {
  <p className="text-xs text-gray-400 -mt-2">{rideStatusLabel}</p>
  </div>
  {rideStatusTotal > 0 && (
- <span className="text-[11px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-medium shrink-0">
+ <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium shrink-0">
  {rideStatusTotal} rides
  </span>
  )}
@@ -473,7 +473,7 @@ export default function AnalyticsPage() {
  <p className="text-xs text-gray-400 -mt-2">Jobs completed per category</p>
  </div>
  {categoryTotal > 0 && (
- <span className="text-[11px] bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium shrink-0">
+ <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium shrink-0">
  {categoryTotal} jobs
  </span>
  )}
@@ -555,7 +555,7 @@ export default function AnalyticsPage() {
  <p className="text-xs text-gray-400 -mt-2">Daily success vs failure</p>
  </div>
  {avgSuccessRate && (
- <span className="text-[11px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-medium shrink-0">
+ <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium shrink-0">
  Avg {avgSuccessRate}%
  </span>
  )}
@@ -585,9 +585,9 @@ export default function AnalyticsPage() {
  </div>
  <div className="flex items-center gap-2 shrink-0">
  {avgDisputeRate && (
- <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium">Avg {avgDisputeRate}%</span>
+ <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">Avg {avgDisputeRate}%</span>
  )}
- <span className="text-[11px] bg-red-50 text-red-600 px-2 py-0.5 rounded-full font-medium">Target &lt;3%</span>
+ <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">Target &lt;3%</span>
  </div>
  </div>
  {disputeRateData.length > 0 ? (

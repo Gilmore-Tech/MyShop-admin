@@ -152,7 +152,7 @@ export default function RevenuePage() {
           Refresh
         </Button>
         <div className="ml-auto text-xs text-gray-500">
-          {report ? `${periods.length} period${periods.length === 1 ? '' : 's'} · grouped by ${report.groupBy}` : '—'}
+          {report ? `${periods.length} period${periods.length === 1 ? '' : 's'} | grouped by ${report.groupBy}` : '-'}
         </div>
       </div>
 
@@ -208,7 +208,7 @@ export default function RevenuePage() {
                 <p className={`text-2xl font-bold mt-1 ${successRate == null ? 'text-gray-400' : successRate >= 98 ? 'text-emerald-600' : 'text-orange-500'}`}>
                   {successRate == null ? '—' : `${successRate.toFixed(1)}%`}
                 </p>
-                <p className="text-xs text-gray-500 mt-1">{totalSuccessful} / {totalPayments} payments · target 98%</p>
+                <p className="text-xs text-gray-500 mt-1">{totalSuccessful} / {totalPayments} payments | target 98%</p>
               </CardContent>
             </Card>
           </div>

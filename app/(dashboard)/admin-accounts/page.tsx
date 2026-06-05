@@ -27,7 +27,7 @@ function initials(name: string) {
 }
 
 function formatDate(iso: string | null) {
- if (!iso) return'—'
+ if (!iso) return'-'
  return new Date(iso).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
 }
 
@@ -234,13 +234,13 @@ export default function AdminAccountsPage() {
  className="flex items-center gap-1.5 text-left group"
  title="View all permissions"
  >
- <Shield className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+ <Shield className="h-3.5 w-3.5 text-gray-600 shrink-0" />
  <span className="text-xs text-gray-600 group-hover:text-orange-600 group-hover:underline">
  {permissionSummary(admin.permissions)}
  </span>
  </button>
  </TableCell>
- <TableCell className="text-sm text-gray-500">{admin.regionScope ??'—'}</TableCell>
+ <TableCell className="text-sm text-gray-500">{admin.regionScope ??'-'}</TableCell>
  <TableCell>
  <StatusBadge status={admin.isActive ?'active' :'suspended'} />
  </TableCell>
@@ -312,7 +312,7 @@ export default function AdminAccountsPage() {
  </div>
  <div className="space-y-1.5">
  <Label>Region Scope <span className="text-gray-400 text-xs">(optional)</span></Label>
- <Input placeholder="e.g. Ashanti — limits this admin's data to one region" value={newRegion} onChange={e => setNewRegion(e.target.value)} />
+ <Input placeholder="e.g. Ashanti - limits this admin's data to one region" value={newRegion} onChange={e => setNewRegion(e.target.value)} />
  </div>
  <div className="space-y-1.5">
  <Label>Permissions</Label>
@@ -334,7 +334,7 @@ export default function AdminAccountsPage() {
  <DialogContent className="max-w-md">
  <DialogHeader>
  <DialogTitle>
- Permissions — {dialog?.type ==='view' ? dialog.admin.fullName :''}
+ Permissions - {dialog?.type ==='view' ? dialog.admin.fullName :''}
  </DialogTitle>
  </DialogHeader>
  <div className="py-2 space-y-3">
@@ -342,7 +342,7 @@ export default function AdminAccountsPage() {
  <>
  <p className="text-xs text-gray-400">
  {dialog.admin.permissions.length} permission{dialog.admin.permissions.length === 1 ?'' :'s'} granted
- {dialog.admin.regionScope ? ` · scoped to ${dialog.admin.regionScope}` :''}
+ {dialog.admin.regionScope ? ` - scoped to ${dialog.admin.regionScope}` :''}
  </p>
  <GrantedPermissions value={dialog.admin.permissions} />
  </>
@@ -365,7 +365,7 @@ export default function AdminAccountsPage() {
  <Dialog open={dialog?.type ==='permissions'} onOpenChange={open => { if (!open) setDialog(null) }}>
  <DialogContent className="max-w-md">
  <DialogHeader>
- <DialogTitle>Edit Permissions — {dialog?.type ==='permissions' ? dialog.admin.fullName :''}</DialogTitle>
+ <DialogTitle>Edit Permissions - {dialog?.type ==='permissions' ? dialog.admin.fullName :''}</DialogTitle>
  </DialogHeader>
  <div className="space-y-3 py-2">
  {dialog?.type ==='permissions' && dialog.admin.id === currentAdminId && (
@@ -396,7 +396,7 @@ export default function AdminAccountsPage() {
  <Dialog open={dialog?.type ==='reset-password'} onOpenChange={open => { if (!open) setDialog(null) }}>
  <DialogContent className="max-w-sm">
  <DialogHeader>
- <DialogTitle>Reset Password — {dialog?.type ==='reset-password' ? dialog.admin.fullName :''}</DialogTitle>
+ <DialogTitle>Reset Password - {dialog?.type ==='reset-password' ? dialog.admin.fullName :''}</DialogTitle>
  </DialogHeader>
  <div className="space-y-4 py-2">
  <div className="space-y-1.5">

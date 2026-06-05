@@ -17,9 +17,9 @@ import {
 import { ApiError } from '@/lib/api-client'
 
 const outcomeColors: Record<string, string> = {
-  completed: 'bg-emerald-100 text-emerald-700',
-  timeout: 'bg-orange-100 text-orange-700',
-  error: 'bg-red-100 text-red-700',
+  completed: 'bg-gray-100 text-gray-600',
+  timeout: 'bg-gray-100 text-gray-600',
+  error: 'bg-gray-100 text-gray-600',
 }
 
 const SMS_MAX = 160
@@ -34,10 +34,10 @@ type AudienceOption = {
 }
 
 const AUDIENCES: AudienceOption[] = [
-  { value: 'all_users', label: 'All Users', sub: 'Clients · Drivers · Artisans', icon: Users, active: ' bg-orange-50 text-orange-700 ring-1 ring-orange-100', inactive: ' text-gray-600 hover: hover:bg-gray-50' },
-  { value: 'clients', label: 'Clients', sub: 'App users who book', icon: User, active: ' bg-blue-50 text-blue-700 ring-1 ring-blue-100', inactive: ' text-gray-600 hover: hover:bg-gray-50' },
-  { value: 'drivers', label: 'Drivers', sub: 'Registered ride drivers', icon: Car, active: ' bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100', inactive: ' text-gray-600 hover: hover:bg-gray-50' },
-  { value: 'artisans', label: 'Artisans', sub: 'Service providers', icon: Wrench, active: ' bg-purple-50 text-purple-700 ring-1 ring-purple-100', inactive: ' text-gray-600 hover: hover:bg-gray-50' },
+  { value: 'all_users', label: 'All Users', sub: 'Clients - Drivers - Artisans', icon: Users, active: ' bg-gray-100 text-gray-600 ring-1 ring-gray-200', inactive: ' text-gray-600 hover: hover:bg-gray-50' },
+  { value: 'clients', label: 'Clients', sub: 'App users who book', icon: User, active: ' bg-gray-100 text-gray-600 ring-1 ring-gray-200', inactive: ' text-gray-600 hover: hover:bg-gray-50' },
+  { value: 'drivers', label: 'Drivers', sub: 'Registered ride drivers', icon: Car, active: ' bg-gray-100 text-gray-600 ring-1 ring-gray-200', inactive: ' text-gray-600 hover: hover:bg-gray-50' },
+  { value: 'artisans', label: 'Artisans', sub: 'Service providers', icon: Wrench, active: ' bg-gray-100 text-gray-600 ring-1 ring-gray-200', inactive: ' text-gray-600 hover: hover:bg-gray-50' },
 ]
 
 function formatDateTime(iso: string) {
@@ -60,7 +60,7 @@ function KpiCard({ label, value, sub, icon: Icon, color }: {
             {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
           </div>
           <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
-            <Icon className="h-4 w-4 text-white" />
+            <Icon className="h-4 w-4 text-gray-600" />
           </div>
         </div>
       </CardContent>
@@ -117,7 +117,7 @@ export default function UssdPage() {
       await toggleUssdZone(zone.id, !zone.isActive)
       setZones(prev => prev.map(z => z.id === zone.id ? { ...z, isActive: !z.isActive } : z))
     } catch {
-      // silently fail — keep existing state
+      // silently fail - keep existing state
     } finally {
       setTogglingZoneId(null)
     }
@@ -135,7 +135,7 @@ export default function UssdPage() {
       const data = await sendSms(smsAudience, `MyShop: ${smsBody.trim()}`)
 
       const label = AUDIENCES.find(a => a.value === smsAudience)?.label ?? smsAudience
-      setSmsSuccess(`Sent to ${data.sent.toLocaleString()} of ${data.total.toLocaleString()} ${label} — ${data.failed} failed.`)
+      setSmsSuccess(`Sent to ${data.sent.toLocaleString()} of ${data.total.toLocaleString()} ${label} - ${data.failed} failed.`)
 
       // Optimistically prepend to history
       setSmsHistory(prev => [{
@@ -149,7 +149,7 @@ export default function UssdPage() {
 
       setSmsBody('')
     } catch (err) {
-      setSmsError(err instanceof ApiError ? err.message : 'Network error — could not reach the SMS service.')
+      setSmsError(err instanceof ApiError ? err.message : 'Network error - could not reach the SMS service.')
     } finally {
       setSmsSending(false)
     }
@@ -181,11 +181,11 @@ export default function UssdPage() {
           </div>
         ) : (
           <>
-            <KpiCard label="Total Registrations" value={stats.totalRegistrations} icon={Phone} color="bg-slate-600" />
-            <KpiCard label="Active Sessions" value={stats.activeSessions} sub="Right now" icon={MessageSquare} color="bg-blue-500" />
-            <KpiCard label="Bookings Today" value={stats.bookingsToday} icon={CheckCircle2} color="bg-emerald-600" />
-            <KpiCard label="Bookings This Month" value={stats.bookingsMonth} icon={CheckCircle2} color="bg-purple-500" />
-            <KpiCard label="Session Completion" value={`${stats.completionRate}%`} sub="% leading to booking" icon={Clock} color="bg-amber-500" />
+            <KpiCard label="Total Registrations" value={stats.totalRegistrations} icon={Phone} color="bg-gray-100" />
+            <KpiCard label="Active Sessions" value={stats.activeSessions} sub="Right now" icon={MessageSquare} color="bg-gray-100" />
+            <KpiCard label="Bookings Today" value={stats.bookingsToday} icon={CheckCircle2} color="bg-gray-100" />
+            <KpiCard label="Bookings This Month" value={stats.bookingsMonth} icon={CheckCircle2} color="bg-gray-100" />
+            <KpiCard label="Session Completion" value={`${stats.completionRate}%`} sub="% leading to booking" icon={Clock} color="bg-gray-100" />
           </>
         )}
       </div>
@@ -197,7 +197,7 @@ export default function UssdPage() {
           <div className="flex flex-wrap gap-2">
             {stats.topCategories.map((cat, i) => (
               <div key={cat} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                <span className="w-5 h-5 rounded-full bg-slate-200 text-xs font-bold text-slate-600 flex items-center justify-center shrink-0">
+                <span className="w-5 h-5 rounded-full bg-gray-100 text-xs font-bold text-gray-600 flex items-center justify-center shrink-0">
                   {i + 1}
                 </span>
                 <span className="text-sm font-medium text-gray-900">{cat}</span>
@@ -280,7 +280,7 @@ export default function UssdPage() {
                     </p>
                     <div className="flex items-center gap-1.5 mt-2">
                       <selectedAud.icon className="h-3 w-3 text-slate-400" />
-                      <p className="text-[10px] text-slate-400">{selectedAud.label} · Arkesel SMS</p>
+                      <p className="text-[10px] text-slate-400">{selectedAud.label} - Arkesel SMS</p>
                     </div>
                   </div>
                 )}
@@ -344,7 +344,7 @@ export default function UssdPage() {
                           <p className="text-sm text-gray-800 truncate">{s.body}</p>
                         </TableCell>
                         <TableCell>
-                          <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full whitespace-nowrap">{s.audience}</span>
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full whitespace-nowrap">{s.audience}</span>
                         </TableCell>
                         <TableCell className="text-xs text-gray-500 whitespace-nowrap">{formatDateTime(s.sentAt)}</TableCell>
                         <TableCell className="text-right text-sm font-medium text-emerald-600">{s.delivered.toLocaleString()}</TableCell>
@@ -390,7 +390,7 @@ export default function UssdPage() {
                       <TableCell className="font-mono text-sm">{session.phone}</TableCell>
                       <TableCell className="text-sm text-gray-500 whitespace-nowrap">{formatDateTime(session.timestamp)}</TableCell>
                       <TableCell>
-                        <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full capitalize">
+                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">
                           {session.flow.replace('_', ' ')}
                         </span>
                       </TableCell>
@@ -440,7 +440,7 @@ export default function UssdPage() {
                       <TableCell className="font-mono text-sm text-gray-500">{zone.id}</TableCell>
                       <TableCell className="font-medium text-sm">{zone.name}</TableCell>
                       <TableCell>
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${zone.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${zone.isActive ? 'bg-gray-100 text-gray-600' : 'bg-gray-100 text-gray-500'}`}>
                           {zone.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </TableCell>
@@ -469,7 +469,7 @@ export default function UssdPage() {
             </Table>
             <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
               <p className="text-xs text-gray-500">
-                {zonesLoading ? '—' : `${activeZoneCount} active zone${activeZoneCount !== 1 ? 's' : ''} of ${zones.length} total`}
+                {zonesLoading ? '-' : `${activeZoneCount} active zone${activeZoneCount !== 1 ? 's' : ''} of ${zones.length} total`}
               </p>
               <Button size="sm" className="gap-1.5 text-xs text-white" style={{ backgroundColor: '#F5A623' }}>
                 <MapPin className="h-3.5 w-3.5" /> Add Zone

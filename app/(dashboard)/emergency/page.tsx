@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import {
   ShieldAlert, HeartPulse, CheckCircle2, Clock, MapPin,
   Car, Wrench, User, RefreshCw, AlertCircle, ExternalLink, Mic, Loader2, Phone,
-  PhoneCall, UserCheck, Cpu, AlertTriangle,
+  PhoneCall, UserCheck, Cpu, AlertTriangle, ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -47,9 +47,9 @@ const ROLE_ICON: Record<string, React.ElementType> = {
 }
 
 const ROLE_COLOR: Record<string, string> = {
-  driver:  'bg-slate-100 text-slate-700',
-  artisan: 'bg-purple-100 text-purple-700',
-  client:  'bg-orange-100 text-orange-700',
+  driver:  'bg-gray-100 text-gray-600',
+  artisan: 'bg-gray-100 text-gray-600',
+  client:  'bg-gray-100 text-gray-600',
 }
 
 // Determines whether a row still needs admin attention.
@@ -64,7 +64,7 @@ function needsAction(alert: EmergencyAlert): boolean {
 // Welfare-check status → human label + styling
 function welfareStatusLabel(s: WelfareCheckStatus): { label: string; cls: string } {
   switch (s) {
-    case 'pending':   return { label: 'Awaiting response',  cls: 'bg-amber-100 text-amber-700' }
+    case 'pending':   return { label: 'Awaiting response',  cls: 'bg-gray-100 text-gray-600' }
     case 'escalated': return { label: 'Escalated to admin', cls: 'bg-red-500 text-white' }
     case 'responded': return { label: 'Artisan responded',  cls: 'bg-emerald-100 text-emerald-700' }
     case 'resolved':  return { label: 'Resolved by admin',  cls: 'bg-emerald-100 text-emerald-700' }
@@ -77,7 +77,7 @@ const CONTACT_METHOD_LABEL: Record<WelfareContactMethod, string> = {
   auto:      'Auto-resolved (responded in-app)',
 }
 
-// ─── Alert card ───────────────────────────────────────────────────────────────
+// ─── Alert card (compact triage row) ──────────────────────────────────────────
 
 function AlertCard({
   alert,
@@ -93,153 +93,80 @@ function AlertCard({
   busy: boolean
 }) {
   const isSos = alert.type === 'sos'
-  const isAck = isSos ? !!alert.acknowledgedAt : alert.welfareCheck?.isResolved === true
   const action = needsAction(alert)
   const wcStatus = alert.welfareCheck?.status
   const wcLabel = wcStatus ? welfareStatusLabel(wcStatus) : null
-  const RoleIcon = ROLE_ICON[alert.actorRole] ?? User
+
+  // Compact secondary line: location - booking - time
+  const meta = [
+    alert.locationDescription,
+    alert.bookingId ? `${alert.bookingType ?? 'booking'} #${alert.bookingId.slice(0, 6).toUpperCase()}` : null,
+    timeAgo(alert.occurredAt),
+  ].filter(Boolean).join('  -  ')
 
   return (
     <div
       onClick={() => onOpen(alert)}
-      className={`rounded-xl border p-4 transition-all cursor-pointer hover:shadow-md ${
-        !action
-          ? 'border-gray-100 bg-white'
-          : isSos
-          ? 'border-red-200 bg-red-50/60 shadow-sm'
-          : 'border-red-200 bg-red-50/60 shadow-sm'
-      }`}
+      className="rounded-xl border border-gray-100 bg-white p-3.5 flex items-center gap-3 cursor-pointer transition-all hover:shadow-sm"
     >
-      <div className="flex items-start gap-4">
-        {/* Icon */}
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-          !action ? 'bg-gray-100' : isSos ? 'bg-red-100' : 'bg-amber-100'
-        }`}>
-          {isSos
-            ? <ShieldAlert className={`h-5 w-5 ${!action ? 'text-gray-400' : 'text-red-600'}`} />
-            : <HeartPulse  className={`h-5 w-5 ${!action ? 'text-gray-400' : 'text-amber-600'}`} />
-          }
+      {/* Type icon */}
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+        action ? (isSos ? 'bg-red-100' : 'bg-amber-100') : 'bg-gray-100'
+      }`}>
+        {isSos
+          ? <ShieldAlert className={`h-5 w-5 ${action ? 'text-red-600' : 'text-gray-400'}`} />
+          : <HeartPulse  className={`h-5 w-5 ${action ? 'text-amber-600' : 'text-gray-400'}`} />
+        }
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`text-sm font-semibold shrink-0 ${
+            action ? (isSos ? 'text-red-700' : 'text-amber-700') : 'text-gray-700'
+          }`}>
+            {isSos ? 'SOS' : 'Welfare'}
+          </span>
+          <span className="text-sm font-medium text-gray-800 truncate">{alert.actorName ?? 'Unknown'}</span>
+          <span className="text-xs text-gray-400 capitalize shrink-0">{alert.actorRole}</span>
         </div>
+        <p className="text-xs text-gray-400 truncate mt-0.5 flex items-center gap-1">
+          {alert.locationDescription && <MapPin className="h-3 w-3 shrink-0 text-gray-300" />}
+          {meta || '-'}
+        </p>
+      </div>
 
-        {/* Body */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-sm font-bold ${!action ? 'text-gray-500' : isSos ? 'text-red-700' : 'text-amber-700'}`}>
-                  {isSos ? 'SOS Emergency' : 'Welfare Check'}
-                </span>
-                {isSos && action && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide bg-red-500 text-white">
-                    Action required
-                  </span>
-                )}
-                {isSos && isAck && (
-                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                    Acknowledged
-                  </span>
-                )}
-                {!isSos && wcLabel && (
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide ${wcLabel.cls}`}>
-                    {wcLabel.label}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                {/* Actor */}
-                <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full capitalize ${ROLE_COLOR[alert.actorRole]}`}>
-                  <RoleIcon className="h-3 w-3" />
-                  {alert.actorName ?? 'Unknown'} · {alert.actorRole}
-                </span>
-
-                {/* Booking link */}
-                {alert.bookingId && (
-                  <span className="text-xs text-gray-400 font-mono">
-                    {alert.bookingType} #{alert.bookingId.slice(0, 8)}…
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Time */}
-            <div className="text-right shrink-0">
-              <p className="text-xs text-gray-400">{timeAgo(alert.occurredAt)}</p>
-              <p className="text-[11px] text-gray-300 mt-0.5">{fmtDate(alert.occurredAt)}</p>
-            </div>
-          </div>
-
-          {/* Location */}
-          {alert.locationDescription && (
-            <div className="mt-2 flex items-start gap-1.5 text-xs text-gray-500">
-              <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0 text-gray-400" />
-              <span>{alert.locationDescription}</span>
-              {alert.lat != null && alert.lng != null && (
-                <a
-                  href={`https://www.google.com/maps?q=${alert.lat},${alert.lng}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={e => e.stopPropagation()}
-                  className="inline-flex items-center gap-0.5 text-orange-500 hover:underline shrink-0"
-                >
-                  Map <ExternalLink className="h-2.5 w-2.5" />
-                </a>
-              )}
-            </div>
-          )}
-
-          {/* Recording */}
-          {alert.recordingUrl && (
-            <div className="mt-2">
-              <a
-                href={alert.recordingUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={e => e.stopPropagation()}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline"
-              >
-                <Mic className="h-3.5 w-3.5" /> Play recording
-              </a>
-            </div>
-          )}
-
-          {/* Acknowledged / resolved info */}
-          {isSos && isAck && alert.acknowledgedAt && (
-            <p className="mt-2 text-[11px] text-gray-400 flex items-center gap-1">
-              <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-              Acknowledged {fmtDate(alert.acknowledgedAt)}
-            </p>
-          )}
-
-          {/* Action */}
-          {action && (
-            <div className="mt-3">
-              {isSos ? (
-                <Button
-                  size="sm"
-                  className="h-7 text-xs gap-1.5 text-white"
-                  style={{ backgroundColor: '#EF4444' }}
-                  disabled={busy}
-                  onClick={e => { e.stopPropagation(); onAcknowledge(alert) }}
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Acknowledge
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  className="h-7 text-xs gap-1.5 text-white"
-                  style={{ backgroundColor: '#F5A623' }}
-                  disabled={busy}
-                  onClick={e => { e.stopPropagation(); onResolveWelfare(alert) }}
-                >
-                  <UserCheck className="h-3.5 w-3.5" />
-                  Resolve check
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
+      {/* Right: action button, or handled status */}
+      <div className="shrink-0">
+        {action ? (
+          isSos ? (
+            <Button
+              size="sm"
+              className="h-8 text-xs gap-1.5 text-white"
+              style={{ backgroundColor: '#EF4444' }}
+              disabled={busy}
+              onClick={e => { e.stopPropagation(); onAcknowledge(alert) }}
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" /> Acknowledge
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className="h-8 text-xs gap-1.5 text-white"
+              style={{ backgroundColor: '#F5A623' }}
+              disabled={busy}
+              onClick={e => { e.stopPropagation(); onResolveWelfare(alert) }}
+            >
+              <UserCheck className="h-3.5 w-3.5" /> Resolve
+            </Button>
+          )
+        ) : isSos ? (
+          <span className="inline-flex items-center gap-1 text-xs text-gray-400 whitespace-nowrap">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> Acknowledged
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400 whitespace-nowrap">{wcLabel?.label ?? 'Monitoring'}</span>
+        )}
       </div>
     </div>
   )
@@ -252,7 +179,7 @@ export default function EmergencyPage() {
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState<'all' | 'sos' | 'welfare_check'>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'unacknowledged' | 'acknowledged'>('unacknowledged')
+  const [showResolved, setShowResolved] = useState(false)
   const [ackTarget, setAckTarget]   = useState<EmergencyAlert | null>(null)
   const [welfareTarget, setWelfareTarget] = useState<EmergencyAlert | null>(null)
   const [acking, setAcking]         = useState(false)
@@ -271,17 +198,39 @@ export default function EmergencyPage() {
   // Poll every 30 s — emergencies need near-real-time visibility. Pauses on hidden tabs.
   useAutoRefresh(load, 30_000)
 
-  const filtered = alerts.filter(a => {
-    const matchType   = typeFilter === 'all' || a.type === typeFilter
-    const matchStatus = statusFilter === 'all'
-      || (statusFilter === 'unacknowledged' && !a.acknowledgedAt)
-      || (statusFilter === 'acknowledged'   && !!a.acknowledgedAt)
-    return matchType && matchStatus
-  })
+  const filtered = alerts.filter(a => typeFilter === 'all' || a.type === typeFilter)
+
+  // Triage split: what needs action now vs. everything already handled / monitored.
+  const needsActionList = filtered
+    .filter(needsAction)
+    .sort((a, b) => {
+      // SOS before welfare, then most recent first.
+      const aw = a.type === 'sos' ? 0 : 1
+      const bw = b.type === 'sos' ? 0 : 1
+      if (aw !== bw) return aw - bw
+      return new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime()
+    })
+  const otherList = filtered
+    .filter(a => !needsAction(a))
+    .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
 
   const unacknowledgedCount = alerts.filter(a => !a.acknowledgedAt).length
   const sosCount    = alerts.filter(a => a.type === 'sos' && !a.acknowledgedAt).length
   const welfareCount = alerts.filter(a => a.type === 'welfare_check' && !a.acknowledgedAt).length
+
+  const renderCard = (a: EmergencyAlert) => (
+    <AlertCard
+      key={a.id}
+      alert={a}
+      onAcknowledge={setAckTarget}
+      onResolveWelfare={setWelfareTarget}
+      onOpen={setSelectedAlert}
+      busy={
+        (acking && ackTarget?.id === a.id) ||
+        (a.welfareCheck != null && welfareTarget?.id === a.id)
+      }
+    />
+  )
 
   async function handleAcknowledge() {
     if (!ackTarget) return
@@ -314,17 +263,17 @@ export default function EmergencyPage() {
 
         {/* KPI strip */}
         <div className="grid grid-cols-3 gap-3 mb-5">
-          <div className={`rounded-xl border px-4 py-3 ${unacknowledgedCount > 0 ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-white'}`}>
+          <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
             <p className="text-xs text-gray-400 font-medium">Unacknowledged</p>
             <p className={`text-2xl font-bold mt-0.5 ${unacknowledgedCount > 0 ? 'text-red-600' : 'text-gray-800'}`}>
               {unacknowledgedCount}
             </p>
           </div>
-          <div className={`rounded-xl border px-4 py-3 ${sosCount > 0 ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-white'}`}>
+          <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
             <p className="text-xs text-gray-400 font-medium">Active SOS</p>
             <p className={`text-2xl font-bold mt-0.5 ${sosCount > 0 ? 'text-red-600' : 'text-gray-800'}`}>{sosCount}</p>
           </div>
-          <div className={`rounded-xl border px-4 py-3 ${welfareCount > 0 ? 'border-amber-200 bg-amber-50' : 'border-gray-100 bg-white'}`}>
+          <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
             <p className="text-xs text-gray-400 font-medium">Welfare Checks</p>
             <p className={`text-2xl font-bold mt-0.5 ${welfareCount > 0 ? 'text-amber-600' : 'text-gray-800'}`}>{welfareCount}</p>
           </div>
@@ -340,17 +289,6 @@ export default function EmergencyPage() {
               <SelectItem value="all">All Types</SelectItem>
               <SelectItem value="sos">SOS Only</SelectItem>
               <SelectItem value="welfare_check">Welfare Checks Only</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
-            <SelectTrigger className="w-48 h-8 text-sm bg-gray-50">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="unacknowledged">Unacknowledged</SelectItem>
-              <SelectItem value="acknowledged">Acknowledged</SelectItem>
             </SelectContent>
           </Select>
 
@@ -373,31 +311,50 @@ export default function EmergencyPage() {
           </div>
         )}
 
-        {!loading && !error && filtered.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <CheckCircle2 className="h-10 w-10 text-emerald-300" />
-            <p className="text-sm font-medium text-gray-500">
-              {statusFilter === 'unacknowledged' ? 'All clear — no unacknowledged alerts' : 'No alerts match the current filters'}
-            </p>
-          </div>
-        )}
+        {!loading && !error && (
+          <>
+            {/* Needs action now */}
+            <section className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Needs action now</h2>
+                {needsActionList.length > 0 && (
+                  <span className="text-[11px] font-bold text-red-600">{needsActionList.length}</span>
+                )}
+              </div>
 
-        {!loading && !error && filtered.length > 0 && (
-          <div className="space-y-3">
-            {filtered.map(a => (
-              <AlertCard
-                key={a.id}
-                alert={a}
-                onAcknowledge={setAckTarget}
-                onResolveWelfare={setWelfareTarget}
-                onOpen={setSelectedAlert}
-                busy={
-                  (acking && ackTarget?.id === a.id) ||
-                  (a.welfareCheck != null && welfareTarget?.id === a.id)
-                }
-              />
-            ))}
-          </div>
+              {needsActionList.length === 0 ? (
+                <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white px-4 py-4">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">All clear</p>
+                    <p className="text-xs text-gray-400">
+                      {alerts.length === 0 ? 'No emergency alerts.' : 'No alerts need action right now.'}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                needsActionList.map(renderCard)
+              )}
+            </section>
+
+            {/* Acknowledged & resolved (collapsible) */}
+            {otherList.length > 0 && (
+              <section className="mt-6">
+                <button
+                  onClick={() => setShowResolved(v => !v)}
+                  className="w-full flex items-center justify-between text-[11px] font-semibold text-gray-400 uppercase tracking-widest hover:text-gray-600 transition-colors"
+                >
+                  <span>Acknowledged &amp; monitored ({otherList.length})</span>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${showResolved ? 'rotate-180' : ''}`} />
+                </button>
+                {showResolved && (
+                  <div className="space-y-2.5 mt-3">
+                    {otherList.map(renderCard)}
+                  </div>
+                )}
+              </section>
+            )}
+          </>
         )}
 
         {/* Auto-refresh badge */}
@@ -532,7 +489,7 @@ function EmergencyDetailDrawer({
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900">{alert.actorName ?? 'Unknown user'}</p>
-              <p className="text-xs text-gray-500 capitalize">{alert.actorRole} · raised {timeAgo(alert.occurredAt)}</p>
+              <p className="text-xs text-gray-500 capitalize">{alert.actorRole} - raised {timeAgo(alert.occurredAt)}</p>
             </div>
             <p className="text-[11px] text-gray-400 text-right shrink-0">{fmtDate(alert.occurredAt)}</p>
           </div>
@@ -587,7 +544,7 @@ function EmergencyDetailDrawer({
                   </div>
                 ) : (
                   <div className="text-[11px] text-gray-400 italic bg-gray-50 rounded-lg p-3">
-                    Map preview disabled — NEXT_PUBLIC_MAPBOX_TOKEN not set.
+                    Map preview disabled - NEXT_PUBLIC_MAPBOX_TOKEN not set.
                   </div>
                 )}
                 <div className="text-[11px] text-gray-500 space-y-0.5">
@@ -661,7 +618,7 @@ function EmergencyDetailDrawer({
               </p>
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 text-xs">
                 <TimelineRow
-                  icon={<CheckCircle2 className="h-3 w-3 text-amber-500" />}
+                  icon={<CheckCircle2 className="h-3 w-3 text-gray-600" />}
                   label="Push sent to artisan"
                   at={wc.notificationSentAt}
                 />
@@ -744,8 +701,8 @@ function RideDetailCard({ ride, bookingId }: { ride: RideDetail; bookingId: stri
         </a>
         <StatusBadge status={ride.status} />
       </div>
-      <DetailRow label="Pickup" value={ride.pickupAddress ?? '—'} />
-      <DetailRow label="Dropoff" value={ride.dropoffAddress ?? '—'} />
+      <DetailRow label="Pickup" value={ride.pickupAddress ?? '-'} />
+      <DetailRow label="Dropoff" value={ride.dropoffAddress ?? '-'} />
       {ride.distanceKm != null && (
         <DetailRow label="Distance" value={`${Number(ride.distanceKm).toFixed(1)} km`} />
       )}
@@ -786,13 +743,13 @@ function JobDetailCard({ job, bookingId }: { job: JobDetail; bookingId: string }
         </a>
         <StatusBadge status={job.status} />
       </div>
-      <DetailRow label="Category" value={job.category?.name ?? '—'} />
-      <DetailRow label="Description" value={job.description || '—'} />
+      <DetailRow label="Category" value={job.category?.name ?? '-'} />
+      <DetailRow label="Description" value={job.description || '-'} />
       {job.addressText && <DetailRow label="Address" value={job.addressText} />}
       {job.client && (
         <div className="pt-2 border-t border-gray-50">
           <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Client</p>
-          <p className="text-xs text-gray-700">{job.client.name ?? '—'}</p>
+          <p className="text-xs text-gray-700">{job.client.name ?? '-'}</p>
           {job.client.phone && (
             <p className="text-[11px] text-gray-400 font-mono flex items-center gap-1"><Phone className="h-3 w-3" /> {job.client.phone}</p>
           )}
@@ -801,7 +758,7 @@ function JobDetailCard({ job, bookingId }: { job: JobDetail; bookingId: string }
       {job.artisan && (
         <div className="pt-2 border-t border-gray-50">
           <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Artisan</p>
-          <p className="text-xs text-gray-700">{job.artisan.name ?? '—'}</p>
+          <p className="text-xs text-gray-700">{job.artisan.name ?? '-'}</p>
           {job.artisan.phone && (
             <p className="text-[11px] text-gray-400 font-mono flex items-center gap-1"><Phone className="h-3 w-3" /> {job.artisan.phone}</p>
           )}
@@ -826,7 +783,7 @@ function TimelineRow({ icon, label, at }: { icon: React.ReactNode; label: string
     <div className={`flex items-center gap-2 ${done ? 'text-gray-700' : 'text-gray-400'}`}>
       <span className="shrink-0">{done ? icon : <Clock className="h-3 w-3" />}</span>
       <span className="flex-1">{label}</span>
-      <span className="text-[10px] text-gray-400 shrink-0">{at ? fmtDate(at) : '—'}</span>
+      <span className="text-[10px] text-gray-400 shrink-0">{at ? fmtDate(at) : '-'}</span>
     </div>
   )
 }
@@ -919,7 +876,7 @@ function WelfareResolveDialog({
             </Label>
             <Textarea
               rows={3}
-              placeholder="e.g. Reached artisan by phone — they finished the job and forgot to mark done. Reminded them to update status."
+              placeholder="e.g. Reached artisan by phone - they finished the job and forgot to mark done. Reminded them to update status."
               value={note}
               onChange={e => setNote(e.target.value)}
               className="text-sm"

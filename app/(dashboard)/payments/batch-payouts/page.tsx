@@ -112,10 +112,10 @@ export default function BatchPayoutsPage() {
       {/* Next run banner */}
       <div className="bg-slate-900 text-white rounded-lg p-4 mb-6 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <Clock className="h-5 w-5 text-orange-400" />
+          <Clock className="h-5 w-5 text-gray-400" />
           <div>
             <p className="font-semibold text-sm">Next Batch Payout Run</p>
-            <p className="text-slate-300 text-xs">Primary: <strong className="text-white">18:00 GMT</strong> · Retries: 19:30, 20:00, 06:00 (next morning)</p>
+            <p className="text-slate-300 text-xs">Primary: <strong className="text-white">18:00 GMT</strong> | Retries: 19:30, 20:00, 06:00 (next morning)</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -201,10 +201,10 @@ export default function BatchPayoutsPage() {
                       <StatusBadge status={batch.status} />
                     </div>
                   </TableCell>
-                  <TableCell className="text-right text-sm">{batch.providerCount > 0 ? batch.providerCount : '—'}</TableCell>
-                  <TableCell className="text-right text-sm font-medium">{batch.totalPesewas > 0 ? formatGhs(batch.totalPesewas) : '—'}</TableCell>
+                  <TableCell className="text-right text-sm">{batch.providerCount > 0 ? batch.providerCount : '-'}</TableCell>
+                  <TableCell className="text-right text-sm font-medium">{batch.totalPesewas > 0 ? formatGhs(batch.totalPesewas) : '-'}</TableCell>
                   <TableCell className="text-sm text-red-600">
-                    {batch.failureReason ?? <span className="text-gray-500">—</span>}
+                    {batch.failureReason ?? <span className="text-gray-500">-</span>}
                   </TableCell>
                   <TableCell>
                     {batch.retries.length === 0

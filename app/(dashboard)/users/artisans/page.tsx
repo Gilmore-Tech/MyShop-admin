@@ -193,7 +193,7 @@ export default function ArtisansPage() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-purple-100 text-purple-700 text-xs font-bold">
+                        <AvatarFallback className="bg-gray-100 text-gray-600 text-xs font-bold">
                           {initials(user.fullName)}
                         </AvatarFallback>
                       </Avatar>
@@ -208,7 +208,7 @@ export default function ArtisansPage() {
                   </TableCell>
                   <TableCell>
                     {user.artisan?.onlineStatus === 'online'
-                      ? <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Online</span>
+                      ? <span className="flex items-center gap-1.5 text-xs text-gray-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-gray-400" />Online</span>
                       : <span className="text-xs text-gray-400">Offline</span>
                     }
                   </TableCell>

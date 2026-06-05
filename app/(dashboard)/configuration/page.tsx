@@ -82,29 +82,29 @@ interface ValidationRule {
 }
 
 const RULES: Partial<Record<ConfigKey, ValidationRule>> = {
-  commissionRatePercent:           { min: 0, max: 100, message: 'Must be 0–100%' },
+  commissionRatePercent:           { min: 0, max: 100, message: 'Must be 0-100%' },
   rideBaseFarePesewas:             { min: 0, message: 'Must be ≥ 0' },
   ridePerKmPesewas:                { min: 0, message: 'Must be ≥ 0' },
   ridePerMinPesewas:               { min: 0, message: 'Must be ≥ 0' },
   rideCancellationWindowSecs:      { min: 0, message: 'Must be ≥ 0' },
-  rideDriverAcceptanceWindowSecs:  { min: 5, max: 120, message: 'Must be 5–120 seconds' },
-  rideInitialMatchRadiusKm:        { min: 0.1, max: 50, message: 'Must be 0.1–50 km' },
-  rideRadiusExpansionKm:           { min: 0.1, max: 20, message: 'Must be 0.1–20 km' },
-  rideMaxMatchRadiusKm:            { min: 1, max: 100, message: 'Must be 1–100 km' },
+  rideDriverAcceptanceWindowSecs:  { min: 5, max: 120, message: 'Must be 5-120 seconds' },
+  rideInitialMatchRadiusKm:        { min: 0.1, max: 50, message: 'Must be 0.1-50 km' },
+  rideRadiusExpansionKm:           { min: 0.1, max: 20, message: 'Must be 0.1-20 km' },
+  rideMaxMatchRadiusKm:            { min: 1, max: 100, message: 'Must be 1-100 km' },
   jobBidWindowSecs:                { min: 30, message: 'Must be at least 30 seconds' },
-  jobMaxBids:                      { min: 1, max: 20, message: 'Must be 1–20' },
+  jobMaxBids:                      { min: 1, max: 20, message: 'Must be 1-20' },
   jobCancellationFreeWindowSecs:   { min: 0, message: 'Must be ≥ 0' },
-  jobCancellationFeePercent:       { min: 0, max: 100, message: 'Must be 0–100%' },
+  jobCancellationFeePercent:       { min: 0, max: 100, message: 'Must be 0-100%' },
   jobHighBidFlagPesewas:           { min: 0, message: 'Must be ≥ 0' },
   jobStalenessCheckinHours:        { min: 1, message: 'Must be at least 1 hour' },
   jobStalenessEscalationHours:     { min: 1, message: 'Must be at least 1 hour' },
   jobStalenessPayoutFreezeHours:   { min: 1, message: 'Must be at least 1 hour' },
-  artisanMinServiceRadiusKm:       { min: 0.1, max: 50, message: 'Must be 0.1–50 km' },
-  cancellationSuspensionThreshold: { min: 1, max: 50, message: 'Must be 1–50' },
-  cancellationRollingPeriodDays:   { min: 1, max: 365, message: 'Must be 1–365 days' },
-  ratingWarningThreshold:          { min: 1, max: 5, message: 'Must be 1.0–5.0 stars' },
-  ratingSuspensionThreshold:       { min: 1, max: 5, message: 'Must be 1.0–5.0 stars' },
-  ratingMinJobsForThreshold:       { min: 1, max: 200, message: 'Must be 1–200' },
+  artisanMinServiceRadiusKm:       { min: 0.1, max: 50, message: 'Must be 0.1-50 km' },
+  cancellationSuspensionThreshold: { min: 1, max: 50, message: 'Must be 1-50' },
+  cancellationRollingPeriodDays:   { min: 1, max: 365, message: 'Must be 1-365 days' },
+  ratingWarningThreshold:          { min: 1, max: 5, message: 'Must be 1.0-5.0 stars' },
+  ratingSuspensionThreshold:       { min: 1, max: 5, message: 'Must be 1.0-5.0 stars' },
+  ratingMinJobsForThreshold:       { min: 1, max: 200, message: 'Must be 1-200' },
   refundApprovalThresholdPesewas:  { min: 0, message: 'Must be ≥ 0' },
   batchPayoutTime:                 { pattern: /^\d{2}:\d{2}$/, required: true, message: 'Must be HH:MM (e.g. 18:00)' },
   microEscrowRetryIntervalMins:    { min: 1, message: 'Must be at least 1 minute' },
@@ -275,7 +275,7 @@ function DiffRow({ configKey, oldVal, newVal }: { configKey: ConfigKey; oldVal: 
   return (
     <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3 py-1.5 border-b border-gray-50 last:border-0 text-xs">
       <div className="text-gray-500 font-mono truncate">{label}</div>
-      <span className="text-gray-300 mt-0.5">→</span>
+      <span className="text-gray-300 mt-0.5">-&gt;</span>
       <div className="space-y-0.5">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="line-through text-gray-400">{String(oldVal)}{oldHint && <span className="font-normal"> ({oldHint.replace('= ', '')})</span>}</span>
@@ -412,11 +412,11 @@ export default function ConfigurationPage() {
       <div>
         <PageHeader
           title="Platform Configuration"
-          subtitle="Adjust platform business rules. Changes apply to new bookings only — never retroactive."
+          subtitle="Adjust platform business rules. Changes apply to new bookings only - never retroactive."
           actions={
             <div className="flex items-center gap-3">
               {saveSuccess && !dirty && (
-                <span className="text-sm text-emerald-600 font-medium">Saved ✓</span>
+                <span className="text-sm text-emerald-600 font-medium">Saved</span>
               )}
               {saveError && (
                 <span className="text-sm text-red-500">{saveError}</span>
@@ -451,8 +451,8 @@ export default function ConfigurationPage() {
           }`}>
             <AlertTriangle className="h-4 w-4 shrink-0" />
             {errors
-              ? `${changedKeys.length} unsaved change${changedKeys.length !== 1 ? 's' : ''} — fix validation errors before saving.`
-              : `${changedKeys.length} unsaved change${changedKeys.length !== 1 ? 's' : ''} — remember to save before navigating away.`
+              ? `${changedKeys.length} unsaved change${changedKeys.length !== 1 ? 's' : ''} - fix validation errors before saving.`
+              : `${changedKeys.length} unsaved change${changedKeys.length !== 1 ? 's' : ''} - remember to save before navigating away.`
             }
           </div>
         )}

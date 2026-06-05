@@ -44,7 +44,7 @@ export default function NewHelpArticlePage() {
           <div className="bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3">{error}</div>
         ) : categories.length === 0 ? (
           <div className="bg-amber-50 text-amber-800 text-sm rounded-lg px-4 py-3">
-            No help categories exist yet. The migration seeds 8 starter categories — make sure
+            No help categories exist yet. The migration seeds 8 starter categories - make sure
             the database is migrated and seeded before authoring articles.
           </div>
         ) : (

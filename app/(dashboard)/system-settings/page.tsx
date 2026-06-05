@@ -146,10 +146,10 @@ function ToggleRow({ label, description, checked, onChange, danger, dirty }: {
 type IntegStatus = 'operational' | 'degraded' | 'offline' | 'unknown'
 
 const STATUS_META: Record<IntegStatus, { label: string; dot: string; text: string }> = {
-  operational: { label: 'Operational', dot: 'bg-emerald-500', text: 'text-emerald-700' },
-  degraded:    { label: 'Degraded',    dot: 'bg-amber-400',   text: 'text-amber-700' },
-  offline:     { label: 'Offline',     dot: 'bg-red-500',     text: 'text-red-600' },
-  unknown:     { label: 'Unknown',     dot: 'bg-gray-300',    text: 'text-gray-400' },
+  operational: { label: 'Operational', dot: 'bg-gray-400', text: 'text-gray-600' },
+  degraded:    { label: 'Degraded',    dot: 'bg-gray-400', text: 'text-gray-600' },
+  offline:     { label: 'Offline',     dot: 'bg-gray-400', text: 'text-gray-600' },
+  unknown:     { label: 'Unknown',     dot: 'bg-gray-300', text: 'text-gray-400' },
 }
 
 function IntegCard({ name, description, status }: { name: string; description: string; status: IntegStatus }) {
@@ -302,7 +302,7 @@ export default function SystemSettingsPage() {
         {dirty && (
           <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm bg-amber-50 border border-amber-200 text-amber-800">
             <AlertTriangle className="h-4 w-4 shrink-0" />
-            {changedKeys.length} unsaved change{changedKeys.length !== 1 ? 's' : ''} — save before navigating away.
+            {changedKeys.length} unsaved change{changedKeys.length !== 1 ? 's' : ''} - save before navigating away.
           </div>
         )}
 
@@ -509,7 +509,7 @@ export default function SystemSettingsPage() {
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-gray-900">MyShop Admin Console</p>
-                    <p className="text-xs text-gray-400">v1.0.0 · Gilmore Technologies · Pilot — Ashanti Region, Ghana</p>
+                    <p className="text-xs text-gray-400">v1.0.0 | Gilmore Technologies | Pilot - Ashanti Region, Ghana</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 text-xs text-gray-400">
@@ -519,7 +519,7 @@ export default function SystemSettingsPage() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5" />
-                    <span>Last deploy: —</span>
+                    <span>Last deploy: -</span>
                   </div>
                 </div>
               </div>
@@ -545,7 +545,7 @@ export default function SystemSettingsPage() {
               {changedKeys.map(k => (
                 <div key={k} className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-3 py-2">
                   <span className="font-mono text-gray-500 truncate">{k}</span>
-                  <span className="text-gray-300">→</span>
+                  <span className="text-gray-300">-&gt;</span>
                   <div className="flex items-center gap-2">
                     <span className="line-through text-gray-400">{String(saved[k as keyof SettingsState])}</span>
                     <span className="font-semibold text-gray-800">{String(settings[k as keyof SettingsState])}</span>

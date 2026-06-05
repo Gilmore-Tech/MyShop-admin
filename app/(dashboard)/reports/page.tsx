@@ -109,11 +109,11 @@ function ProviderPanel({ data }: { data: ProviderReport }) {
             <div key={d.driverId} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{d.name}</p>
-                <p className="text-xs text-gray-500">{d.cancellationCount30d} cancellations (30d) · {d.verificationStatus}</p>
+                <p className="text-xs text-gray-500">{d.cancellationCount30d} cancellations (30d) - {d.verificationStatus}</p>
               </div>
               <div className="text-right shrink-0">
                 <p className="text-xs font-semibold text-gray-800">{fmt(d.totalEarningsGhs)}</p>
-                <p className="text-xs text-amber-500">★ {d.avgRating != null ? d.avgRating.toFixed(1) : '—'}</p>
+                <p className="text-xs text-amber-500">★ {d.avgRating != null ? d.avgRating.toFixed(1) : '-'}</p>
               </div>
             </div>
           ))}
@@ -128,12 +128,12 @@ function ProviderPanel({ data }: { data: ProviderReport }) {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{a.name}</p>
                 <p className="text-xs text-gray-500">
-                  {a.completedJobsCount} jobs · {a.supplementRatePct != null ? pct(a.supplementRatePct) : '—'} suppl. rate
-                  {a.flagged && <span className="ml-1 text-red-500 font-semibold">· Flagged</span>}
+                  {a.completedJobsCount} jobs - {a.supplementRatePct != null ? pct(a.supplementRatePct) : '-'} suppl. rate
+                  {a.flagged && <span className="ml-1 text-red-500 font-semibold">- Flagged</span>}
                 </p>
               </div>
               <div className="text-right shrink-0">
-                <p className="text-xs text-amber-500">★ {a.avgRating != null ? a.avgRating.toFixed(1) : '—'}</p>
+                <p className="text-xs text-amber-500">★ {a.avgRating != null ? a.avgRating.toFixed(1) : '-'}</p>
               </div>
             </div>
           ))}
@@ -259,7 +259,7 @@ export default function ReportsPage() {
             <CardTitle className="text-base">{tabs.find(t => t.id === tab)?.label}</CardTitle>
             {tab === 'pilot' && (
               <CardDescription className="text-xs">
-                10 PRD §1.3 pilot success targets — Ashanti Region open beta
+                10 PRD §1.3 pilot success targets - Ashanti Region open beta
               </CardDescription>
             )}
           </CardHeader>

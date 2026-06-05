@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import Link from 'next/link'
-import { AlertTriangle, Phone, ArrowUpRight, Loader2, ExternalLink } from 'lucide-react'
+import { AlertTriangle, Phone, ArrowUpRight, Loader2, ExternalLink, Check } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -170,7 +170,7 @@ export default function ClawbacksPage() {
                 return (
                   <TableRow key={cb.id} className="hover:bg-gray-50">
                     <TableCell>
-                      <p className="font-medium text-sm text-gray-900">{cb.providerName ?? '—'}</p>
+                      <p className="font-medium text-sm text-gray-900">{cb.providerName ?? '-'}</p>
                       <p className="text-xs text-gray-500 font-mono">{cb.providerId.slice(-12).toUpperCase()}</p>
                     </TableCell>
                     <TableCell className="text-right text-sm font-semibold text-red-600">
@@ -187,7 +187,7 @@ export default function ClawbacksPage() {
                             <ExternalLink className="h-3 w-3" />
                           </Link>
                         )
-                        : <span className="text-slate-500">—</span>}
+                        : <span className="text-slate-500">-</span>}
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">{formatDate(cb.initiatedAt)}</TableCell>
                     <TableCell className="text-right">
@@ -197,9 +197,9 @@ export default function ClawbacksPage() {
                     </TableCell>
                     <TableCell>
                       {isEligible
-                        ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">✓ Eligible</span>
+                        ? <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium"><Check className="h-4 w-4 text-gray-600" /> Eligible</span>
                         : isHighValue
-                        ? <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Escalate Required</span>
+                        ? <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Escalate Required</span>
                         : <span className="text-xs text-gray-500">Not yet</span>}
                     </TableCell>
                     <TableCell>
@@ -227,7 +227,7 @@ export default function ClawbacksPage() {
                           </Button>
                         )}
                         {cb.status === 'escalated' && (
-                          <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Escalated</span>
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">Escalated</span>
                         )}
                         <Button
                           asChild

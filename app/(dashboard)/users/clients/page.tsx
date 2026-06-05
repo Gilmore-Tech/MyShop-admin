@@ -195,7 +195,7 @@ export default function UsersPage() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-orange-100 text-orange-700 text-xs font-bold">
+                        <AvatarFallback className="bg-gray-100 text-gray-600 text-xs font-bold">
                           {initials(u.fullName)}
                         </AvatarFallback>
                       </Avatar>
@@ -209,11 +209,7 @@ export default function UsersPage() {
                   <TableCell>
                     <div className="flex gap-1 flex-wrap">
                       {u.roles.map(r => (
-                        <span key={r} className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${
-                          r === 'client' ? 'bg-blue-100 text-blue-700'
-                          : r === 'driver' ? 'bg-green-100 text-green-700'
-                          : 'bg-purple-100 text-purple-700'
-                        }`}>
+                        <span key={r} className="text-[11px] px-1.5 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">
                           {r}
                         </span>
                       ))}
@@ -222,10 +218,10 @@ export default function UsersPage() {
                   <TableCell className="text-sm text-gray-500">{formatDate(u.createdAt)}</TableCell>
                   <TableCell><StatusBadge status={u.status} /></TableCell>
                   <TableCell className="text-sm text-gray-600">
-                    {u.client ? u.client.loyaltyPointsBalance.toLocaleString() : '—'}
+                    {u.client ? u.client.loyaltyPointsBalance.toLocaleString() : '-'}
                   </TableCell>
                   <TableCell className="text-sm text-gray-500">
-                    {u.client?.preferredPaymentMethod ?? '—'}
+                    {u.client?.preferredPaymentMethod ?? '-'}
                   </TableCell>
                   <TableCell onClick={e => e.stopPropagation()}>
                     <DropdownMenu>
@@ -277,7 +273,7 @@ export default function UsersPage() {
         {/* Pagination */}
         <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
           <p className="text-xs text-gray-400">
-            {loading ? 'Loading…' : `Page ${page} of ${totalPages} · ${total.toLocaleString()} users`}
+            {loading ? 'Loading…' : `Page ${page} of ${totalPages} - ${total.toLocaleString()} users`}
           </p>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => load(page - 1)}>Previous</Button>
@@ -291,7 +287,7 @@ export default function UsersPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className={actionDialog?.type === 'ban' ? 'text-red-600' : actionDialog?.type === 'reinstate' ? 'text-emerald-700' : 'text-orange-600'}>
-              {actionDialog?.type === 'reinstate' ? 'Reinstate' : actionDialog?.type === 'ban' ? 'Ban User Permanently' : 'Suspend User'} — {actionDialog?.user.fullName}
+              {actionDialog?.type === 'reinstate' ? 'Reinstate' : actionDialog?.type === 'ban' ? 'Ban User Permanently' : 'Suspend User'} - {actionDialog?.user.fullName}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">

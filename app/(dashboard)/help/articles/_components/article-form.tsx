@@ -19,7 +19,7 @@ import {
   type HelpCategory,
 } from '@/lib/api'
 
-// Disable SSR for the markdown editor — it touches `window` on mount.
+// Disable SSR for the markdown editor - it touches `window` on mount.
 // Cast preserves prop types that next/dynamic can otherwise drop.
 const MDEditor = dynamic(() => import('@uiw/react-md-editor'), {
   ssr: false,
@@ -145,7 +145,7 @@ export function ArticleForm({ mode, article, categories }: ArticleFormProps) {
               className="font-mono text-sm"
             />
             <p className="text-[11px] text-gray-400">
-              {isEdit ? 'Slug is immutable after publishing.' : 'Auto-generated from the title — edit if needed.'}
+              {isEdit ? 'Slug is immutable after publishing.' : 'Auto-generated from the title - edit if needed.'}
             </p>
           </div>
 
@@ -197,7 +197,7 @@ export function ArticleForm({ mode, article, categories }: ArticleFormProps) {
           />
         </div>
         <p className="text-[11px] text-gray-400">
-          Markdown is sanitised on save — HTML tags are stripped before mobile renders.
+          Markdown is sanitised on save - HTML tags are stripped before mobile renders.
         </p>
       </div>
 
@@ -215,7 +215,7 @@ export function ArticleForm({ mode, article, categories }: ArticleFormProps) {
                   type="button"
                   onClick={() => setAudience(a.value)}
                   className={`rounded-lg p-2.5 text-left transition-all ${
-                    isActive ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-100' : 'text-gray-600 hover:bg-gray-50'
+                    isActive ? 'bg-gray-100 text-gray-700 ring-1 ring-gray-200' : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
                   <p className="text-xs font-semibold">{a.label}</p>

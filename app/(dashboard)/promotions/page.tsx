@@ -49,12 +49,12 @@ const SCOPE_LABELS: Record<PromoScope, string> = {
 }
 
 function fmtDate(iso: string | null) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 function fmtDateShort(iso: string | null) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
@@ -62,7 +62,7 @@ function describeDiscount(p: { promoType: PromoType; discountValue: number; maxD
   switch (p.promoType) {
     case 'PERCENTAGE_DISCOUNT':
       return p.maxDiscountPesewas != null
-        ? `${p.discountValue}% off · max ${formatGhs(p.maxDiscountPesewas)}`
+        ? `${p.discountValue}% off - max ${formatGhs(p.maxDiscountPesewas)}`
         : `${p.discountValue}% off`
     case 'FIXED_DISCOUNT':
       return `${formatGhs(p.discountValue)} off`
@@ -149,7 +149,7 @@ export default function PromotionsPage() {
       <div>
         <PageHeader
           title="Promotions"
-          subtitle="Manage promo codes — clients redeem these at booking checkout."
+          subtitle="Manage promo codes - clients redeem these at booking checkout."
           actions={
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => load()} disabled={loading} className="gap-1.5">
@@ -274,7 +274,7 @@ export default function PromotionsPage() {
                       <TableCell className="text-xs text-gray-500">
                         <div className="flex items-center gap-1">
                           <Calendar className="h-3 w-3 text-gray-400" />
-                          {fmtDateShort(p.startsAt)} → {p.expiresAt ? fmtDateShort(p.expiresAt) : <span className="text-gray-400">never</span>}
+                          {fmtDateShort(p.startsAt)} -&gt; {p.expiresAt ? fmtDateShort(p.expiresAt) : <span className="text-gray-400">never</span>}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -449,7 +449,7 @@ function PromoFormDialog({
     if (!isEdit) {
       const code = form.code.trim().toUpperCase()
       if (!/^[A-Z0-9-]{3,32}$/.test(code)) {
-        setError('Code must be 3–32 chars, uppercase letters, digits, or dashes.')
+        setError('Code must be 3-32 chars, uppercase letters, digits, or dashes.')
         return
       }
       const dv = Number(form.discountValue)
@@ -536,7 +536,7 @@ function PromoFormDialog({
                 maxLength={32}
                 className="font-mono uppercase"
               />
-              <p className="text-[10px] text-gray-400">3–32 chars, uppercase letters, digits, dashes. Frozen after creation.</p>
+              <p className="text-[10px] text-gray-400">3-32 chars, uppercase letters, digits, dashes. Frozen after creation.</p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Active</Label>
@@ -583,7 +583,7 @@ function PromoFormDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                {isPercent ? 'Percent off (1–100)' : isPoints ? 'Points' : isFree ? 'N/A (free booking)' : 'Amount off (GHS)'}
+                {isPercent ? 'Percent off (1-100)' : isPoints ? 'Points' : isFree ? 'N/A (free booking)' : 'Amount off (GHS)'}
               </Label>
               <Input
                 type="number"
@@ -738,7 +738,7 @@ function RedemptionDrawer({
       <SheetContent className="sm:max-w-xl overflow-y-auto p-0">
         <SheetHeader className="px-6 py-4 border-b border-gray-100">
           <SheetTitle className="text-base flex items-center gap-2 font-mono">
-            <Ticket className="h-4 w-4 text-orange-500" /> {promo.code}
+            <Ticket className="h-4 w-4 text-gray-600" /> {promo.code}
             <span className="ml-auto"><StatusBadge status={promo.status} /></span>
           </SheetTitle>
         </SheetHeader>
@@ -768,8 +768,8 @@ function RedemptionDrawer({
 
               <div className="bg-gray-50 rounded-lg p-3 text-xs space-y-1">
                 <p className="text-gray-500">{describeDiscount(detail)}</p>
-                <p className="text-gray-400">{SCOPE_LABELS[detail.promoScope]} · {TYPE_LABELS[detail.promoType]}</p>
-                <p className="text-gray-400">{fmtDate(detail.startsAt)} → {detail.expiresAt ? fmtDate(detail.expiresAt) : 'never'}</p>
+                <p className="text-gray-400">{SCOPE_LABELS[detail.promoScope]} - {TYPE_LABELS[detail.promoType]}</p>
+                <p className="text-gray-400">{fmtDate(detail.startsAt)} -&gt; {detail.expiresAt ? fmtDate(detail.expiresAt) : 'never'}</p>
               </div>
 
               {/* Redemption history */}
@@ -786,9 +786,9 @@ function RedemptionDrawer({
                     {redemptions.map(r => (
                       <div key={r.id} className="flex items-center justify-between gap-3 bg-white border border-gray-100 rounded-lg px-3 py-2 text-xs">
                         <div className="min-w-0">
-                          <p className="text-gray-800 truncate">{r.clientName ?? '—'}</p>
+                          <p className="text-gray-800 truncate">{r.clientName ?? '-'}</p>
                           <p className="text-gray-400 text-[10px]">
-                            {r.bookingType} · {fmtDate(r.createdAt)}
+                            {r.bookingType} - {fmtDate(r.createdAt)}
                           </p>
                         </div>
                         <span className="font-medium text-emerald-700">{formatGhs(r.discountPesewas)}</span>

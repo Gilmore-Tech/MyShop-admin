@@ -1,6 +1,6 @@
 'use client'
 
-import { Bell, Search, LogOut, AlertTriangle, ShieldAlert, Flag, BadgeAlert, ServerCrash, HeartPulse, Info, CheckCheck, X, Clock } from 'lucide-react'
+import { Bell, Search, LogOut, AlertTriangle, ShieldAlert, Flag, BadgeAlert, ServerCrash, HeartPulse, Info, CheckCheck, X, Clock, ChevronRight } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { getAdminUser, clearTokens, getDeployEnv, type AdminUser, type DeployEnv } from '@/lib/api-client'
+import { getAdminUser, clearTokens, type AdminUser } from '@/lib/api-client'
 import {
   getAdminNotifications, markAdminNotificationRead, markAllAdminNotificationsRead,
   type AdminNotification, type AdminNotificationType,
@@ -24,9 +24,9 @@ const TYPE_META: Record<AdminNotificationType, { icon: React.ElementType; color:
   emergency:     { icon: ShieldAlert,   color: 'text-red-500',    bg: 'bg-red-50' },
   welfare_check: { icon: HeartPulse,    color: 'text-amber-500',  bg: 'bg-amber-50' },
   dispute:       { icon: AlertTriangle, color: 'text-orange-500', bg: 'bg-orange-50' },
-  verification:  { icon: BadgeAlert,    color: 'text-blue-500',   bg: 'bg-blue-50' },
+  verification:  { icon: BadgeAlert,    color: 'text-gray-600',   bg: 'bg-gray-100' },
   flagged:       { icon: Flag,          color: 'text-red-400',    bg: 'bg-red-50' },
-  payout_failed: { icon: ServerCrash,   color: 'text-purple-500', bg: 'bg-purple-50' },
+  payout_failed: { icon: ServerCrash,   color: 'text-red-500',    bg: 'bg-red-50' },
   system:        { icon: Info,          color: 'text-gray-400',   bg: 'bg-gray-100' },
 }
 
@@ -144,7 +144,8 @@ function NotificationPanel({
                           className="text-xs font-medium hover:underline"
                           style={{ color: '#F5A623' }}
                         >
-                          View →
+                          View
+                          <ChevronRight className="inline h-3 w-3 ml-0.5 align-middle" />
                         </Link>
                       )}
                     </div>
@@ -163,26 +164,6 @@ function adminInitials(name: string) {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
 }
 
-// ─── Environment badge ────────────────────────────────────────────────────────
-
-const ENV_STYLES: Record<DeployEnv, { label: string; className: string }> = {
-  LOCAL:   { label: 'LOCAL',   className: 'bg-gray-100 text-gray-600 border-gray-200' },
-  STAGING: { label: 'STAGING', className: 'bg-blue-50 text-blue-700 border-blue-200' },
-  PROD:    { label: 'PROD',    className: 'bg-red-50 text-red-700 border-red-200' },
-}
-
-function EnvBadge({ env }: { env: DeployEnv }) {
-  const { label, className } = ENV_STYLES[env]
-  return (
-    <span
-      className={`text-[10px] font-bold tracking-widest px-2 py-1 rounded border ${className}`}
-      title={`Environment: ${label}`}
-    >
-      {label}
-    </span>
-  )
-}
-
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 export default function Header() {
@@ -192,7 +173,6 @@ export default function Header() {
   const [loadingNotifs, setLoadingNotifs] = useState(true)
   const [panelOpen, setPanelOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
-  const env = getDeployEnv()
   const { secondsRemaining, warn: sessionWarn } = useSessionExpiry()
 
   useEffect(() => {
@@ -241,23 +221,9 @@ export default function Header() {
 
   return (
     <header className="bg-white sticky top-0 z-40">
-      {env === 'PROD' && (
-        <div className="h-1 w-full bg-red-500" title="Production environment — actions are real" />
-      )}
       <div className="h-16 flex items-center px-6 gap-6">
-      {/* Search */}
-      <div className="relative flex-1 max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-secondary pointer-events-none" />
-        <input
-          type="text"
-          placeholder="Search users, bookings, disputes…"
-          className="w-full pl-9 pr-4 py-2 text-sm bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all"
-        />
-      </div>
 
       <div className="flex items-center gap-3 ml-auto">
-        <EnvBadge env={env} />
-
         {sessionWarn && secondsRemaining != null && (
           <div
             className="hidden md:flex items-center gap-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1"

@@ -120,8 +120,8 @@ export default function DisputesPage() {
           actions={
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-3 text-sm text-gray-500 bg-white rounded-lg px-3 py-1.5">
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />{openCount} Open</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />{underReviewCount} In Review</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />{openCount} Open</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />{underReviewCount} In Review</span>
                 {slaWarnCount > 0 && (
                   <span className="flex items-center gap-1.5 text-amber-700 font-medium" title={`Disputes older than ${SLA_WARN_HOURS}h — approaching the ${SLA_HOURS}h SLA`}>
                     <AlertTriangle className="h-3 w-3" />{slaWarnCount} near SLA
@@ -140,9 +140,9 @@ export default function DisputesPage() {
             <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
             <p className="text-sm text-emerald-700 font-medium">
               {flash.mode === 'REJECT'
-                ? 'Dispute rejected · no refund issued.'
+                ? 'Dispute rejected - no refund issued.'
                 : flash.refundedPesewas != null
-                  ? `Dispute resolved · ${formatGhs(flash.refundedPesewas)} refunded.`
+                  ? `Dispute resolved - ${formatGhs(flash.refundedPesewas)} refunded.`
                   : 'Dispute resolved.'}
             </p>
             <button
@@ -153,7 +153,7 @@ export default function DisputesPage() {
         )}
 
         <div className="mb-4 text-xs text-gray-500 bg-amber-50 rounded-lg px-4 py-2.5 flex items-center gap-2">
-          <span className="text-amber-600 font-semibold">⏱ Rule:</span>
+          <span className="text-amber-600 font-semibold">Rule:</span>
           Disputes must be raised within <strong>2 hours</strong> of ride/job completion. Only the disputed amount is frozen — other provider earnings remain accessible. Ops SLA: resolve within {SLA_HOURS}h.
         </div>
 
@@ -233,19 +233,19 @@ export default function DisputesPage() {
                             }`}
                           >
                             {ageLabel(d.createdAt)}
-                            {slaBreached && ' · SLA breached'}
-                            {slaWarn && ' · near SLA'}
+                            {slaBreached && ' - SLA breached'}
+                            {slaWarn && ' - near SLA'}
                           </div>
                         )}
                       </TableCell>
                       <TableCell>
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${d.type === 'ride' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                           {d.type}
                         </span>
                       </TableCell>
-                      <TableCell className="text-sm">{d.clientName ?? <span className="text-gray-400 italic">—</span>}</TableCell>
-                      <TableCell className="text-sm">{d.providerName ?? <span className="text-gray-400 italic">—</span>}</TableCell>
-                      <TableCell className="text-sm text-gray-500 max-w-48 truncate">{d.description ?? '—'}</TableCell>
+                      <TableCell className="text-sm">{d.clientName ?? <span className="text-gray-400 italic">-</span>}</TableCell>
+                      <TableCell className="text-sm">{d.providerName ?? <span className="text-gray-400 italic">-</span>}</TableCell>
+                      <TableCell className="text-sm text-gray-500 max-w-48 truncate">{d.description ?? '-'}</TableCell>
                       <TableCell className="text-right text-sm font-medium tabular-nums">{formatGhs(d.amountPesewas)}</TableCell>
                       <TableCell><StatusBadge status={d.status} /></TableCell>
                       <TableCell>

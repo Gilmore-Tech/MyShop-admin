@@ -13,21 +13,21 @@ import { getClientKycQueue, reviewClientKyc, type ClientKycQueueItem } from '@/l
 import { ApiError } from '@/lib/api-client'
 
 function fmtSubmitted(iso: string | null) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   const d = new Date(iso)
   const diffH = (Date.now() - d.getTime()) / 36e5
   const ageLabel =
     diffH < 1   ? `${Math.round(diffH * 60)}m ago` :
     diffH < 24  ? `${Math.round(diffH)}h ago` :
                   `${Math.round(diffH / 24)}d ago`
-  return `${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} · ${ageLabel}`
+  return `${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} - ${ageLabel}`
 }
 
 function ageBadgeColour(iso: string | null) {
   if (!iso) return 'text-gray-400'
   const diffH = (Date.now() - new Date(iso).getTime()) / 36e5
-  if (diffH >= 24) return 'text-red-600 font-semibold'
-  if (diffH >= 6)  return 'text-amber-600'
+  if (diffH >= 24) return 'text-gray-600 font-semibold'
+  if (diffH >= 6)  return 'text-gray-500'
   return 'text-gray-500'
 }
 
@@ -129,10 +129,10 @@ export default function ClientKycQueuePage() {
               onChange={e => setSearch(e.target.value)}
             />
           </div>
-          <div className="ml-auto flex items-center gap-2 bg-amber-50 rounded-lg px-3 py-1.5">
-            <IdCard className="h-3.5 w-3.5 text-amber-500" />
-            <span className="text-sm font-semibold text-amber-700">{items.length}</span>
-            <span className="text-xs text-amber-500">pending review</span>
+          <div className="ml-auto flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+            <IdCard className="h-3.5 w-3.5 text-gray-600" />
+            <span className="text-sm font-semibold text-gray-700">{items.length}</span>
+            <span className="text-xs text-gray-500">pending review</span>
           </div>
         </div>
 
@@ -196,8 +196,8 @@ export default function ClientKycQueuePage() {
                 <div className="px-4 py-3 flex-1 flex flex-col">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{item.fullName || '—'}</p>
-                      <p className="text-xs text-gray-500 font-mono truncate">{item.phone || '—'}</p>
+                      <p className="text-sm font-semibold text-gray-900 truncate">{item.fullName || '-'}</p>
+                      <p className="text-xs text-gray-500 font-mono truncate">{item.phone || '-'}</p>
                       {item.email && (
                         <p className="text-[11px] text-gray-400 truncate">{item.email}</p>
                       )}

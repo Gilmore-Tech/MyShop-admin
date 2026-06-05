@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, use } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
@@ -21,12 +21,12 @@ import { can } from '@/lib/roles'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtGhs(pesewas: number | null | undefined) {
-  if (pesewas == null) return '—'
+  if (pesewas == null) return '-'
   return 'GHS ' + (pesewas / 100).toLocaleString('en-GH', { minimumFractionDigits: 2 })
 }
 
 function fmtDate(iso: string | null | undefined) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
@@ -38,10 +38,10 @@ function fmtShort(iso: string | null | undefined) {
 function TimelineRow({ label, value, highlight }: { label: string; value: string | null; highlight?: boolean }) {
   return (
     <div className="flex items-center gap-3 py-1.5">
-      <div className={`w-2 h-2 rounded-full shrink-0 ${value ? (highlight ? 'bg-red-400' : 'bg-emerald-500') : 'bg-gray-200'}`} />
+      <div className={`w-2 h-2 rounded-full shrink-0 ${value ? 'bg-gray-400' : 'bg-gray-200'}`} />
       <span className="text-xs text-gray-500 w-40 shrink-0">{label}</span>
       <span className={`text-xs font-medium ${value ? (highlight ? 'text-red-600' : 'text-gray-700') : 'text-gray-300'}`}>
-        {value ?? '—'}
+        {value ?? '-'}
       </span>
     </div>
   )
@@ -70,7 +70,7 @@ function ActionDialog({ open, title, description, confirmLabel, confirmClass, on
         <div className="space-y-2 py-1">
           <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason (audit log)</Label>
           <Textarea
-            placeholder="Provide a clear reason — minimum 10 characters"
+            placeholder="Provide a clear reason - minimum 10 characters"
             value={reason}
             onChange={e => setReason(e.target.value)}
             rows={3}
@@ -91,8 +91,8 @@ function ActionDialog({ open, title, description, confirmLabel, confirmClass, on
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function RideDetailPage({ params }: { params: { id: string } }) {
-  const { id: rideId } = params
+export default function RideDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: rideId } = use(params)
   const admin = getAdminUser()
   const canIntervene = can(admin?.permissions ?? null, 'intervene_ride')
 
@@ -175,7 +175,7 @@ export default function RideDetailPage({ params }: { params: { id: string } }) {
             <div className="flex items-center gap-3 flex-wrap bg-white rounded-xl shadow-sm px-4 py-3">
               <StatusBadge status={ride.status} />
               {ride.status === 'disputed' && (
-                <span className="flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
+                <span className="flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
                   <AlertTriangle className="h-3 w-3" /> Disputed
                 </span>
               )}
@@ -215,33 +215,33 @@ export default function RideDetailPage({ params }: { params: { id: string } }) {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <Car className="h-4 w-4 text-blue-400" /> Ride Overview
+                      <Car className="h-4 w-4 text-gray-600" /> Ride Overview
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {/* Route */}
                     <div className="space-y-2">
                       <div className="flex items-start gap-2">
-                        <MapPin className="h-3.5 w-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                        <MapPin className="h-3.5 w-3.5 text-gray-600 mt-0.5 shrink-0" />
                         <div>
                           <p className="text-[11px] text-gray-400 uppercase tracking-wide">Pickup</p>
-                          <p className="text-sm text-gray-800">{ride.pickupAddress || '—'}</p>
+                          <p className="text-sm text-gray-800">{ride.pickupAddress || '-'}</p>
                         </div>
                       </div>
                       {ride.stops.map(s => (
                         <div key={s.stopOrder} className="flex items-start gap-2 pl-1">
-                          <MapPin className="h-3.5 w-3.5 text-blue-400 mt-0.5 shrink-0" />
+                          <MapPin className="h-3.5 w-3.5 text-gray-600 mt-0.5 shrink-0" />
                           <div>
                             <p className="text-[11px] text-gray-400 uppercase tracking-wide">Stop {s.stopOrder}</p>
-                            <p className="text-sm text-gray-700">{s.addressText || '—'}</p>
+                            <p className="text-sm text-gray-700">{s.addressText || '-'}</p>
                           </div>
                         </div>
                       ))}
                       <div className="flex items-start gap-2">
-                        <MapPin className="h-3.5 w-3.5 text-red-400 mt-0.5 shrink-0" />
+                        <MapPin className="h-3.5 w-3.5 text-gray-600 mt-0.5 shrink-0" />
                         <div>
                           <p className="text-[11px] text-gray-400 uppercase tracking-wide">Dropoff</p>
-                          <p className="text-sm text-gray-800">{ride.dropoffAddress || '—'}</p>
+                          <p className="text-sm text-gray-800">{ride.dropoffAddress || '-'}</p>
                         </div>
                       </div>
                     </div>
@@ -258,13 +258,13 @@ export default function RideDetailPage({ params }: { params: { id: string } }) {
                       <div className="bg-gray-50 rounded-lg p-3 text-center">
                         <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-1">Distance</p>
                         <p className="text-base font-bold text-gray-900">
-                          {ride.distanceKm ? `${Number(ride.distanceKm).toFixed(1)} km` : '—'}
+                          {ride.distanceKm ? `${Number(ride.distanceKm).toFixed(1)} km` : '-'}
                         </p>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-3 text-center">
                         <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-1">Duration</p>
                         <p className="text-base font-bold text-gray-900">
-                          {ride.durationMins ? `${Math.round(Number(ride.durationMins))} min` : '—'}
+                          {ride.durationMins ? `${Math.round(Number(ride.durationMins))} min` : '-'}
                         </p>
                       </div>
                     </div>
@@ -305,7 +305,7 @@ export default function RideDetailPage({ params }: { params: { id: string } }) {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <User className="h-4 w-4 text-blue-400" /> Client
+                      <User className="h-4 w-4 text-gray-600" /> Client
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-1">
@@ -323,7 +323,7 @@ export default function RideDetailPage({ params }: { params: { id: string } }) {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <Car className="h-4 w-4 text-slate-500" /> Driver
+                      <Car className="h-4 w-4 text-gray-600" /> Driver
                     </CardTitle>
                   </CardHeader>
                   <CardContent>

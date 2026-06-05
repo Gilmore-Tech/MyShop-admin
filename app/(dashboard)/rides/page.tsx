@@ -5,7 +5,7 @@ import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Search, MapPin, MoreHorizontal, Car, Loader2 } from 'lucide-react'
+import { Search, MapPin, MoreHorizontal, Car, Loader2, AlertTriangle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -72,19 +72,19 @@ export default function RidesPage() {
         subtitle="All platform ride bookings"
         actions={
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 bg-blue-50 rounded-lg px-3 py-1.5">
-              <Car className="h-3.5 w-3.5 text-blue-500" />
-              <span className="text-sm font-semibold text-blue-700">{activeCount}</span>
-              <span className="text-xs text-blue-400">active</span>
+            <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+              <Car className="h-3.5 w-3.5 text-gray-600" />
+              <span className="text-sm font-semibold text-gray-700">{activeCount}</span>
+              <span className="text-xs text-gray-400">active</span>
             </div>
-            <div className="flex items-center gap-2 bg-emerald-50 rounded-lg px-3 py-1.5">
-              <span className="text-sm font-semibold text-emerald-700">{completedCount}</span>
-              <span className="text-xs text-emerald-400">completed</span>
+            <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+              <span className="text-sm font-semibold text-gray-700">{completedCount}</span>
+              <span className="text-xs text-gray-400">completed</span>
             </div>
             {disputedCount > 0 && (
-              <div className="flex items-center gap-2 bg-red-50 rounded-lg px-3 py-1.5">
-                <span className="text-sm font-semibold text-red-700">{disputedCount}</span>
-                <span className="text-xs text-red-400">disputed</span>
+              <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+                <span className="text-sm font-semibold text-gray-700">{disputedCount}</span>
+                <span className="text-xs text-gray-400">disputed</span>
               </div>
             )}
           </div>
@@ -157,22 +157,22 @@ export default function RidesPage() {
                     {ride.id.slice(-8).toUpperCase()}
                   </TableCell>
                   <TableCell className="text-sm text-gray-500 whitespace-nowrap">{formatDateTime(ride.createdAt)}</TableCell>
-                  <TableCell className="text-sm font-medium text-gray-800">{ride.clientName ?? '—'}</TableCell>
-                  <TableCell className="text-sm text-gray-500">{ride.driverName ?? <span className="text-amber-600 font-semibold">⚠ Unassigned</span>}</TableCell>
+                  <TableCell className="text-sm font-medium text-gray-800">{ride.clientName ?? '-'}</TableCell>
+                  <TableCell className="text-sm text-gray-500">{ride.driverName ?? <span className="text-amber-600 font-semibold flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Unassigned</span>}</TableCell>
                   <TableCell>
                     <div className="flex items-start gap-1 text-xs text-gray-500">
-                      <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0 text-emerald-500" />
+                      <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0 text-gray-600" />
                       <div>
                         <p>{ride.pickupAddress}</p>
                         <p className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3 text-red-400" />{ride.dropoffAddress}
+                          <MapPin className="h-3 w-3 text-gray-600" />{ride.dropoffAddress}
                         </p>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell><StatusBadge status={ride.status} /></TableCell>
                   <TableCell className="text-right text-sm font-semibold text-gray-800">{formatGhs(ride.farePesewas)}</TableCell>
-                  <TableCell className="text-sm text-gray-500">{ride.paymentMethod ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-gray-500">{ride.paymentMethod ?? '-'}</TableCell>
                   <TableCell><StatusBadge status={ride.paymentStatus} /></TableCell>
                   <TableCell>
                     <DropdownMenu>

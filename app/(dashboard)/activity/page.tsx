@@ -6,9 +6,9 @@ import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import {
-  Car, Wrench, DollarSign, ShieldAlert, UserCheck,
+  DollarSign, UserCheck,
   Scale, AlertCircle, RefreshCw, Activity, ArrowUpRight,
-  Users, CheckCircle2, XCircle, Siren,
+  CheckCircle2, XCircle, Siren, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -28,10 +28,10 @@ const EVENT_META: Record<ActivityEventType, {
   ride_disputed:    { label: 'Ride Disputed',    icon: Scale,        color: 'text-red-600',    bg: 'bg-red-50',      border: 'border-red-100' },
   job_completed:    { label: 'Job Completed',    icon: CheckCircle2, color: 'text-emerald-700', bg: 'bg-emerald-50',  border: 'border-emerald-100' },
   job_disputed:     { label: 'Job Disputed',     icon: Scale,        color: 'text-red-600',    bg: 'bg-red-50',      border: 'border-red-100' },
-  escrow_released:  { label: 'Escrow Released',  icon: DollarSign,   color: 'text-blue-600',   bg: 'bg-blue-50',     border: 'border-blue-100' },
+  escrow_released:  { label: 'Escrow Released',  icon: DollarSign,   color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
   sos_triggered:    { label: 'SOS Triggered',    icon: Siren,        color: 'text-red-700',    bg: 'bg-red-100',     border: 'border-red-200' },
-  kyc_submitted:    { label: 'KYC Submitted',    icon: UserCheck,    color: 'text-amber-700',  bg: 'bg-amber-50',    border: 'border-amber-100' },
-  dispute_resolved: { label: 'Dispute Resolved', icon: Scale,        color: 'text-blue-600',   bg: 'bg-blue-50',     border: 'border-blue-100' },
+  kyc_submitted:    { label: 'KYC Submitted',    icon: UserCheck,    color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
+  dispute_resolved: { label: 'Dispute Resolved', icon: Scale,        color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -42,16 +42,16 @@ const ROLE_LABEL: Record<string, string> = {
 }
 
 const ROLE_COLOR: Record<string, string> = {
-  driver:  'text-slate-600 bg-slate-100',
-  artisan: 'text-purple-700 bg-purple-50',
-  client:  'text-orange-700 bg-orange-50',
+  driver:  'text-gray-600 bg-gray-100',
+  artisan: 'text-gray-600 bg-gray-100',
+  client:  'text-gray-600 bg-gray-100',
   system:  'text-gray-500 bg-gray-100',
 }
 
 const ACTOR_BG: Record<string, string> = {
-  driver:  '#46535D',
-  artisan: '#8B5CF6',
-  client:  '#F5A623',
+  driver:  '#9CA3AF',
+  artisan: '#9CA3AF',
+  client:  '#9CA3AF',
   system:  '#9CA3AF',
 }
 
@@ -83,7 +83,39 @@ function shortId(id: string | null) {
   return id.slice(0, 8).toUpperCase()
 }
 
-const LIMIT_OPTIONS = [25, 50, 100]
+// Turn a raw DB event-type string into a readable label.
+// e.g. "ride_completed" / "RIDE.COMPLETED" -> "Ride Completed"
+function humanizeType(t: string) {
+  return t.replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim()
+    .replace(/\b\w/g, c => c.toUpperCase())
+}
+
+// Prefer our curated label when the type is known, otherwise humanize the raw value.
+function eventLabel(t: string) {
+  return EVENT_META[t as ActivityEventType]?.label ?? humanizeType(t)
+}
+
+type DateRange = 'all' | 'week' | 'month' | 'custom'
+
+const DAY_MS = 86_400_000
+
+// Whether an event timestamp falls inside the selected date range.
+function inDateRange(iso: string, range: DateRange, from: string, to: string): boolean {
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return true
+  const now = Date.now()
+  if (range === 'week')  return t >= now - 7 * DAY_MS
+  if (range === 'month') return t >= now - 30 * DAY_MS
+  if (range === 'custom') {
+    if (from && t < new Date(`${from}T00:00:00`).getTime())     return false
+    if (to   && t > new Date(`${to}T23:59:59.999`).getTime())   return false
+    return true
+  }
+  return true
+}
+
+const FETCH_LIMIT = 200   // how many recent events to pull for filtering
+const PAGE_SIZE = 15      // rows shown per page
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -92,26 +124,45 @@ export default function ActivityPage() {
   const [items, setItems]             = useState<ActivityItem[]>([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
-  const [typeFilter, setTypeFilter]   = useState<ActivityEventType | 'all'>('all')
+  const [typeFilter, setTypeFilter]   = useState<string>('all')
   const [roleFilter, setRoleFilter]   = useState<'all' | 'client' | 'driver' | 'artisan' | 'system'>('all')
-  const [limit, setLimit]             = useState(50)
+  const [dateRange, setDateRange]     = useState<DateRange>('all')
+  const [customFrom, setCustomFrom]   = useState('')
+  const [customTo, setCustomTo]       = useState('')
+  const [page, setPage]               = useState(1)
 
   const load = useCallback(() => {
     setLoading(true); setError(null)
-    getRecentActivity(limit)
+    getRecentActivity(FETCH_LIMIT)
       .then(data => setItems(data))
       .catch(() => setError('Failed to load activity feed.'))
       .finally(() => setLoading(false))
-  }, [limit])
+  }, [])
 
   useEffect(() => { load() }, [load])
   useAutoRefresh(load)
 
+  // Build the event-type filter options from the actual values in the data, so the
+  // options always match what the DB returns (regardless of its exact naming).
+  const availableTypes = Array.from(
+    new Set(items.map(i => i.eventType).filter(Boolean))
+  ).sort()
+
   const filtered = items.filter(item => {
     const matchType = typeFilter === 'all' || item.eventType === typeFilter
     const matchRole = roleFilter === 'all' || item.actorRole === roleFilter
-    return matchType && matchRole
+    const matchDate = inDateRange(item.occurredAt, dateRange, customFrom, customTo)
+    return matchType && matchRole && matchDate
   })
+
+  // Reset to the first page whenever the filters change so results stay visible.
+  useEffect(() => { setPage(1) }, [typeFilter, roleFilter, dateRange, customFrom, customTo])
+
+  // Client-side pagination over the filtered list.
+  const totalPages   = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage  = Math.min(page, totalPages)
+  const pageStart    = (currentPage - 1) * PAGE_SIZE
+  const pageItems    = filtered.slice(pageStart, pageStart + PAGE_SIZE)
 
   // Summary counts
   const counts = {
@@ -131,7 +182,7 @@ export default function ActivityPage() {
       <div>
         <PageHeader
           title="Activity Feed"
-          subtitle="Platform-wide event stream — rides, jobs, payments, and safety events."
+          subtitle="Platform-wide event stream - rides, jobs, payments, and safety events."
           actions={
             <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" onClick={load}>
               <RefreshCw className="h-3.5 w-3.5" /> Refresh
@@ -153,7 +204,7 @@ export default function ActivityPage() {
               </span>
             )}
             {counts.kyc > 0 && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
                 <UserCheck className="h-3 w-3" /> {counts.kyc} KYC Pending
               </span>
             )}
@@ -162,14 +213,14 @@ export default function ActivityPage() {
 
         {/* Filters */}
         <div className="flex items-center gap-3 mb-5 flex-wrap">
-          <Select value={typeFilter} onValueChange={v => setTypeFilter(v as typeof typeFilter)}>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="w-48 h-8 text-sm bg-gray-50">
               <SelectValue placeholder="Event type" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Events</SelectItem>
-              {(Object.keys(EVENT_META) as ActivityEventType[]).map(k => (
-                <SelectItem key={k} value={k}>{EVENT_META[k].label}</SelectItem>
+              {availableTypes.map(k => (
+                <SelectItem key={k} value={k}>{eventLabel(k)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -187,16 +238,51 @@ export default function ActivityPage() {
             </SelectContent>
           </Select>
 
-          <Select value={String(limit)} onValueChange={v => setLimit(Number(v))}>
-            <SelectTrigger className="w-32 h-8 text-sm bg-gray-50">
-              <SelectValue />
+          <Select value={dateRange} onValueChange={v => setDateRange(v as DateRange)}>
+            <SelectTrigger className="w-40 h-8 text-sm bg-gray-50">
+              <SelectValue placeholder="Date range" />
             </SelectTrigger>
             <SelectContent>
-              {LIMIT_OPTIONS.map(l => (
-                <SelectItem key={l} value={String(l)}>Last {l}</SelectItem>
-              ))}
+              <SelectItem value="all">All time</SelectItem>
+              <SelectItem value="week">Last 7 days</SelectItem>
+              <SelectItem value="month">Last 30 days</SelectItem>
+              <SelectItem value="custom">Custom range</SelectItem>
             </SelectContent>
           </Select>
+
+          {dateRange === 'custom' && (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo || undefined}
+                onChange={e => setCustomFrom(e.target.value)}
+                className="h-8 text-sm bg-gray-50 border border-gray-200 rounded-md px-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+              />
+              <span className="text-xs text-gray-400">to</span>
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom || undefined}
+                onChange={e => setCustomTo(e.target.value)}
+                className="h-8 text-sm bg-gray-50 border border-gray-200 rounded-md px-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+              />
+            </div>
+          )}
+
+          {(typeFilter !== 'all' || roleFilter !== 'all' || dateRange !== 'all') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs text-gray-500"
+              onClick={() => {
+                setTypeFilter('all'); setRoleFilter('all')
+                setDateRange('all'); setCustomFrom(''); setCustomTo('')
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
 
           <span className="text-xs text-gray-400 ml-auto">{filtered.length} event{filtered.length !== 1 ? 's' : ''}</span>
         </div>
@@ -244,7 +330,6 @@ export default function ActivityPage() {
                 <tr>
                   <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Event</th>
                   <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Actor</th>
-                  <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Counterparty</th>
                   <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Details</th>
                   <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Amount</th>
                   <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Time</th>
@@ -252,7 +337,7 @@ export default function ActivityPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map(item => {
+                {pageItems.map(item => {
                   const meta = EVENT_META[item.eventType] ?? {
                     label: (item.eventType ?? 'unknown').replace(/_/g, ' '), icon: Activity,
                     color: 'text-gray-500', bg: 'bg-gray-100', border: 'border-gray-200',
@@ -291,18 +376,6 @@ export default function ActivityPage() {
                         </div>
                       </td>
 
-                      {/* Counterparty */}
-                      <td className="px-4 py-3">
-                        {item.secondaryActorName ? (
-                          <div className="flex items-center gap-1.5">
-                            <Users className="h-3.5 w-3.5 text-gray-300 shrink-0" />
-                            <span className="text-sm text-gray-700 truncate max-w-[120px]">{item.secondaryActorName}</span>
-                          </div>
-                        ) : (
-                          <span className="text-gray-300">—</span>
-                        )}
-                      </td>
-
                       {/* Details / description */}
                       <td className="px-4 py-3 text-xs text-gray-500 max-w-[200px]">
                         <span className="line-clamp-2 leading-relaxed">{item.description}</span>
@@ -319,7 +392,7 @@ export default function ActivityPage() {
                             {fmtAmount(item.amountPesewas)}
                           </span>
                         ) : (
-                          <span className="text-gray-300">—</span>
+                          <span className="text-gray-300">-</span>
                         )}
                       </td>
 
@@ -341,7 +414,7 @@ export default function ActivityPage() {
                             <ArrowUpRight className="h-3 w-3" />
                           </button>
                         ) : (
-                          <span className="text-gray-300">—</span>
+                          <span className="text-gray-300">-</span>
                         )}
                       </td>
 
@@ -350,6 +423,38 @@ export default function ActivityPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {!loading && !error && filtered.length > PAGE_SIZE && (
+          <div className="flex items-center justify-between mt-4">
+            <p className="text-xs text-gray-400">
+              Showing {pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, filtered.length)} of {filtered.length}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 text-xs"
+                disabled={currentPage <= 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" /> Prev
+              </Button>
+              <span className="text-xs text-gray-500 tabular-nums px-1">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 text-xs"
+                disabled={currentPage >= totalPages}
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              >
+                Next <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
         )}
       </div>

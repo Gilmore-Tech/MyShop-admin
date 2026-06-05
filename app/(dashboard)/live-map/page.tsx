@@ -69,21 +69,21 @@ function Pin({ type, status, selected }: { type: string; status: string; selecte
 
 // ─── Status badge helper ───────────────────────────────────────────────────────
 const STATUS_COLORS: Record<string, string> = {
-  open:          'bg-blue-50 text-blue-700',
-  pending:       'bg-yellow-50 text-yellow-700',
-  accepted:      'bg-indigo-50 text-indigo-700',
-  assigned:      'bg-indigo-50 text-indigo-700',
-  en_route:      'bg-green-50 text-green-700',
-  in_progress:   'bg-green-50 text-green-700',
-  arrived:       'bg-purple-50 text-purple-700',
+  open:          'bg-gray-100 text-gray-600',
+  pending:       'bg-gray-100 text-gray-600',
+  accepted:      'bg-gray-100 text-gray-600',
+  assigned:      'bg-gray-100 text-gray-600',
+  en_route:      'bg-gray-100 text-gray-600',
+  in_progress:   'bg-gray-100 text-gray-600',
+  arrived:       'bg-gray-100 text-gray-600',
   completed:     'bg-gray-100 text-gray-600',
-  cancelled:     'bg-red-50 text-red-600',
-  disputed:      'bg-orange-50 text-orange-700',
-  payment_pending:'bg-yellow-50 text-yellow-700',
+  cancelled:     'bg-gray-100 text-gray-600',
+  disputed:      'bg-gray-100 text-gray-600',
+  payment_pending:'bg-gray-100 text-gray-600',
 }
 
 function StatusBadge({ status }: { status: string | null | undefined }) {
-  if (!status) return <span className="text-gray-300">—</span>
+  if (!status) return <span className="text-gray-300">-</span>
   const cls = STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-500'
   return (
     <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${cls}`}>
@@ -103,7 +103,7 @@ function normaliseStatus(status: string): string {
 }
 
 function fmt(pesewas: number | null | undefined) {
-  if (pesewas == null) return '—'
+  if (pesewas == null) return '-'
   return `GHS ${(pesewas / 100).toFixed(2)}`
 }
 
@@ -178,7 +178,7 @@ function RidesTable() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              {['Booking ID', 'Client', 'Driver', 'Pickup → Dropoff', 'Status', 'Fare', 'Payment', 'Created'].map(h => (
+              {['Booking ID', 'Client', 'Driver', 'Pickup -> Dropoff', 'Status', 'Fare', 'Payment', 'Created'].map(h => (
                 <th key={h} className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -199,11 +199,11 @@ function RidesTable() {
             {!loading && rides.map(r => (
               <tr key={r.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{r.id.slice(0, 8)}…</td>
-                <td className="px-4 py-3 text-gray-800 font-medium">{r.clientName ?? '—'}</td>
-                <td className="px-4 py-3 text-gray-600">{r.driverName ?? '—'}</td>
+                <td className="px-4 py-3 text-gray-800 font-medium">{r.clientName ?? '-'}</td>
+                <td className="px-4 py-3 text-gray-600">{r.driverName ?? '-'}</td>
                 <td className="px-4 py-3 text-gray-500 text-xs max-w-[200px]">
-                  <span className="block truncate">{r.pickupAddress || '—'}</span>
-                  <span className="block truncate text-gray-400">→ {r.dropoffAddress || '—'}</span>
+                  <span className="block truncate">{r.pickupAddress || '-'}</span>
+                  <span className="block truncate text-gray-400">{'->'} {r.dropoffAddress || '-'}</span>
                 </td>
                 <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
                 <td className="px-4 py-3 font-medium text-gray-800">{fmt(r.farePesewas)}</td>
@@ -310,14 +310,14 @@ function JobsTable() {
             {!loading && jobs.map(j => (
               <tr key={j.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{j.id.slice(0, 8)}…</td>
-                <td className="px-4 py-3 text-gray-800 font-medium">{j.clientName ?? '—'}</td>
-                <td className="px-4 py-3 text-gray-600">{j.artisanName ?? '—'}</td>
-                <td className="px-4 py-3 text-gray-500">{j.categoryName ?? '—'}</td>
+                <td className="px-4 py-3 text-gray-800 font-medium">{j.clientName ?? '-'}</td>
+                <td className="px-4 py-3 text-gray-600">{j.artisanName ?? '-'}</td>
+                <td className="px-4 py-3 text-gray-500">{j.categoryName ?? '-'}</td>
                 <td className="px-4 py-3"><StatusBadge status={j.status} /></td>
                 <td className="px-4 py-3 font-medium text-gray-800">{fmt(j.agreedPricePesewas)}</td>
                 <td className="px-4 py-3 text-gray-600">{fmt(j.supplementPesewas)}</td>
                 <td className="px-4 py-3">
-                  {j.paymentStatus ? <StatusBadge status={j.paymentStatus} /> : <span className="text-gray-300">—</span>}
+                  {j.paymentStatus ? <StatusBadge status={j.paymentStatus} /> : <span className="text-gray-300">-</span>}
                 </td>
                 <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(j.createdAt)}</td>
               </tr>
@@ -448,19 +448,19 @@ export default function LiveMapPage() {
             <div className="flex items-center justify-between px-5 pt-4 pb-3">
               <div>
                 <h1 className="text-xl font-bold text-gray-900 leading-tight">Live Operations Map</h1>
-                <p className="text-sm text-gray-400 mt-0.5">Real-time tracking · auto-refreshes every 30 s</p>
+                <p className="text-sm text-gray-400 mt-0.5">Real-time tracking | auto-refreshes every 30 s</p>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-2 bg-blue-50 rounded-lg px-3 py-1.5">
-                    <Car className="h-3.5 w-3.5 text-blue-500" />
-                    <span className="text-sm font-semibold text-blue-700">{rideCount}</span>
-                    <span className="text-xs text-blue-400">rides</span>
+                  <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+                    <Car className="h-3.5 w-3.5 text-gray-600" />
+                    <span className="text-sm font-semibold text-gray-700">{rideCount}</span>
+                    <span className="text-xs text-gray-400">rides</span>
                   </div>
-                  <div className="flex items-center gap-2 bg-orange-50 rounded-lg px-3 py-1.5">
-                    <Wrench className="h-3.5 w-3.5 text-orange-500" />
-                    <span className="text-sm font-semibold text-orange-700">{jobCount}</span>
-                    <span className="text-xs text-orange-400">jobs</span>
+                  <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+                    <Wrench className="h-3.5 w-3.5 text-gray-600" />
+                    <span className="text-sm font-semibold text-gray-700">{jobCount}</span>
+                    <span className="text-xs text-gray-400">jobs</span>
                   </div>
                   <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5">
                     <Activity className="h-3.5 w-3.5 text-gray-400" />
@@ -468,8 +468,8 @@ export default function LiveMapPage() {
                     <span className="text-xs text-gray-400">total</span>
                   </div>
                 </div>
-                <div className={`flex items-center gap-1.5 text-xs font-medium rounded-lg px-2.5 py-1.5 ${wsConnected ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50'}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full inline-block ${wsConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
+                <div className="flex items-center gap-1.5 text-xs font-medium rounded-lg px-2.5 py-1.5 text-gray-600 bg-gray-100">
+                  <span className={`w-1.5 h-1.5 rounded-full inline-block bg-gray-400 ${wsConnected ? 'animate-pulse' : ''}`} />
                   {wsConnected ? 'Live' : 'Polling'}
                 </div>
                 <Button variant="outline" size="sm" onClick={loadMarkers} className="gap-1.5 text-xs h-8">
@@ -568,7 +568,7 @@ export default function LiveMapPage() {
               {markers.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-6 py-5 max-w-sm text-center">
-                    <AlertCircle className="h-8 w-8 text-amber-400 mx-auto mb-3" />
+                    <AlertCircle className="h-8 w-8 text-gray-400 mx-auto mb-3" />
                     <p className="font-semibold text-gray-800 text-sm mb-1">No active bookings on map</p>
                     <p className="text-xs text-gray-400 leading-relaxed">
                       Only bookings with a live GPS position are shown here
@@ -614,17 +614,17 @@ export default function LiveMapPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-gray-50 rounded-lg p-3">
                       <p className="text-[11px] text-gray-400 font-medium mb-1">Provider</p>
-                      <p className="text-sm font-semibold text-gray-800">{selected.providerName ?? '—'}</p>
+                      <p className="text-sm font-semibold text-gray-800">{selected.providerName ?? '-'}</p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3">
                       <p className="text-[11px] text-gray-400 font-medium mb-1">Client</p>
-                      <p className="text-sm font-semibold text-gray-800">{selected.clientName ?? '—'}</p>
+                      <p className="text-sm font-semibold text-gray-800">{selected.clientName ?? '-'}</p>
                     </div>
                   </div>
 
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-[11px] text-gray-400 font-medium mb-1">Coordinates</p>
-                    <p className="text-xs font-mono text-gray-600">{selected.lat.toFixed(5)}° N &nbsp;·&nbsp; {Math.abs(selected.lng).toFixed(5)}° W</p>
+                    <p className="text-xs font-mono text-gray-600">{selected.lat.toFixed(5)}° N &nbsp;|&nbsp; {Math.abs(selected.lng).toFixed(5)}° W</p>
                   </div>
 
                   {selected.detail && (
@@ -685,7 +685,7 @@ export default function LiveMapPage() {
           >
             <div className="flex items-center gap-3">
               <h2 className="text-base font-bold text-gray-900">All Bookings</h2>
-              <span className="text-xs text-gray-400 font-normal">All rides &amp; artisan jobs — every status</span>
+              <span className="text-xs text-gray-400 font-normal">All rides &amp; artisan jobs - every status</span>
             </div>
             {tableOpen ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
           </button>

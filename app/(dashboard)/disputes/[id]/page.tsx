@@ -222,7 +222,9 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                       title={`PRD 4.8.1 threshold: ${ROUTE_EXCESS_THRESHOLD}%`}
                     >
                       {detail.routeExcessPercent.toFixed(1)}% over optimal
-                      {detail.routeExcessPercent >= ROUTE_EXCESS_THRESHOLD && ' ⚠'}
+                      {detail.routeExcessPercent >= ROUTE_EXCESS_THRESHOLD && (
+                        <AlertTriangle className="h-3 w-3 inline-block ml-1 text-red-500" />
+                      )}
                     </span>
                   )}
                 </div>
@@ -266,7 +268,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                       <MapPin className="h-6 w-6 text-gray-300 mx-auto" />
                       <p className="text-sm text-gray-400">
                         {!mapboxToken
-                          ? 'Map disabled — NEXT_PUBLIC_MAPBOX_TOKEN not set.'
+                          ? 'Map disabled - NEXT_PUBLIC_MAPBOX_TOKEN not set.'
                           : 'No GPS trail captured for this dispute.'}
                       </p>
                     </div>
@@ -286,16 +288,16 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                   icon={<UserIcon className="h-4 w-4" />}
                   title="Client"
                   rows={[
-                    ['Name', detail.client?.fullName ?? '—'],
-                    ['Phone', detail.client?.phone ?? '—'],
+                    ['Name', detail.client?.fullName ?? '-'],
+                    ['Phone', detail.client?.phone ?? '-'],
                   ]}
                 />
                 <SnapshotPanel
                   icon={detail.provider?.type === 'driver' ? <Car className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}
                   title={detail.provider?.type === 'driver' ? 'Driver' : detail.provider?.type === 'artisan' ? 'Artisan' : 'Provider'}
                   rows={[
-                    ['Name', detail.provider?.fullName ?? '—'],
-                    ['Phone', detail.provider?.phone ?? '—'],
+                    ['Name', detail.provider?.fullName ?? '-'],
+                    ['Phone', detail.provider?.phone ?? '-'],
                   ]}
                 />
                 <SnapshotPanel
@@ -304,13 +306,13 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                   rows={
                     detail.booking?.type === 'ride'
                       ? [
-                          ['Pickup', detail.booking?.pickupAddress ?? '—'],
-                          ['Dropoff', detail.booking?.dropoffAddress ?? '—'],
-                          ['Fare', detail.booking?.farePesewas != null ? formatGhs(detail.booking.farePesewas) : '—'],
+                          ['Pickup', detail.booking?.pickupAddress ?? '-'],
+                          ['Dropoff', detail.booking?.dropoffAddress ?? '-'],
+                          ['Fare', detail.booking?.farePesewas != null ? formatGhs(detail.booking.farePesewas) : '-'],
                         ]
                       : [
-                          ['Reference', detail.booking?.shortRef ?? detail.booking?.id?.slice(0, 8) ?? '—'],
-                          ['Fare', detail.booking?.farePesewas != null ? formatGhs(detail.booking.farePesewas) : '—'],
+                          ['Reference', detail.booking?.shortRef ?? detail.booking?.id?.slice(0, 8) ?? '-'],
+                          ['Fare', detail.booking?.farePesewas != null ? formatGhs(detail.booking.farePesewas) : '-'],
                         ]
                   }
                 />
@@ -318,10 +320,10 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                   icon={<Receipt className="h-4 w-4" />}
                   title="Payment"
                   rows={[
-                    ['Gross', detail.payment?.grossPesewas != null ? formatGhs(detail.payment.grossPesewas) : '—'],
-                    ['Commission', detail.payment?.commissionPesewas != null ? formatGhs(detail.payment.commissionPesewas) : '—'],
+                    ['Gross', detail.payment?.grossPesewas != null ? formatGhs(detail.payment.grossPesewas) : '-'],
+                    ['Commission', detail.payment?.commissionPesewas != null ? formatGhs(detail.payment.commissionPesewas) : '-'],
                     ['Method', paymentMethodLabel(detail.payment?.method)],
-                    ['Status', detail.payment?.status ? <StatusBadge key="s" status={detail.payment.status} /> : '—'],
+                    ['Status', detail.payment?.status ? <StatusBadge key="s" status={detail.payment.status} /> : '-'],
                   ]}
                 />
               </div>
@@ -338,7 +340,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                             Photo {idx + 1}
                           </a>
                         ) : (
-                          <p>{e.text ?? '—'}</p>
+                          <p>{e.text ?? '-'}</p>
                         )}
                       </div>
                     ))}
@@ -362,7 +364,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                   </span>
                 </Row>
                 <Row label="Disputed amount">
-                  <span className="text-sm font-semibold">{maxRefundPesewas != null ? formatGhs(maxRefundPesewas) : '—'}</span>
+                  <span className="text-sm font-semibold">{maxRefundPesewas != null ? formatGhs(maxRefundPesewas) : '-'}</span>
                 </Row>
                 {detail.description && (
                   <div className="pt-2 border-t border-gray-100">

@@ -7,7 +7,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <AuthGuard>
       <RouteLoading />
-      <div className="flex h-screen w-full overflow-hidden bg-background">
+      <div className="flex h-full w-full overflow-hidden bg-background">
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
           <Header />

@@ -6,7 +6,7 @@ import { PageGuard } from '@/components/common/page-guard'
 import {
   Search, CheckCircle, XCircle, RefreshCw, FileText,
   ChevronLeft, ChevronRight, ExternalLink, Loader2,
-  ImageOff, AlertCircle,
+  ImageOff, AlertCircle, Check, X,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -41,9 +41,9 @@ function DocsProgress({ pending, approved, rejected, total }: {
   return (
     <div className="flex items-center gap-2">
       <div className="flex gap-0.5">
-        {approved > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-emerald-700 bg-emerald-50 px-1.5 rounded">{approved} ✓</span>}
-        {pending > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-amber-700 bg-amber-50 px-1.5 rounded">{pending} ⏳</span>}
-        {rejected > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-red-700 bg-red-50 px-1.5 rounded">{rejected} ✗</span>}
+        {approved > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-emerald-700 bg-emerald-50 px-1.5 rounded">{approved} <Check className="h-3 w-3" /></span>}
+        {pending > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-gray-600 bg-gray-100 px-1.5 rounded">{pending}</span>}
+        {rejected > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-red-700 bg-red-50 px-1.5 rounded">{rejected} <X className="h-3 w-3" /></span>}
       </div>
       <span className="text-xs text-gray-400">/ {total}</span>
     </div>
@@ -67,7 +67,7 @@ function DocStatusBadge({ status }: { status: string }) {
     </span>
   )
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
       Pending Review
     </span>
   )
@@ -111,7 +111,7 @@ function DocViewer({ doc }: { doc: ProviderDocument }) {
       <div className="flex flex-col items-center justify-center gap-2 h-56 bg-gray-50 rounded-xl border border-dashed border-gray-200">
         <ImageOff className="h-8 w-8 text-gray-300" />
         <p className="text-sm text-gray-400">
-          {!url ? 'No file URL attached' : 'File not yet confirmed by the app — waiting for upload to complete'}
+          {!url ? 'No file URL attached' : 'File not yet confirmed by the app - waiting for upload to complete'}
         </p>
       </div>
     )
@@ -252,7 +252,7 @@ function DocumentStep({
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <p className="text-xs text-gray-400">Uploaded {formatDate(doc.uploaded_at)}</p>
             {doc.version > 1 && (
-              <span className="text-[11px] bg-blue-50 text-blue-600 px-1.5 rounded font-medium">v{doc.version}</span>
+              <span className="text-[11px] bg-gray-100 text-gray-600 px-1.5 rounded font-medium">v{doc.version}</span>
             )}
             {doc.expires_at && (
               <span className="text-[11px] bg-gray-100 text-gray-500 px-1.5 rounded">
@@ -422,13 +422,13 @@ function FinalDecisionStep({
       {anyRejected && (
         <div className="flex items-start gap-2 bg-red-50 text-red-700 text-xs rounded-lg px-3 py-2">
           <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-          One or more documents rejected — approval not recommended.
+          One or more documents rejected - approval not recommended.
         </div>
       )}
       {allApproved && (
         <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 text-xs rounded-lg px-3 py-2">
           <CheckCircle className="h-3.5 w-3.5 shrink-0" />
-          All documents approved — provider can be verified.
+          All documents approved - provider can be verified.
         </div>
       )}
 
@@ -563,7 +563,7 @@ function ReviewDrawer({
         <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div className="flex items-center gap-3">
             <Avatar className="h-9 w-9">
-              <AvatarFallback className="bg-amber-100 text-amber-700 text-sm font-bold">
+              <AvatarFallback className="bg-gray-100 text-gray-600 text-sm font-bold">
                 {initials(item.provider_name)}
               </AvatarFallback>
             </Avatar>
@@ -691,11 +691,11 @@ export default function VerificationsPage() {
           <div className="flex items-center gap-3">
             <div className="text-sm text-gray-500 bg-white rounded-lg px-3 py-1.5 flex items-center gap-3">
               <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+                <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
                 {pendingCount} Pending Docs
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
+                <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
                 {items.length} Providers
               </span>
             </div>
@@ -759,7 +759,7 @@ export default function VerificationsPage() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-amber-100 text-amber-700 text-xs font-bold">
+                        <AvatarFallback className="bg-gray-100 text-gray-600 text-xs font-bold">
                           {initials(v.provider_name)}
                         </AvatarFallback>
                       </Avatar>
