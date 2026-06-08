@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { getRideDetail, cancelRide, forceCompleteRide, type RideDetail } from '@/lib/api'
-import { getAdminUser } from '@/lib/api-client'
+import { getAdminUser, ApiError } from '@/lib/api-client'
 import { can } from '@/lib/roles'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -110,7 +110,13 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
     setLoading(true)
     getRideDetail(rideId)
       .then(setRide)
-      .catch(e => setError((e as Error).message ?? 'Failed to load ride'))
+      .catch(e => {
+        if (e instanceof ApiError && e.status === 404) {
+          setError('Ride details are not available yet. The detail endpoint for this ride could not be found on the server.')
+        } else {
+          setError((e as Error).message ?? 'Failed to load ride')
+        }
+      })
       .finally(() => setLoading(false))
   }, [rideId])
 
@@ -165,7 +171,16 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
         )}
 
         {!loading && error && (
-          <div className="bg-white rounded-xl shadow-sm p-10 text-center text-red-500 text-sm">{error}</div>
+          <div className="bg-white rounded-xl shadow-sm p-10 text-center">
+            <AlertTriangle className="h-8 w-8 text-gray-300 mx-auto mb-3" />
+            <p className="text-sm font-medium text-gray-700">Could not load this ride</p>
+            <p className="text-xs text-gray-400 mt-1.5 max-w-md mx-auto">{error}</p>
+            <Link href="/rides">
+              <Button variant="outline" size="sm" className="mt-4 gap-1.5">
+                <ArrowLeft className="h-4 w-4" /> Back to Rides
+              </Button>
+            </Link>
+          </div>
         )}
 
         {!loading && ride && (

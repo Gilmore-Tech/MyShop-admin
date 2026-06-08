@@ -13,11 +13,12 @@ import {
  type PieLabelRenderProps,
 } from 'recharts'
 import {
- getRevenueReport, getProviderReport, getOverviewReport,
+ getRevenueReport, getProviderReport, getOverviewReport, listUsers,
  getRideStatusReport, getJobCategoryReport, getPaymentReport, getDisputeRateReport,
  type RevenueDataPoint, type ProviderReport, type OverviewReport,
  type RideStatusBreakdown, type JobCategoryCount, type PaymentReport, type DisputeRatePoint,
 } from '@/lib/api'
+import { formatDayShort } from '@/lib/format-date'
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 const C = {
@@ -106,6 +107,7 @@ export default function AnalyticsPage() {
  const [jobCats, setJobCats] = useState<JobCategoryCount[] | null>(null)
  const [paymentRpt, setPaymentRpt] = useState<PaymentReport | null>(null)
  const [disputeRts, setDisputeRts] = useState<DisputeRatePoint[] | null>(null)
+ const [userTotal, setUserTotal] = useState<number | null>(null)
 
  useEffect(() => {
  const groupBy = range ==='3 months' ?'week' :'day'
@@ -129,7 +131,8 @@ export default function AnalyticsPage() {
  trace('jobs/cats',     getJobCategoryReport(dateParams)),
  trace('payments',      getPaymentReport(dateParams)),
  trace('disputes/rate', getDisputeRateReport(dateParams)),
- ]).then(([rev, prov, ov, rs, jc, pr, dr]) => {
+ trace('users',         listUsers({ limit: 1 })),
+ ]).then(([rev, prov, ov, rs, jc, pr, dr, users]) => {
  if (rev) setRevenue(rev.periods ?? [])
  if (prov) setProviders(prov)
  if (ov) setOverview(ov)
@@ -137,6 +140,7 @@ export default function AnalyticsPage() {
  setJobCats(Array.isArray(jc) ? jc : jc ? [] : null)
  setPaymentRpt(pr)
  setDisputeRts(Array.isArray(dr) ? dr : dr ? [] : null)
+ setUserTotal(users?.total ?? null)
  })
  }, [range])
 
@@ -145,18 +149,21 @@ export default function AnalyticsPage() {
  const totalCommGhs  = revenueData.reduce((s, d) => s + d.commissionGhs, 0)
  const totalPayments = revenueData.reduce((s, d) => s + d.totalPayments, 0)
  const avgBookingGhs = totalPayments > 0 ? Math.round(totalRevGhs / totalPayments) : 0
- const totalUsers    = (overview?.registeredClients ?? 0) + (overview?.registeredDrivers ?? 0) + (overview?.registeredArtisans ?? 0)
+ // Distinct account count from /admin/users. Summing role counts double-counts
+ // users who hold more than one role (e.g. a client who is also a driver).
+ const roleSum    = (overview?.registeredClients ?? 0) + (overview?.registeredDrivers ?? 0) + (overview?.registeredArtisans ?? 0)
+ const totalUsers = userTotal ?? roleSum
 
  // ── Derived: Revenue area chart ────────────────────────────────────────────
  const revenueArea = revenueData.map(d => ({
- date: d.period.slice(5),
+ date: formatDayShort(d.period),
  'Collections (GHS)': Math.round(d.collectionsGhs),
  'Commission (GHS)':  Math.round(d.commissionGhs),
  }))
 
  // ── Derived: Daily payment volume ──────────────────────────────────────────
  const bookingVolume = revenueData.map(d => ({
- date: d.period.slice(5),
+ date: formatDayShort(d.period),
  'Payments':    d.totalPayments,
  'Successful':  d.successfulPayments,
  }))
@@ -179,6 +186,9 @@ export default function AnalyticsPage() {
  const peakDay = bookingBar.length
  ? bookingBar.reduce((a, b) => (b.Payments > a.Payments ? b : a))
  : null
+ // Day-of-week bucketing is only meaningful for daily periods. In the 3-month
+ // view the revenue report is grouped by week, so weekly rows can't be split by day.
+ const isDaily = range !== '3 months'
 
  // ── Derived: Ride status donut ─────────────────────────────────────────────
  const rideStatusData = useMemo(() => {
@@ -191,9 +201,10 @@ export default function AnalyticsPage() {
  ].filter(d => d.value > 0)
  }
  if (overview) {
+ // Fallback: only a real ride count (active rides). Disputes are not a ride
+ // status and would make the "rides" total meaningless, so they're excluded.
  return [
  { name:'Active Rides', value: overview.activeRides, fill: C.blue },
- { name:'Open Disputes', value: overview.openDisputes, fill: C.amber },
  ].filter(d => d.value > 0)
  }
  return []
@@ -201,6 +212,9 @@ export default function AnalyticsPage() {
 
  const rideStatusTotal = rideStatusData.reduce((s, d) => s + d.value, 0)
  const rideStatusLabel = rideStatus ?'Distribution of ride outcomes' :'Current snapshot from overview'
+ // In fallback mode the number is "active now", not a historical total.
+ const rideCenterCaption = rideStatus ?'total rides' :'active now'
+ const rideBadgeNoun = rideStatus ?'rides' :'active'
 
  // ── Derived: Job categories ────────────────────────────────────────────────
  const categoryData = useMemo(() => {
@@ -231,7 +245,7 @@ export default function AnalyticsPage() {
  const paymentSuccess = useMemo(() => {
  if (!paymentRpt || paymentRpt.dailyRates.length === 0) return []
  return paymentRpt.dailyRates.map(d => ({
- day: d.date.slice(5),
+ day: formatDayShort(d.date),
  success: Math.round(d.successRate * 10) / 10,
  failed: Math.round(d.failureRate * 10) / 10,
  }))
@@ -244,25 +258,30 @@ export default function AnalyticsPage() {
  // ── Derived: Dispute rate ─────────────────────────────────────────────────
  const disputeRateData = useMemo(() => {
  if (!disputeRts || disputeRts.length === 0) return []
- return disputeRts.map(d => ({ day: d.date.slice(5), rate: Math.round(d.rate * 100) / 100 }))
+ return disputeRts.map(d => ({ day: formatDayShort(d.date), rate: Math.round(d.rate * 100) / 100 }))
  }, [disputeRts])
 
  const avgDisputeRate = disputeRateData.length
  ? (disputeRateData.reduce((s, d) => s + d.rate, 0) / disputeRateData.length).toFixed(2)
  : null
 
- // ── Derived: Leaderboards ─────────────────────────────────────────────────
- const topDrivers = (providers?.drivers ?? []).map(d => ({
+ // ── Derived: Leaderboards (sorted client-side to match the stated ranking) ──
+ const topDrivers = [...(providers?.drivers ?? [])]
+ .sort((a, b) => b.totalEarningsGhs - a.totalEarningsGhs)
+ .map(d => ({
  name: d.name,
- rides: d.ratingCount,
- rating: d.avgRating ?? 0,
+ ratingCount: d.ratingCount,
+ rating: d.avgRating,            // number | null — null means no ratings yet
  earnings: `GHS ${d.totalEarningsGhs.toLocaleString('en-GH', { minimumFractionDigits: 0 })}`,
  }))
 
- const topArtisans = (providers?.artisans ?? []).map(a => ({
+ const topArtisans = [...(providers?.artisans ?? [])]
+ .sort((a, b) => b.completedJobsCount - a.completedJobsCount)
+ .map(a => ({
  name: a.name,
  jobs: a.completedJobsCount,
- rating: a.avgRating ?? 0,
+ ratingCount: a.ratingCount,
+ rating: a.avgRating,            // number | null
  earnings: a.supplementRatePct != null ? `${a.supplementRatePct.toFixed(0)}% suppl.` : '-',
  }))
 
@@ -301,7 +320,7 @@ export default function AnalyticsPage() {
  <KpiCard label="Commission Earned" value={`GHS ${totalCommGhs.toLocaleString()}`} sub="20% platform cut" icon={CreditCard} />
  <KpiCard label="Total Payments" value={totalPayments.toLocaleString()} sub="Payment transactions" icon={Repeat2} />
  <KpiCard label="Avg Transaction" value={`GHS ${avgBookingGhs}`} sub="Per payment" icon={TrendingUp} />
- <KpiCard label="Registered Users" value={totalUsers.toLocaleString()} sub="Clients + providers" icon={Users} />
+ <KpiCard label="Registered Users" value={totalUsers.toLocaleString()} sub="Distinct accounts" icon={Users} />
  </div>
 
  {/* ── Revenue Trend ─────────────────────────────────────────────────── */}
@@ -396,14 +415,16 @@ export default function AnalyticsPage() {
  <SectionTitle>Payments by Day of Week</SectionTitle>
  <p className="text-xs text-gray-400 -mt-2">Aggregated from revenue period</p>
  </div>
- {bookingTotal > 0 && peakDay && (
+ {isDaily && bookingTotal > 0 && peakDay && (
  <div className="flex items-center gap-2 shrink-0">
  <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">Peak: {peakDay.day}</span>
  <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">{bookingTotal} total</span>
  </div>
  )}
  </div>
- {bookingTotal > 0 ? (
+ {!isDaily ? (
+ <ChartEmpty message="Day-of-week view is available for the 7 and 30 day ranges" />
+ ) : bookingTotal > 0 ? (
  <ResponsiveContainer width="100%" height={200}>
  <BarChart data={bookingBar} margin={{ top: 10, right: 5, left: -20, bottom: 0 }} barSize={10} barGap={2}>
  <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
@@ -428,7 +449,7 @@ export default function AnalyticsPage() {
  </div>
  {rideStatusTotal > 0 && (
  <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium shrink-0">
- {rideStatusTotal} rides
+ {rideStatusTotal} {rideBadgeNoun}
  </span>
  )}
  </div>
@@ -442,7 +463,7 @@ export default function AnalyticsPage() {
  return (
  <text textAnchor="middle">
  <tspan x={cx} y={cy - 4} fontSize={15} fontWeight={700} fill="#111827">{rideStatusTotal}</tspan>
- <tspan x={cx} y={cy + 13} fontSize={9} fill="#9ca3af">total rides</tspan>
+ <tspan x={cx} y={cy + 13} fontSize={9} fill="#9ca3af">{rideCenterCaption}</tspan>
  </text>
  )
  }} />
@@ -565,7 +586,7 @@ export default function AnalyticsPage() {
  <BarChart data={paymentSuccess} margin={{ top: 5, right: 5, left: -25, bottom: 0 }} barSize={14}>
  <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
  <XAxis dataKey="day" tick={{ fontSize: 11, fill:'#9ca3af' }} />
- <YAxis tick={{ fontSize: 11, fill:'#9ca3af' }} domain={[90, 100]} unit="%" />
+ <YAxis tick={{ fontSize: 11, fill:'#9ca3af' }} domain={[0, 100]} unit="%" />
  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v, n) => [`${v}%`, n]} />
  <Legend wrapperStyle={{ fontSize: 11 }} />
  <Bar dataKey="success" name="Success %" fill={C.green} radius={[3, 3, 0, 0]} />
@@ -643,11 +664,15 @@ export default function AnalyticsPage() {
  <span className="font-medium text-gray-800">{d.name}</span>
  </div>
  </td>
- <td className="py-2.5 text-right font-semibold text-gray-700">{d.rides}</td>
+ <td className="py-2.5 text-right font-semibold text-gray-700">{d.ratingCount}</td>
  <td className="py-2.5 text-right">
+ {d.ratingCount > 0 && d.rating != null ? (
  <span className={`text-xs font-semibold ${d.rating >= 4.5 ?'text-emerald-600' : d.rating >= 4.0 ?'text-amber-500' :'text-red-500'}`}>
  ★ {d.rating.toFixed(1)}
  </span>
+ ) : (
+ <span className="text-xs text-gray-300">No ratings</span>
+ )}
  </td>
  <td className="py-2.5 text-right text-xs font-semibold" style={{ color: C.gold }}>{d.earnings}</td>
  </tr>
@@ -687,9 +712,13 @@ export default function AnalyticsPage() {
  </td>
  <td className="py-2.5 text-right font-semibold text-gray-700">{a.jobs}</td>
  <td className="py-2.5 text-right">
+ {a.ratingCount > 0 && a.rating != null ? (
  <span className={`text-xs font-semibold ${a.rating >= 4.5 ?'text-emerald-600' : a.rating >= 4.0 ?'text-amber-500' :'text-red-500'}`}>
  ★ {a.rating.toFixed(1)}
  </span>
+ ) : (
+ <span className="text-xs text-gray-300">No ratings</span>
+ )}
  </td>
  <td className="py-2.5 text-right text-xs font-semibold" style={{ color: C.gold }}>{a.earnings}</td>
  </tr>

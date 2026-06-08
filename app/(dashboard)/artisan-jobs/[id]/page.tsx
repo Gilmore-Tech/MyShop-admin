@@ -2,13 +2,12 @@
 
 import { useState, useEffect, use } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
-import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, Loader2, User, Wrench, Tag, MapPin, Clock,
-  Calendar, AlertTriangle, CheckCircle, Hammer, ShieldAlert, ImageIcon, X, RefreshCw,
+  Calendar, AlertTriangle, CheckCircle, Hammer, ShieldAlert, ImageIcon, X, RefreshCw, CreditCard,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -37,6 +36,32 @@ function fmtDate(iso: string | null | undefined) {
 function fmtDateShort(iso: string | null | undefined) {
   if (!iso) return null
   return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+function paymentMethodLabel(method: string | null): string | null {
+  if (!method) return null
+  if (method === 'cash') return 'Cash'
+  if (method === 'card') return 'Card'
+  if (method.startsWith('momo')) {
+    const net = method.split('_')[1]
+    const nice: Record<string, string> = { mtn: 'MTN', vodafone: 'Vodafone', telecel: 'Telecel', airteltigo: 'AirtelTigo' }
+    return net ? `${nice[net] ?? net.toUpperCase()} MoMo` : 'Mobile Money'
+  }
+  return method.replace(/_/g, ' ')
+}
+
+function cap(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ')
+}
+
+// Compact metric tile used in the hero header.
+function Stat({ label, value, accent }: { label: string; value: React.ReactNode; accent?: string }) {
+  return (
+    <div className="bg-gray-50 rounded-xl px-3 py-2.5">
+      <p className="text-[11px] text-gray-400 uppercase tracking-wide">{label}</p>
+      <p className={`text-sm font-bold mt-0.5 ${accent ?? 'text-gray-900'}`}>{value}</p>
+    </div>
+  )
 }
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
@@ -361,7 +386,8 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     }
   }
 
-  const isStale = job ? job.hoursInactive >= 24 : false
+  const TERMINAL_STATUSES = ['completed', 'cancelled', 'expired', 'refunded']
+  const isStale = job ? !TERMINAL_STATUSES.includes(job.status) && job.hoursInactive >= 24 : false
   const canAssign = job ? ['queued', 'pending_admin'].includes(job.status) : false
   const canForceComplete = job ? job.status === 'in_progress' && isStale : false
   const canCancel = job ? ['queued', 'pending_admin', 'open_for_bids', 'bids_received', 'confirmed'].includes(job.status) : false
@@ -370,17 +396,15 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   return (
     <PageGuard permission="view_jobs">
       <div>
-        <PageHeader
-          title="Job Details"
-          subtitle={job ? `#${job.id.slice(-8).toUpperCase()} - ${job.category?.name ?? ''}` : 'Loading…'}
-          actions={
+        {(loading || error) && (
+          <div className="mb-4">
             <Link href="/artisan-jobs">
               <Button variant="outline" size="sm" className="gap-1.5">
                 <ArrowLeft className="h-4 w-4" /> Back to Jobs
               </Button>
             </Link>
-          }
-        />
+          </div>
+        )}
 
         {loading && (
           <div className="flex items-center justify-center py-20 gap-3 text-gray-400">
@@ -396,46 +420,63 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         {!loading && job && (
           <div className="space-y-4">
 
-            {/* Status bar */}
-            <div className="flex items-center gap-3 flex-wrap bg-white rounded-xl shadow-sm px-4 py-3">
-              <StatusBadge status={job.status} />
-              {isStale && (
-                <span className="flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
-                  <AlertTriangle className="h-3 w-3" /> {job.hoursInactive}h inactive
-                </span>
-              )}
-              {job.assignedByAdmin && (
-                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
-                  Manually Assigned
-                </span>
-              )}
-              <div className="ml-auto flex items-center gap-2">
-                {canForceComplete && (
-                  <Button
-                    size="sm"
-                    className="bg-orange-500 hover:bg-orange-600 text-white gap-1.5"
-                    onClick={() => setForceCompleteOpen(true)}
-                  >
-                    <ShieldAlert className="h-3.5 w-3.5" /> Force Complete
+            {/* Hero header */}
+            <div className="bg-white rounded-2xl shadow-sm p-5">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <Link href="/artisan-jobs">
+                  <Button variant="ghost" size="sm" className="gap-1.5 -ml-2 text-gray-500 hover:text-gray-700">
+                    <ArrowLeft className="h-4 w-4" /> Back to Jobs
                   </Button>
-                )}
-                {canCancel && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-red-300 text-red-600 hover:bg-red-50 gap-1.5"
-                    onClick={() => setCancelOpen(true)}
-                  >
-                    <X className="h-3.5 w-3.5" /> Cancel Job
-                  </Button>
-                )}
-                {canAssign && (
-                  <Link href="/artisan-jobs/manual-assignment">
-                    <Button size="sm" variant="outline" className="gap-1.5">
-                      <Hammer className="h-3.5 w-3.5" /> Manual Assignment
+                </Link>
+                <div className="flex items-center gap-2">
+                  {canForceComplete && (
+                    <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white gap-1.5" onClick={() => setForceCompleteOpen(true)}>
+                      <ShieldAlert className="h-3.5 w-3.5" /> Force Complete
                     </Button>
-                  </Link>
-                )}
+                  )}
+                  {canCancel && (
+                    <Button size="sm" variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 gap-1.5" onClick={() => setCancelOpen(true)}>
+                      <X className="h-3.5 w-3.5" /> Cancel Job
+                    </Button>
+                  )}
+                  {canAssign && (
+                    <Link href="/artisan-jobs/manual-assignment">
+                      <Button size="sm" variant="outline" className="gap-1.5">
+                        <Hammer className="h-3.5 w-3.5" /> Manual Assignment
+                      </Button>
+                    </Link>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+                  <Wrench className="h-6 w-6 text-gray-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h1 className="text-xl font-bold font-mono text-gray-900">#{job.id.slice(-8).toUpperCase()}</h1>
+                    <StatusBadge status={job.status} />
+                    {isStale && (
+                      <span className="inline-flex items-center gap-1 text-xs text-red-600 font-medium">
+                        <Clock className="h-3 w-3" /> {job.hoursInactive}h idle
+                      </span>
+                    )}
+                    {job.assignedByAdmin && (
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">Manually Assigned</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-400 mt-1">
+                    {job.category?.name ?? 'Uncategorised'} - Created {fmtDate(job.createdAt)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t border-gray-100">
+                <Stat label="Agreed Price" value={fmtGhs(job.agreedPricePesewas)} />
+                <Stat label="Payment" value={paymentMethodLabel(job.paymentMethod) ?? (job.paymentStatus ? cap(job.paymentStatus) : '-')} />
+                <Stat label="Bids" value={String(job.bids.length)} />
+                <Stat label="Idle" value={isStale ? `${job.hoursInactive}h` : '-'} accent={isStale ? 'text-red-600' : undefined} />
               </div>
             </div>
 
@@ -536,6 +577,35 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                     </CardContent>
                   </Card>
                 )}
+
+                {/* Payment */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <CreditCard className="h-4 w-4 text-gray-600" /> Payment
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">Status</span>
+                      {job.paymentStatus ? <StatusBadge status={job.paymentStatus} /> : <span className="text-gray-300">-</span>}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">Method</span>
+                      <span className="text-gray-800 font-medium">{paymentMethodLabel(job.paymentMethod) ?? '-'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">Amount paid</span>
+                      <span className="text-gray-800 font-medium">{job.amountPaidPesewas != null ? fmtGhs(job.amountPaidPesewas) : '-'}</span>
+                    </div>
+                    {job.paidAt && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">Paid</span>
+                        <span className="text-gray-700">{fmtDate(job.paidAt)}</span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
                 {/* Timeline */}
                 <Card>

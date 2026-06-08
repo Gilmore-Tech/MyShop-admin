@@ -38,7 +38,7 @@ export interface OverviewReport {
   registeredDrivers: number
   registeredArtisans: number
   commissionRevenue: { todayGhs: number; weekGhs: number; monthGhs: number }
-  paymentSuccessRatePct: number
+  paymentSuccessRatePct: number | null
   generatedAt: string
 }
 
@@ -58,7 +58,7 @@ export async function getOverviewReport(): Promise<OverviewReport> {
       weekGhs:  rev.weekGhs  ?? rev.week_ghs  ?? 0,
       monthGhs: rev.monthGhs ?? rev.month_ghs ?? 0,
     },
-    paymentSuccessRatePct: raw.paymentSuccessRatePct ?? raw.payment_success_rate_pct ?? 100,
+    paymentSuccessRatePct: raw.paymentSuccessRatePct ?? raw.payment_success_rate_pct ?? null,
     generatedAt: raw.generatedAt ?? raw.generated_at ?? new Date().toISOString(),
   }
 }
@@ -73,7 +73,7 @@ export interface RevenueDataPoint {
   tipsGhs: number
   totalPayments: number
   successfulPayments: number
-  paymentSuccessRatePct: number
+  paymentSuccessRatePct: number | null
   momoCount: number
   cardCount: number
 }
@@ -103,7 +103,7 @@ export async function getRevenueReport(params?: { from?: string; to?: string; gr
     tipsGhs:              p.tipsGhs               ?? p.tips_ghs           ?? 0,
     totalPayments:        p.totalPayments         ?? p.total_payments     ?? 0,
     successfulPayments:   p.successfulPayments    ?? p.successful_payments ?? 0,
-    paymentSuccessRatePct: p.paymentSuccessRatePct ?? p.payment_success_rate_pct ?? 100,
+    paymentSuccessRatePct: p.paymentSuccessRatePct ?? p.payment_success_rate_pct ?? null,
     momoCount:            p.momoCount             ?? p.momo_count         ?? 0,
     cardCount:            p.cardCount             ?? p.card_count         ?? 0,
   }))
@@ -140,8 +140,38 @@ export interface ProviderReport {
   }>
 }
 
-export function getProviderReport() {
-  return api.get<ProviderReport>('/admin/reports/providers')
+export async function getProviderReport(): Promise<ProviderReport> {
+  const raw = await api.get<any>('/admin/reports/providers')
+  const num = (v: any): number | null => v == null ? null : Number(v)
+  const drivers = (raw?.drivers ?? []).map((d: any) => ({
+    driverId:             d.driverId ?? d.driver_id ?? d.id ?? '',
+    name:                 d.name ?? d.fullName ?? d.full_name ?? '',
+    phone:                d.phone ?? '',
+    verificationStatus:   d.verificationStatus ?? d.verification_status ?? '',
+    cancellationCount30d: d.cancellationCount30d ?? d.cancellation_count_30d ?? 0,
+    totalEarningsGhs:     Number(d.totalEarningsGhs ?? d.total_earnings_ghs ?? 0),
+    avgRating:            num(d.avgRating ?? d.avg_rating),
+    ratingCount:          d.ratingCount ?? d.rating_count ?? 0,
+  }))
+  const artisans = (raw?.artisans ?? []).map((a: any) => ({
+    artisanId:            a.artisanId ?? a.artisan_id ?? a.id ?? '',
+    name:                 a.name ?? a.fullName ?? a.full_name ?? '',
+    phone:                a.phone ?? '',
+    verificationStatus:   a.verificationStatus ?? a.verification_status ?? '',
+    categories:           a.categories ?? [],
+    supplementCount:      a.supplementCount ?? a.supplement_count ?? 0,
+    completedJobsCount:   a.completedJobsCount ?? a.completed_jobs_count ?? 0,
+    cancellationCount30d: a.cancellationCount30d ?? a.cancellation_count_30d ?? 0,
+    supplementRatePct:    num(a.supplementRatePct ?? a.supplement_rate_pct),
+    flagged:              Boolean(a.flagged),
+    avgRating:            num(a.avgRating ?? a.avg_rating),
+    ratingCount:          a.ratingCount ?? a.rating_count ?? 0,
+  }))
+  return {
+    flagThreshold: raw?.flagThreshold ?? raw?.flag_threshold ?? 0,
+    drivers,
+    artisans,
+  }
 }
 
 // ── Pilot Report ──────────────────────────────────────────────────────────────
@@ -1312,6 +1342,8 @@ export function listRides(params?: {
   search?: string
   page?: number
   limit?: number
+  from?: string
+  to?: string
 }) {
   const qs = params
     ? '?' + new URLSearchParams(
@@ -1387,6 +1419,9 @@ export interface AdminJob {
   agreedPricePesewas: number | null
   supplementPesewas: number | null
   paymentStatus: string | null
+  paymentMethod: string | null
+  amountPaidPesewas: number | null
+  paidAt: string | null
   createdAt: string
   lastActivityAt: string | null
   staleHours: number
@@ -1410,6 +1445,8 @@ export async function listArtisanJobs(params?: {
   page?: number
   limit?: number
   region?: string
+  from?: string
+  to?: string
 }): Promise<AdminJobListResponse> {
   const qs = params
     ? '?' + new URLSearchParams(
@@ -1429,7 +1466,10 @@ export async function listArtisanJobs(params?: {
       status: j.status,
       agreedPricePesewas: j.agreedPricePesewas ?? null,
       supplementPesewas: j.supplementPesewas ?? null,
-      paymentStatus: j.paymentStatus ?? null,
+      paymentStatus: j.paymentStatus ?? j.payment_status ?? j.paymentState ?? null,
+      paymentMethod: j.paymentMethod ?? j.payment_method ?? null,
+      amountPaidPesewas: j.amountPaidPesewas ?? j.amount_paid_pesewas ?? null,
+      paidAt: j.paidAt ?? j.paid_at ?? null,
       createdAt: j.createdAt,
       lastActivityAt: j.lastActivityAt ?? null,
       staleHours: j.hoursInactive ?? j.staleHours ?? 0,
@@ -1463,6 +1503,10 @@ export interface JobDetail {
   photos: string[]
   agreedPricePesewas: number | null
   originalBidPesewas: number | null
+  paymentStatus: string | null
+  paymentMethod: string | null
+  amountPaidPesewas: number | null
+  paidAt: string | null
   scheduledFor: string | null
   createdAt: string
   confirmedAt: string | null
@@ -1498,6 +1542,10 @@ export async function getJobDetail(jobId: string): Promise<JobDetail> {
   return {
     ...raw,
     photos: raw.photos ?? [],
+    paymentStatus:     raw.paymentStatus ?? raw.payment_status ?? null,
+    paymentMethod:     raw.paymentMethod ?? raw.payment_method ?? null,
+    amountPaidPesewas: raw.amountPaidPesewas ?? raw.amount_paid_pesewas ?? null,
+    paidAt:            raw.paidAt ?? raw.paid_at ?? null,
     client: {
       id: raw.client?.id ?? '',
       name: raw.client?.user?.fullName ?? raw.client?.displayName ?? null,
@@ -1627,6 +1675,8 @@ export function listTransactions(params?: {
   search?: string
   page?: number
   limit?: number
+  from?: string
+  to?: string
 }) {
   const qs = params
     ? '?' + new URLSearchParams(
@@ -1662,13 +1712,33 @@ export interface BatchPayoutListResponse {
   totalPages: number
 }
 
-export function listBatchPayouts(params?: { page?: number; limit?: number }) {
+export async function listBatchPayouts(params?: { page?: number; limit?: number }) {
   const qs = params
     ? '?' + new URLSearchParams(
         Object.fromEntries(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
       ).toString()
     : ''
-  return api.get<BatchPayoutListResponse>(`/admin/payouts/batches${qs}`)
+  const raw = await api.get<any>(`/admin/payouts/batches${qs}`)
+  const items: BatchPayoutRun[] = (raw?.items ?? []).map((b: any): BatchPayoutRun => ({
+    id:            b.id,
+    date:          b.date ?? b.runDate ?? b.run_date ?? '',
+    primaryRun:    b.primaryRun ?? b.primary_run ?? '',
+    status:        b.status ?? 'pending',
+    providerCount: b.providerCount ?? b.provider_count ?? 0,
+    totalPesewas:  b.totalPesewas ?? b.total_pesewas ?? 0,
+    failureReason: b.failureReason ?? b.failure_reason ?? null,
+    retries: (b.retries ?? []).map((r: any): BatchPayoutRetry => ({
+      time:   r.time ?? r.at ?? '',
+      status: r.status ?? '',
+    })),
+  }))
+  return {
+    items,
+    total:      raw?.total ?? items.length,
+    page:       raw?.page ?? 1,
+    limit:      raw?.limit ?? items.length,
+    totalPages: raw?.totalPages ?? 1,
+  }
 }
 
 export function forceBatchPayoutRun() {
@@ -1694,8 +1764,23 @@ export interface ClawbackListResponse {
   totalOutstandingPesewas: number
 }
 
-export function listClawbacks() {
-  return api.get<ClawbackListResponse>('/admin/clawbacks')
+export async function listClawbacks(): Promise<ClawbackListResponse> {
+  const raw = await api.get<any>('/admin/clawbacks')
+  const items: AdminClawback[] = (raw?.items ?? []).map((c: any): AdminClawback => ({
+    id:                 c.id,
+    providerName:       c.providerName ?? c.provider_name ?? null,
+    providerId:         c.providerId ?? c.provider_id ?? '',
+    outstandingPesewas: c.outstandingPesewas ?? c.outstanding_pesewas ?? 0,
+    originalDisputeId:  c.originalDisputeId ?? c.original_dispute_id ?? null,
+    initiatedAt:        c.initiatedAt ?? c.initiated_at ?? c.createdAt ?? '',
+    daysOutstanding:    c.daysOutstanding ?? c.days_outstanding ?? 0,
+    status:             c.status ?? 'outstanding',
+  }))
+  return {
+    items,
+    total: raw?.total ?? items.length,
+    totalOutstandingPesewas: raw?.totalOutstandingPesewas ?? raw?.total_outstanding_pesewas ?? 0,
+  }
 }
 
 export function writeOffClawback(clawbackId: string, reason: string) {

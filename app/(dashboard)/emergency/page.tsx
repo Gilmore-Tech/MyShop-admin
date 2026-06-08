@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import {
   ShieldAlert, HeartPulse, CheckCircle2, Clock, MapPin,
   Car, Wrench, User, RefreshCw, AlertCircle, ExternalLink, Mic, Loader2, Phone,
-  PhoneCall, UserCheck, Cpu, AlertTriangle, ChevronDown,
+  PhoneCall, UserCheck, Cpu, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, History, Check,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -39,6 +39,28 @@ function timeAgo(iso: string): string {
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
 }
+
+type DateRange = 'all' | 'week' | 'month' | 'custom'
+
+const DAY_MS = 86_400_000
+
+// Whether an alert timestamp falls inside the selected date range.
+function inDateRange(iso: string, range: DateRange, from: string, to: string): boolean {
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return true
+  const now = Date.now()
+  if (range === 'week')  return t >= now - 7 * DAY_MS
+  if (range === 'month') return t >= now - 30 * DAY_MS
+  if (range === 'custom') {
+    if (from && t < new Date(`${from}T00:00:00`).getTime())   return false
+    if (to   && t > new Date(`${to}T23:59:59.999`).getTime()) return false
+    return true
+  }
+  return true
+}
+
+const OTHER_PAGE_SIZE = 10  // rows per page in the acknowledged/monitored history
+const ACTION_CAP = 20       // needs-action rows shown before "Show all" expander
 
 const ROLE_ICON: Record<string, React.ElementType> = {
   driver: Car,
@@ -71,11 +93,11 @@ function welfareStatusLabel(s: WelfareCheckStatus): { label: string; cls: string
   }
 }
 
-const CONTACT_METHOD_LABEL: Record<WelfareContactMethod, string> = {
-  phone:     'Called artisan',
-  in_person: 'Met in person',
-  auto:      'Auto-resolved (responded in-app)',
-}
+const METHOD_OPTIONS: { key: WelfareContactMethod; icon: React.ElementType; label: string; desc: string }[] = [
+  { key: 'phone',     icon: PhoneCall, label: 'Called artisan', desc: 'Reached them by phone' },
+  { key: 'in_person', icon: UserCheck, label: 'Met in person',  desc: 'Verified them on site' },
+  { key: 'auto',      icon: Cpu,       label: 'Auto-resolved',  desc: 'They responded in-app' },
+]
 
 // ─── Alert card (compact triage row) ──────────────────────────────────────────
 
@@ -179,7 +201,12 @@ export default function EmergencyPage() {
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState<'all' | 'sos' | 'welfare_check'>('all')
+  const [dateRange, setDateRange]   = useState<DateRange>('all')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo]     = useState('')
+  const [page, setPage]             = useState(1)
   const [showResolved, setShowResolved] = useState(false)
+  const [showAllAction, setShowAllAction] = useState(false)
   const [ackTarget, setAckTarget]   = useState<EmergencyAlert | null>(null)
   const [welfareTarget, setWelfareTarget] = useState<EmergencyAlert | null>(null)
   const [acking, setAcking]         = useState(false)
@@ -198,7 +225,10 @@ export default function EmergencyPage() {
   // Poll every 30 s — emergencies need near-real-time visibility. Pauses on hidden tabs.
   useAutoRefresh(load, 30_000)
 
-  const filtered = alerts.filter(a => typeFilter === 'all' || a.type === typeFilter)
+  const filtered = alerts.filter(a =>
+    (typeFilter === 'all' || a.type === typeFilter) &&
+    inDateRange(a.occurredAt, dateRange, customFrom, customTo)
+  )
 
   // Triage split: what needs action now vs. everything already handled / monitored.
   const needsActionList = filtered
@@ -213,6 +243,15 @@ export default function EmergencyPage() {
   const otherList = filtered
     .filter(a => !needsAction(a))
     .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+
+  // Reset history pagination whenever filters change.
+  useEffect(() => { setPage(1) }, [typeFilter, dateRange, customFrom, customTo])
+
+  // Pagination over the acknowledged/monitored history only.
+  const otherTotalPages = Math.max(1, Math.ceil(otherList.length / OTHER_PAGE_SIZE))
+  const otherPage       = Math.min(page, otherTotalPages)
+  const otherStart      = (otherPage - 1) * OTHER_PAGE_SIZE
+  const otherPageItems  = otherList.slice(otherStart, otherStart + OTHER_PAGE_SIZE)
 
   const unacknowledgedCount = alerts.filter(a => !a.acknowledgedAt).length
   const sosCount    = alerts.filter(a => a.type === 'sos' && !a.acknowledgedAt).length
@@ -292,6 +331,38 @@ export default function EmergencyPage() {
             </SelectContent>
           </Select>
 
+          <Select value={dateRange} onValueChange={v => setDateRange(v as DateRange)}>
+            <SelectTrigger className="w-40 h-8 text-sm bg-gray-50">
+              <SelectValue placeholder="Date range" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All time</SelectItem>
+              <SelectItem value="week">Last 7 days</SelectItem>
+              <SelectItem value="month">Last 30 days</SelectItem>
+              <SelectItem value="custom">Custom range</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {dateRange === 'custom' && (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo || undefined}
+                onChange={e => setCustomFrom(e.target.value)}
+                className="h-8 text-sm bg-gray-50 border border-gray-200 rounded-md px-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+              />
+              <span className="text-xs text-gray-400">to</span>
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom || undefined}
+                onChange={e => setCustomTo(e.target.value)}
+                className="h-8 text-sm bg-gray-50 border border-gray-200 rounded-md px-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
+              />
+            </div>
+          )}
+
           <span className="text-xs text-gray-400 ml-auto">{filtered.length} of {alerts.length} alerts</span>
         </div>
 
@@ -333,24 +404,80 @@ export default function EmergencyPage() {
                   </div>
                 </div>
               ) : (
-                needsActionList.map(renderCard)
+                <>
+                  {(showAllAction ? needsActionList : needsActionList.slice(0, ACTION_CAP)).map(renderCard)}
+
+                  {needsActionList.length > ACTION_CAP && (
+                    <button
+                      onClick={() => setShowAllAction(v => !v)}
+                      className="w-full text-xs font-medium text-gray-500 hover:text-gray-700 py-2 transition-colors"
+                    >
+                      {showAllAction
+                        ? 'Show fewer'
+                        : `Show all ${needsActionList.length} that need action`}
+                    </button>
+                  )}
+                </>
               )}
             </section>
 
-            {/* Acknowledged & resolved (collapsible) */}
+            {/* Acknowledged & monitored (collapsible accordion) */}
             {otherList.length > 0 && (
               <section className="mt-6">
                 <button
                   onClick={() => setShowResolved(v => !v)}
-                  className="w-full flex items-center justify-between text-[11px] font-semibold text-gray-400 uppercase tracking-widest hover:text-gray-600 transition-colors"
+                  className="w-full flex items-center justify-between rounded-xl border border-gray-100 bg-white px-4 py-3 hover:bg-gray-50 transition-colors"
                 >
-                  <span>Acknowledged &amp; monitored ({otherList.length})</span>
-                  <ChevronDown className={`h-4 w-4 transition-transform ${showResolved ? 'rotate-180' : ''}`} />
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                      <History className="h-[18px] w-[18px] text-gray-500" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-gray-700">Acknowledged &amp; monitored</p>
+                      <p className="text-xs text-gray-400">
+                        {otherList.length} handled alert{otherList.length !== 1 ? 's' : ''} - tap to {showResolved ? 'hide' : 'view'}
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${showResolved ? 'rotate-180' : ''}`} />
                 </button>
                 {showResolved && (
-                  <div className="space-y-2.5 mt-3">
-                    {otherList.map(renderCard)}
-                  </div>
+                  <>
+                    <div className="space-y-2.5 mt-3">
+                      {otherPageItems.map(renderCard)}
+                    </div>
+
+                    {otherList.length > OTHER_PAGE_SIZE && (
+                      <div className="flex items-center justify-between mt-3">
+                        <p className="text-xs text-gray-400">
+                          Showing {otherStart + 1}-{Math.min(otherStart + OTHER_PAGE_SIZE, otherList.length)} of {otherList.length}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1 text-xs"
+                            disabled={otherPage <= 1}
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                          >
+                            <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                          </Button>
+                          <span className="text-xs text-gray-500 tabular-nums px-1">
+                            Page {otherPage} of {otherTotalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1 text-xs"
+                            disabled={otherPage >= otherTotalPages}
+                            onClick={() => setPage(p => Math.min(otherTotalPages, p + 1))}
+                          >
+                            Next <ChevronRight className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </section>
             )}
@@ -834,55 +961,88 @@ function WelfareResolveDialog({
 
   return (
     <Dialog open={!!alert} onOpenChange={open => { if (!open && !submitting) onClose() }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-amber-700">
-            <UserCheck className="h-4 w-4" /> Resolve welfare check
-          </DialogTitle>
-          <DialogDescription>
-            Confirm you&apos;ve reached <strong>{alert.actorName ?? 'this artisan'}</strong> and they&apos;re safe.
-            Logged with your admin id, note, and contact method.
-          </DialogDescription>
+      <DialogContent className="max-w-md p-0 overflow-hidden gap-0">
+        {/* Header */}
+        <DialogHeader className="px-5 pt-5 pb-4 border-b border-gray-100 space-y-0">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+              <HeartPulse className="h-5 w-5 text-amber-600" />
+            </div>
+            <div className="min-w-0 text-left">
+              <DialogTitle className="text-base text-gray-900">Resolve welfare check</DialogTitle>
+              <DialogDescription className="text-xs text-gray-500 mt-0.5">
+                Confirm the artisan is safe. Logged with your admin id, note, and contact method.
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-3 py-1">
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact method</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['phone', 'in_person', 'auto'] as const).map(m => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setContactMethod(m)}
-                  className={`text-xs rounded-lg border px-2 py-2 flex flex-col items-center gap-1 transition-colors ${
-                    contactMethod === m
-                      ? 'border-amber-300 bg-amber-50 text-amber-700'
-                      : 'border-gray-100 hover:border-gray-200 text-gray-600'
-                  }`}
-                >
-                  {m === 'phone' && <PhoneCall className="h-3.5 w-3.5" />}
-                  {m === 'in_person' && <UserCheck className="h-3.5 w-3.5" />}
-                  {m === 'auto' && <Cpu className="h-3.5 w-3.5" />}
-                  {CONTACT_METHOD_LABEL[m].split(' ').slice(0, 2).join(' ')}
-                </button>
-              ))}
-            </div>
-            <p className="text-[10px] text-gray-400">{CONTACT_METHOD_LABEL[contactMethod]}</p>
+        <div className="px-5 py-4 space-y-4">
+          {/* Who / when / where */}
+          <div className="rounded-lg bg-gray-50 px-3 py-2.5">
+            <p className="text-sm font-semibold text-gray-800 truncate">{alert.actorName ?? 'Unknown artisan'}</p>
+            <p className="text-xs text-gray-400 mt-0.5 flex items-center flex-wrap gap-x-3 gap-y-0.5">
+              <span className="capitalize">{alert.actorRole}</span>
+              <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> raised {timeAgo(alert.occurredAt)}</span>
+              {alert.locationDescription && (
+                <span className="inline-flex items-center gap-1 min-w-0">
+                  <MapPin className="h-3 w-3 shrink-0" /> <span className="truncate">{alert.locationDescription}</span>
+                </span>
+              )}
+            </p>
           </div>
 
+          {/* Contact method */}
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">How did you verify?</Label>
+            <div className="space-y-2">
+              {METHOD_OPTIONS.map(({ key, icon: Icon, label, desc }) => {
+                const selected = contactMethod === key
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setContactMethod(key)}
+                    className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                      selected ? 'border-gray-300 bg-gray-50' : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                      selected ? 'bg-gray-200 text-gray-700' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800">{label}</p>
+                      <p className="text-xs text-gray-400">{desc}</p>
+                    </div>
+                    <span className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                      selected ? 'border-gray-800 bg-gray-800' : 'border-gray-300'
+                    }`}>
+                      {selected && <Check className="h-2.5 w-2.5 text-white" />}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Note */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              Note <span className="text-gray-400">(min 10 chars, audit-logged)</span>
+              Note <span className="font-normal normal-case text-gray-400">(audit-logged)</span>
             </Label>
             <Textarea
               rows={3}
-              placeholder="e.g. Reached artisan by phone - they finished the job and forgot to mark done. Reminded them to update status."
+              placeholder="e.g. Reached artisan by phone - they finished the job and forgot to mark it done. Reminded them to update status."
               value={note}
               onChange={e => setNote(e.target.value)}
-              className="text-sm"
+              className="text-sm resize-none"
             />
             <p className={`text-[11px] ${valid ? 'text-emerald-600' : 'text-gray-400'}`}>
-              {note.trim().length} / 10 characters
+              {valid
+                ? 'Looks good'
+                : `Minimum 10 characters - ${Math.max(0, 10 - note.trim().length)} more needed`}
             </p>
           </div>
 
@@ -894,7 +1054,7 @@ function WelfareResolveDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-5 py-4 border-t border-gray-100">
           <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
           <Button
             disabled={!valid || submitting}

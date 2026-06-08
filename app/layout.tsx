@@ -24,6 +24,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link href="https://fonts.googleapis.com/icon?family=Material+Icons|Material+Icons+Outlined" rel="stylesheet" />
+      </head>
       <body className={`${raleway.variable} ${roboto.variable} antialiased flex flex-col h-screen overflow-hidden`}>
         <div className="flex-1 min-h-0">
           {children}

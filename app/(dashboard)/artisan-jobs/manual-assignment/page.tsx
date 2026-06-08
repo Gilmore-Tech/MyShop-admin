@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { PageHeader } from '@/components/common/page-header'
 import {
   getUnassignedJobs, lockJob, assignJob, deleteJob, searchArtisans, getAllConfig,
@@ -256,15 +257,12 @@ export default function ManualAssignmentPage() {
     return () => clearInterval(id)
   }, [])
 
-  // Auto-select first eligible job; if the current selection drops out (assigned,
-  // bid placed elsewhere, or we just refreshed), pick the next one.
+  // Close the right pane when the selected job leaves the queue (assigned,
+  // deleted, bid placed elsewhere, or refreshed). We do NOT auto-open a job —
+  // the pane only opens when the admin clicks one.
   useEffect(() => {
-    if (jobs.length === 0) {
-      if (selectedJobId !== null) setSelectedJobId(null)
-      return
-    }
-    if (!selectedJobId || !jobs.some(j => j.id === selectedJobId)) {
-      setSelectedJobId(jobs[0].id)
+    if (selectedJobId && !jobs.some(j => j.id === selectedJobId)) {
+      setSelectedJobId(null)
     }
   }, [jobs, selectedJobId])
 
@@ -446,14 +444,6 @@ export default function ManualAssignmentPage() {
           </div>
         )}
 
-        {/* Error banner */}
-        {error && (
-          <div className="flex items-center gap-3 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-            <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
-            <p className="text-sm text-red-700">{error}</p>
-          </div>
-        )}
-
         {loadingJobs ? (
           <div className="flex items-center justify-center py-20 gap-3 text-gray-400">
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -472,210 +462,204 @@ export default function ManualAssignmentPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-5">
-
-            {/* ── Job queue list ── */}
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest px-1">
-                Queue ({jobs.length})
-                {pendingWindowCount > 0 && (
-                  <span className="ml-2 normal-case tracking-normal text-gray-300">· {pendingWindowCount} awaiting bid</span>
-                )}
-              </p>
-              {jobs.map(job => {
-                const active = selectedJob?.id === job.id
-                return (
-                  <button
-                    key={job.id}
-                    onClick={() => setSelectedJobId(job.id)}
-                    className={`w-full text-left rounded-xl border p-3.5 transition-all ${
-                      active
-                        ? 'border-orange-300 bg-orange-50/60 shadow-sm'
-                        : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <span className="font-mono text-xs font-bold text-orange-600">
-                        #{job.id.slice(-8).toUpperCase()}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <StatusPill status={job.status} />
-                        {active && <ChevronRight className="h-3.5 w-3.5 text-gray-600" />}
-                      </div>
-                    </div>
-                    <p className="text-sm font-semibold text-gray-900 truncate">{job.categoryName}</p>
-                    <p className="text-xs text-gray-500 truncate mt-0.5">{job.description}</p>
-                    <div className="flex items-center justify-between mt-2 text-[11px] text-gray-400">
-                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {timeAgo(job.createdAt)}</span>
-                      <span>{job.bidCount} bid{job.bidCount !== 1 ? 's' : ''}</span>
-                    </div>
-                  </button>
-                )
-              })}
+          <>
+            {/* ── Job queue (card grid) ── */}
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest px-1 mb-2">
+              Queue ({jobs.length})
+              {pendingWindowCount > 0 && (
+                <span className="ml-2 normal-case tracking-normal text-gray-300">- {pendingWindowCount} awaiting bid</span>
+              )}
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {jobs.map(job => (
+                <button
+                  key={job.id}
+                  onClick={() => setSelectedJobId(job.id)}
+                  className="text-left rounded-xl border border-gray-100 bg-white p-4 transition-all hover:border-gray-200 hover:shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <span className="font-mono text-xs font-bold text-gray-900">#{job.id.slice(-8).toUpperCase()}</span>
+                    <StatusPill status={job.status} />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-900 truncate">{job.categoryName}</p>
+                  <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">{job.description}</p>
+                  <div className="flex items-center justify-between mt-2 text-[11px] text-gray-400">
+                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {timeAgo(job.createdAt)}</span>
+                    <span className="inline-flex items-center gap-0.5 text-gray-500 font-medium">Assign <ChevronRight className="h-3 w-3" /></span>
+                  </div>
+                </button>
+              ))}
             </div>
 
-            {/* ── Right panel ── */}
-            {selectedJob ? (
-              <div className="space-y-4">
-
-                {/* Job detail card */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <Wrench className="h-4 w-4 text-gray-600" />
-                        <h2 className="font-bold text-gray-900">{selectedJob.categoryName}</h2>
-                        <StatusPill status={selectedJob.status} />
-                      </div>
-                      <p className="font-mono text-xs text-gray-400">#{selectedJob.id.slice(-12).toUpperCase()}</p>
-                    </div>
-                    <div className="flex items-start gap-3 shrink-0">
-                      <div className="text-right">
-                        <p className="text-xs text-gray-400">Min price</p>
-                        <p className="text-sm font-bold text-gray-900">{ghsCurrency(selectedJob.minBidPesewas)}</p>
-                      </div>
-                      <RoleGate permission="delete_job">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-gray-300 hover:text-red-600"
-                          onClick={openDeleteDialog}
-                          title="Delete this job (super_admin)"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </RoleGate>
-                    </div>
-                  </div>
-
-                  <p className="text-sm text-gray-700 leading-relaxed">{selectedJob.description}</p>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {selectedJob.addressText && (
-                      <div className="flex items-start gap-2 text-sm text-gray-600">
-                        <MapPin className="h-4 w-4 text-gray-400 shrink-0 mt-0.5" />
-                        <span className="text-xs leading-snug">{selectedJob.addressText}</span>
-                      </div>
-                    )}
-                    {selectedJob.clientName && (
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <User className="h-4 w-4 text-gray-400 shrink-0" />
-                        <div>
-                          <p className="text-xs font-medium">{selectedJob.clientName}</p>
-                          {selectedJob.clientPhone && <p className="text-[11px] text-gray-400">{selectedJob.clientPhone}</p>}
+            {/* ── Right pane (Sheet) ── */}
+            <Sheet open={!!selectedJob} onOpenChange={o => { if (!o) setSelectedJobId(null) }}>
+              <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-0">
+                {selectedJob && (
+                  <>
+                    <SheetHeader className="px-6 py-4 border-b border-gray-100">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <SheetTitle className="flex items-center gap-2 text-base">
+                            <Wrench className="h-4 w-4 text-gray-600 shrink-0" />
+                            <span className="truncate">{selectedJob.categoryName}</span>
+                            <StatusPill status={selectedJob.status} />
+                          </SheetTitle>
+                          <p className="font-mono text-xs text-gray-400 mt-1">#{selectedJob.id.slice(-12).toUpperCase()}</p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right">
+                            <p className="text-[11px] text-gray-400">Min price</p>
+                            <p className="text-sm font-bold text-gray-900">{ghsCurrency(selectedJob.minBidPesewas)}</p>
+                          </div>
+                          <RoleGate permission="delete_job">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-gray-300 hover:text-red-600"
+                              onClick={openDeleteDialog}
+                              title="Delete this job (super_admin)"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </RoleGate>
                         </div>
                       </div>
-                    )}
-                    {selectedJob.scheduledFor && (
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <CalendarClock className="h-4 w-4 text-gray-400 shrink-0" />
-                        <p className="text-xs">{new Date(selectedJob.scheduledFor).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                    </SheetHeader>
+
+                    <div className="px-6 py-5 space-y-5">
+                      {/* Job details */}
+                      <div className="space-y-3">
+                        <p className="text-sm text-gray-700 leading-relaxed">{selectedJob.description}</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {selectedJob.addressText && (
+                            <div className="flex items-start gap-2 text-sm text-gray-600">
+                              <MapPin className="h-4 w-4 text-gray-400 shrink-0 mt-0.5" />
+                              <span className="text-xs leading-snug">{selectedJob.addressText}</span>
+                            </div>
+                          )}
+                          {selectedJob.clientName && (
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <User className="h-4 w-4 text-gray-400 shrink-0" />
+                              <div>
+                                <p className="text-xs font-medium">{selectedJob.clientName}</p>
+                                {selectedJob.clientPhone && <p className="text-[11px] text-gray-400">{selectedJob.clientPhone}</p>}
+                              </div>
+                            </div>
+                          )}
+                          {selectedJob.scheduledFor && (
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <CalendarClock className="h-4 w-4 text-gray-400 shrink-0" />
+                              <p className="text-xs">{new Date(selectedJob.scheduledFor).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Clock className="h-4 w-4 text-gray-400 shrink-0" />
+                            <p className="text-xs">In queue {selectedJob.hoursInQueue}h ({timeAgo(selectedJob.createdAt)})</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2 pt-3 border-t border-gray-50">
+                          <AlertTriangle className="h-3.5 w-3.5 text-gray-600 shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-gray-400 leading-snug">
+                            No price is set at assignment. Once assigned, the artisan will submit a bid
+                            through the app and the client will confirm before work begins.
+                            {selectedJob.minBidPesewas > 0 && (
+                              <> Client&apos;s minimum: <span className="font-semibold text-gray-600">{ghsCurrency(selectedJob.minBidPesewas)}</span>.</>
+                            )}
+                          </p>
+                        </div>
                       </div>
-                    )}
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Clock className="h-4 w-4 text-gray-400 shrink-0" />
-                      <p className="text-xs">In queue {selectedJob.hoursInQueue}h ({timeAgo(selectedJob.createdAt)})</p>
-                    </div>
-                  </div>
 
-                  {/* Price note */}
-                  <div className="flex items-start gap-2 pt-3 border-t border-gray-50">
-                    <AlertTriangle className="h-3.5 w-3.5 text-gray-600 shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-gray-400 leading-snug">
-                      No price is set at assignment. Once assigned, the artisan will submit a bid
-                      through the app and the client will confirm before work begins.
-                      {selectedJob.minBidPesewas > 0 && (
-                        <> Client&apos;s minimum: <span className="font-semibold text-gray-600">{ghsCurrency(selectedJob.minBidPesewas)}</span>.</>
+                      {/* Assign error (kept inside the pane so it's visible) */}
+                      {error && (
+                        <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                          <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+                          <p className="text-sm text-red-700">{error}</p>
+                        </div>
                       )}
-                    </p>
-                  </div>
-                </div>
 
-                {/* Artisan picker */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
-                      Artisans - {selectedJob.categoryName}
-                      {hasJobCoords && <span className="ml-2 normal-case tracking-normal text-gray-300">· nearest first</span>}
-                    </p>
-                    {loadingArtisans && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
-                  </div>
+                      {/* Artisan picker */}
+                      <div className="space-y-3 border-t border-gray-100 pt-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
+                            Artisans - {selectedJob.categoryName}
+                            {hasJobCoords && <span className="ml-2 normal-case tracking-normal text-gray-300">- nearest first</span>}
+                          </p>
+                          {loadingArtisans && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
+                        </div>
 
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                    <Input
-                      placeholder="Search by name…"
-                      value={artisanSearch}
-                      onChange={e => setArtisanSearch(e.target.value)}
-                      className="pl-8 text-sm"
-                    />
-                  </div>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                          <Input
+                            placeholder="Search by name…"
+                            value={artisanSearch}
+                            onChange={e => setArtisanSearch(e.target.value)}
+                            className="pl-8 text-sm"
+                          />
+                        </div>
 
-                  {/* Radius filter — only meaningful when the job has coords. */}
-                  {hasJobCoords ? (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[11px] text-gray-400 uppercase tracking-wider mr-1">Within</span>
-                      {RADIUS_PRESETS.map(p => {
-                        const active = radiusKm === p.km
-                        return (
-                          <button
-                            key={p.label}
-                            type="button"
-                            onClick={() => setRadiusKm(p.km)}
-                            className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-colors ${
-                              active
-                                ? 'bg-orange-50 border-orange-300 text-orange-700'
-                                : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
-                            }`}
-                          >
-                            {p.label}
-                          </button>
-                        )
-                      })}
-                      {FEATURES.nearbyArtisanHaversine && (
-                        <span className="ml-auto text-[10px] text-gray-300 flex items-center gap-1">
-                          <Info className="h-3 w-3" /> distance via live-map fallback
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-start gap-2 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-                      <Info className="h-3.5 w-3.5 text-gray-400 shrink-0 mt-0.5" />
-                      <p className="text-[11px] text-gray-500 leading-snug">
-                        This job has no recorded location, so artisans cannot be sorted by distance. Showing alphabetically.
-                      </p>
-                    </div>
-                  )}
+                        {hasJobCoords ? (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[11px] text-gray-400 uppercase tracking-wider mr-1">Within</span>
+                            {RADIUS_PRESETS.map(p => {
+                              const active = radiusKm === p.km
+                              return (
+                                <button
+                                  key={p.label}
+                                  type="button"
+                                  onClick={() => setRadiusKm(p.km)}
+                                  className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                                    active
+                                      ? 'bg-orange-50 border-orange-300 text-orange-700'
+                                      : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                                  }`}
+                                >
+                                  {p.label}
+                                </button>
+                              )
+                            })}
+                            {FEATURES.nearbyArtisanHaversine && (
+                              <span className="ml-auto text-[10px] text-gray-300 flex items-center gap-1">
+                                <Info className="h-3 w-3" /> distance via live-map fallback
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-2 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                            <Info className="h-3.5 w-3.5 text-gray-400 shrink-0 mt-0.5" />
+                            <p className="text-[11px] text-gray-500 leading-snug">
+                              This job has no recorded location, so artisans cannot be sorted by distance. Showing alphabetically.
+                            </p>
+                          </div>
+                        )}
 
-                  {artisans.length === 0 && !loadingArtisans ? (
-                    <div className="text-center py-10">
-                      <p className="text-sm text-gray-400">
-                        {hasJobCoords && radiusKm != null
-                          ? `No approved artisans found within ${radiusKm} km. Try widening the radius.`
-                          : 'No approved artisans found for this category.'}
-                      </p>
+                        {artisans.length === 0 && !loadingArtisans ? (
+                          <div className="text-center py-10">
+                            <p className="text-sm text-gray-400">
+                              {hasJobCoords && radiusKm != null
+                                ? `No approved artisans found within ${radiusKm} km. Try widening the radius.`
+                                : 'No approved artisans found for this category.'}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {artisans.map(a => (
+                              <ArtisanCard
+                                key={a.id}
+                                artisan={a}
+                                busy={assigning === a.id}
+                                onAssign={handleAssign}
+                                showDistance={hasJobCoords}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
-                      {artisans.map(a => (
-                        <ArtisanCard
-                          key={a.id}
-                          artisan={a}
-                          busy={assigning === a.id}
-                          onAssign={handleAssign}
-                          showDistance={hasJobCoords}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-64 bg-white rounded-2xl border border-gray-100">
-                <p className="text-sm text-gray-400">Select a job from the queue to assign an artisan.</p>
-              </div>
-            )}
-          </div>
+                  </>
+                )}
+              </SheetContent>
+            </Sheet>
+          </>
         )}
 
         {/* Delete job dialog */}

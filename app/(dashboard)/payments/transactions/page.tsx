@@ -1,7 +1,7 @@
 'use client'
 
 import { PageGuard } from '@/components/common/page-guard'
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { Search, Loader2, AlertTriangle, RefreshCw } from 'lucide-react'
@@ -10,9 +10,10 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
+import { PageSizeSelect } from '@/components/common/table-controls'
 import { listTransactions, type AdminTransaction } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatTransactionAmount } from '@/lib/money'
@@ -37,14 +38,6 @@ const STATUS_OPTIONS = ['pending', 'escrowed', 'completed', 'failed', 'refunded'
 const SEARCH_DEBOUNCE_MS = 300
 const POLL_INTERVAL_MS = 30_000
 
-// Date-range filtering is hidden until the backend `/admin/payments/transactions`
-// DTO accepts `from`/`to` (currently rejects them with a VALIDATION_ERROR via
-// class-validator's forbidNonWhitelisted). Re-enable by:
-//   1. Re-importing DateRangeFilter, presetToRange, DEFAULT_DATE_RANGE, DateRangePresetKey
-//   2. Restoring the `range` URL param + filter UI + the `from`/`to` fields in
-//      the listTransactions call.
-// See docs/backend-spec-payment-panel.md (transactions endpoint additions).
-
 export default function TransactionsPage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -67,7 +60,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<AdminTransaction | null>(null)
-  const LIMIT = 50
+  const [limit, setLimit] = useState(15)
 
   // ── URL writers ────────────────────────────────────────────────────────────
   const setParams = useCallback((updates: Record<string, string | null>) => {
@@ -102,7 +95,7 @@ export default function TransactionsPage() {
         status: statusFilter === 'all' ? undefined : statusFilter,
         search: urlSearch || undefined,
         page,
-        limit: LIMIT,
+        limit,
       })
         .then(res => {
           setTransactions(res.items)
@@ -123,10 +116,16 @@ export default function TransactionsPage() {
         })
         .finally(() => { if (!silent) setLoading(false) })
     },
-    [typeFilter, statusFilter, urlSearch, page],
+    [typeFilter, statusFilter, urlSearch, page, limit],
   )
 
   useEffect(() => { fetchTransactions() }, [fetchTransactions])
+
+  // Reset to page 1 when the page size changes (it isn't in the URL).
+  useEffect(() => {
+    if (page !== 1) setParams({ page: null })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [limit])
 
   // ── 30s background poll ────────────────────────────────────────────────────
   // Keeps the feed fresh without disrupting the user. Pauses while a row drawer
@@ -162,17 +161,6 @@ export default function TransactionsPage() {
             onChange={e => setSearchInput(e.target.value)}
           />
         </div>
-        <Select value={typeFilter} onValueChange={v => setParams({ type: v })}>
-          <SelectTrigger className="w-40 bg-white"><SelectValue placeholder="Type" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value="collection">Collection</SelectItem>
-            <SelectItem value="payout">Payout</SelectItem>
-            <SelectItem value="refund">Refund</SelectItem>
-            <SelectItem value="clawback">Clawback</SelectItem>
-            <SelectItem value="tip">Tip</SelectItem>
-          </SelectContent>
-        </Select>
         <Select value={statusFilter} onValueChange={v => setParams({ status: v })}>
           <SelectTrigger className="w-36 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
@@ -182,12 +170,14 @@ export default function TransactionsPage() {
             ))}
           </SelectContent>
         </Select>
-        {/* Date-range filter hidden until backend accepts from/to (see top of file). */}
         <Button variant="outline" size="sm" onClick={() => fetchTransactions()} disabled={loading} className="gap-1.5">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
-        <div className="ml-auto text-sm text-gray-500">{total} transaction{total === 1 ? '' : 's'}</div>
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-sm text-gray-500">{total} transaction{total === 1 ? '' : 's'}</span>
+          <PageSizeSelect value={limit} onChange={setLimit} />
+        </div>
       </div>
 
       {error && (
@@ -205,28 +195,25 @@ export default function TransactionsPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
-              <TableHead>Transaction ID</TableHead>
               <TableHead>Date / Time</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
+              <TableHead>Transaction ID</TableHead>
+              <TableHead>Amount</TableHead>
               <TableHead>Method</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Booking</TableHead>
-              <TableHead>Party</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               [...Array(8)].map((_, i) => (
                 <TableRow key={i}>
-                  {[...Array(8)].map((_, j) => (
+                  {[...Array(5)].map((_, j) => (
                     <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : transactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-gray-400 text-sm">
+                <TableCell colSpan={5} className="text-center py-12 text-gray-400 text-sm">
                   {error ? 'No transactions to display while the endpoint is unavailable.' : 'No transactions found'}
                 </TableCell>
               </TableRow>
@@ -237,24 +224,13 @@ export default function TransactionsPage() {
                   className="hover:bg-gray-50 cursor-pointer"
                   onClick={() => setSelected(tx)}
                 >
-                  <TableCell className="font-mono text-sm font-medium text-slate-600">{tx.id.slice(-10).toUpperCase()}</TableCell>
                   <TableCell className="text-sm text-gray-500 whitespace-nowrap">{formatDateTime(tx.createdAt)}</TableCell>
-                  <TableCell>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${txTypeColors[tx.type] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {tx.type}
-                    </span>
-                  </TableCell>
-                  <TableCell className={`text-right text-sm font-semibold tabular-nums ${tx.type === 'refund' || tx.type === 'clawback' ? 'text-red-600' : tx.type === 'payout' ? 'text-purple-600' : 'text-gray-900'}`}>
+                  <TableCell className="font-mono text-sm font-medium text-gray-900">{tx.id.slice(-10).toUpperCase()}</TableCell>
+                  <TableCell className={`text-sm font-semibold tabular-nums ${tx.type === 'refund' || tx.type === 'clawback' || tx.type === 'payout' ? 'text-red-600' : 'text-gray-900'}`}>
                     {formatTransactionAmount(tx.amountPesewas, tx.type)}
                   </TableCell>
                   <TableCell className="text-sm text-gray-500">{paymentMethodLabel(tx.method)}</TableCell>
                   <TableCell><StatusBadge status={tx.status} /></TableCell>
-                  <TableCell className="font-mono text-sm text-slate-500">
-                    {tx.bookingId
-                      ? <BookingLink type={tx.bookingType} id={tx.bookingId} />
-                      : '-'}
-                  </TableCell>
-                  <TableCell className="text-sm">{tx.party ?? '-'}</TableCell>
                 </TableRow>
               ))
             )}
@@ -316,42 +292,45 @@ function BookingLink({ type, id }: { type: 'ride' | 'job' | null; id: string }) 
 
 function TransactionDetailDialog({ tx, onClose }: { tx: AdminTransaction | null; onClose: () => void }) {
   return (
-    <Dialog open={!!tx} onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Transaction Detail</DialogTitle>
-        </DialogHeader>
+    <Sheet open={!!tx} onOpenChange={open => !open && onClose()}>
+      <SheetContent className="w-full sm:max-w-md overflow-y-auto p-0">
         {tx && (
-          <div className="space-y-3 text-sm">
-            <Row label="ID" value={<span className="font-mono">{tx.id}</span>} />
-            <Row label="Type" value={<span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${txTypeColors[tx.type] ?? 'bg-gray-100 text-gray-600'}`}>{tx.type}</span>} />
-            <Row label="Status" value={<StatusBadge status={tx.status} />} />
-            <Row
-              label="Amount"
-              value={
-                <span className={`font-semibold tabular-nums ${tx.type === 'refund' || tx.type === 'clawback' ? 'text-red-600' : tx.type === 'payout' ? 'text-purple-600' : 'text-gray-900'}`}>
-                  {formatTransactionAmount(tx.amountPesewas, tx.type)}
+          <>
+            <SheetHeader className="px-6 py-4 border-b border-gray-100">
+              <SheetTitle className="text-base flex items-center gap-2">
+                Transaction
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${txTypeColors[tx.type] ?? 'bg-gray-100 text-gray-600'}`}>
+                  {tx.type}
                 </span>
-              }
-            />
-            <Row label="Method" value={paymentMethodLabel(tx.method)} />
-            <Row label="Created" value={formatDateTime(tx.createdAt)} />
-            <Row label="Party" value={tx.party ?? '-'} />
-            <Row
-              label="Booking"
-              value={
-                tx.bookingId ? (
-                  <BookingLink type={tx.bookingType} id={tx.bookingId} />
-                ) : '-'
-              }
-            />
-            {tx.bookingType && (
-              <Row label="Booking type" value={<span className="capitalize">{tx.bookingType}</span>} />
-            )}
-          </div>
+              </SheetTitle>
+              <p className="font-mono text-xs text-gray-400 mt-1 break-all">{tx.id}</p>
+            </SheetHeader>
+
+            <div className="px-6 py-5 space-y-3 text-sm">
+              <Row label="Status" value={<StatusBadge status={tx.status} />} />
+              <Row
+                label="Amount"
+                value={
+                  <span className={`font-semibold tabular-nums ${tx.type === 'refund' || tx.type === 'clawback' || tx.type === 'payout' ? 'text-red-600' : 'text-gray-900'}`}>
+                    {formatTransactionAmount(tx.amountPesewas, tx.type)}
+                  </span>
+                }
+              />
+              <Row label="Method" value={paymentMethodLabel(tx.method)} />
+              <Row label="Created" value={formatDateTime(tx.createdAt)} />
+              <Row label="Party" value={tx.party ?? '-'} />
+              <Row
+                label="Booking"
+                value={tx.bookingId ? <BookingLink type={tx.bookingType} id={tx.bookingId} /> : '-'}
+              />
+              {tx.bookingType && (
+                <Row label="Booking type" value={<span className="capitalize">{tx.bookingType}</span>} />
+              )}
+            </div>
+          </>
         )}
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   )
 }
 

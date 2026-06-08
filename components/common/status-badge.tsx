@@ -16,6 +16,7 @@ const labels: Record<string, string> = {
   escrowed: 'Escrowed', processing: 'Processing', failed_retrying: 'Failed (retrying)',
   written_off: 'Written off', settled: 'Settled',
   resolved: 'Resolved', expired: 'Expired', client: 'Client', deleted: 'Deleted', scheduled: 'Scheduled',
+  pending_admin: 'Pending Admin', open_for_bids: 'Open for Bids',
 }
 
 export function StatusBadge({ status, className }: { status: string | null | undefined; className?: string }) {

@@ -15,6 +15,105 @@ import { Textarea } from '@/components/ui/textarea'
 import { PageHeader } from '@/components/common/page-header'
 import { getCategories, createCategory, updateCategory, deleteCategory, type Category, type CategoryDeleteConflict } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { MATERIAL_ICONS, iconFontClass, iconLigature } from '@/lib/material-icons'
+
+// ── Material icon helpers ───────────────────────────────────────────────────────
+
+/** Renders a category icon by its mobile `iconName` (handles _outlined variants). */
+function MatIcon({ name, className, size = 20 }: { name: string; className?: string; size?: number }) {
+  return (
+    <span className={`${iconFontClass(name)} leading-none ${className ?? ''}`} style={{ fontSize: size }}>
+      {iconLigature(name)}
+    </span>
+  )
+}
+
+// miscellaneous_services is the generic catch-all — multiple categories may use it.
+const REUSABLE_ICON = 'miscellaneous_services'
+
+/** Searchable icon grid — pick an unused icon. `usedIcons` are taken by other categories. */
+function IconPicker({ value, onChange, usedIcons }: {
+  value: string
+  onChange: (name: string) => void
+  usedIcons: Set<string>
+}) {
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const filtered = q
+    ? MATERIAL_ICONS.filter(n => n.includes(q) || n.replace(/_/g, ' ').includes(q))
+    : MATERIAL_ICONS
+
+  const isTaken = (name: string) => name !== value && name !== REUSABLE_ICON && usedIcons.has(name)
+  const availableCount = MATERIAL_ICONS.filter(n => n === REUSABLE_ICON || n === value || !usedIcons.has(n)).length
+
+  return (
+    <div className="space-y-2">
+      {/* Selected preview */}
+      <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
+        <div className="w-10 h-10 rounded-lg bg-white border border-gray-200 flex items-center justify-center shrink-0">
+          {value
+            ? <MatIcon name={value} className="text-gray-700" size={22} />
+            : <Tag className="h-4 w-4 text-gray-300" />}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-800 truncate">{value || 'No icon selected'}</p>
+          <p className="text-[11px] text-gray-400">{availableCount} of {MATERIAL_ICONS.length} icons available</p>
+        </div>
+        {value && (
+          <button type="button" onClick={() => onChange('')} className="ml-auto text-[11px] text-gray-400 hover:text-red-600 shrink-0">
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+        <Input
+          placeholder="Search icons…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          className="pl-8 text-sm"
+        />
+      </div>
+
+      {/* Grid */}
+      <div className="grid grid-cols-8 gap-1 max-h-40 overflow-y-auto rounded-lg border border-gray-100 p-2">
+        {filtered.map(name => {
+          const taken = isTaken(name)
+          const selected = value === name
+          return (
+            <button
+              key={name}
+              type="button"
+              disabled={taken}
+              title={taken ? `${name} - already used by another category` : name}
+              onClick={() => { if (!taken) onChange(name) }}
+              className={`aspect-square rounded-md flex items-center justify-center transition-colors ${
+                selected
+                  ? 'bg-orange-50 ring-1 ring-orange-300 text-orange-700'
+                  : taken
+                    ? 'text-gray-300 opacity-40 cursor-not-allowed'
+                    : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <MatIcon name={name} size={20} />
+            </button>
+          )
+        })}
+        {filtered.length === 0 && (
+          <p className="col-span-8 text-center text-xs text-gray-400 py-6">No icons match &ldquo;{query}&rdquo;</p>
+        )}
+      </div>
+
+      {availableCount === 0 && (
+        <p className="text-[11px] text-amber-600 leading-snug">
+          All icons are in use. New icons must be added to the mobile app&apos;s icon set before more distinct categories can be created.
+        </p>
+      )}
+    </div>
+  )
+}
 
 // Backend validation: /^[a-z0-9]+(?:_[a-z0-9]+)*$/
 const ICON_NAME_PATTERN = /^[a-z0-9]+(?:_[a-z0-9]+)*$/
@@ -76,13 +175,14 @@ type FormState = {
   // value doesn't collide with the "no parent" choice.
   parentId: string
   iconName: string
-  sortOrder: string
+  // sortOrder is assigned automatically (appended to its sibling group), not
+  // edited by the admin.
 }
 
 const EMPTY_FORM: FormState = {
   name: '', slug: '',
   minBid: '30.00', highBidFlag: '5000.00',
-  parentId: 'none', iconName: '', sortOrder: '0',
+  parentId: 'none', iconName: '',
 }
 
 // ── Category Dialog ───────────────────────────────────────────────────────────
@@ -119,7 +219,6 @@ function CategoryDialog({
         highBidFlag: pesewasToGhs(category.highBidFlagPesewas),
         parentId: category.parentId ?? 'none',
         iconName: category.iconName ?? '',
-        sortOrder: String(category.sortOrder ?? 0),
       })
     } else {
       setForm({
@@ -134,6 +233,10 @@ function CategoryDialog({
   // parents — backend Prisma schema doesn't enforce depth, but keeping the tree
   // 2-deep matches the mobile client's model and prevents weird nesting.
   const parentOptions = allCategories.filter(c => c.parentId === null && c.id !== category?.id)
+  // Icons already taken by other categories — so a new category gets a distinct one.
+  const usedIcons = new Set(
+    allCategories.filter(c => c.id !== category?.id && c.iconName).map(c => c.iconName as string),
+  )
   const isSubcategory = form.parentId !== 'none'
   // Don't let an edit move a category between parents (backend doesn't accept
   // parentId on UpdateCategoryDto either).
@@ -158,7 +261,13 @@ function CategoryDialog({
     const iconName = form.iconName.trim()
     const minBidPesewas = ghsToPesewas(form.minBid)
     const highBidFlagPesewas = ghsToPesewas(form.highBidFlag)
-    const sortOrder = Number(form.sortOrder)
+
+    // Auto-assign sort order: keep the existing value on edit, otherwise append
+    // to the end of the chosen parent's sibling group.
+    const parentKey = form.parentId === 'none' ? null : form.parentId
+    const siblings = allCategories.filter(c => (c.parentId ?? null) === parentKey)
+    const nextSort = siblings.length ? Math.max(...siblings.map(c => c.sortOrder ?? 0)) + 1 : 0
+    const sortOrder = Math.min(isEdit ? (category!.sortOrder ?? nextSort) : nextSort, 999)
 
     if (!name) { setError('Name is required.'); return }
     if (!slug) { setError('Slug is required.'); return }
@@ -169,10 +278,6 @@ function CategoryDialog({
     if (isNaN(minBidPesewas) || minBidPesewas <= 0) { setError('Minimum bid must be a positive amount.'); return }
     if (isNaN(highBidFlagPesewas) || highBidFlagPesewas <= 0) { setError('High-bid flag threshold must be a positive amount.'); return }
     if (highBidFlagPesewas <= minBidPesewas) { setError('High-bid flag must be greater than the minimum bid.'); return }
-    if (!Number.isFinite(sortOrder) || sortOrder < 0 || sortOrder > 999) {
-      setError('Sort order must be between 0 and 999.')
-      return
-    }
 
     setSaving(true)
     setError('')
@@ -196,143 +301,117 @@ function CategoryDialog({
     }
   }
 
+  const title = isEdit ? 'Edit Category' : isSubcategory ? 'New Subcategory' : 'New Service Category'
+  const description = isEdit
+    ? 'Update the category details.'
+    : isSubcategory
+      ? 'Add a subcategory under an existing parent.'
+      : 'Add a new artisan service category to the marketplace.'
+
   return (
     <Dialog open={open} onOpenChange={open => { if (!open) onClose() }}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {isEdit ? 'Edit Category'
-              : isSubcategory ? 'New Subcategory'
-              : 'New Service Category'}
-          </DialogTitle>
-          <DialogDescription>
-            {isEdit ? 'Update the category details.'
-              : isSubcategory ? 'Add a subcategory under an existing parent.'
-              : 'Add a new artisan service category to the marketplace.'}
-          </DialogDescription>
+      <DialogContent className="max-w-xl p-0 gap-0 overflow-hidden">
+        {/* Header with live icon preview */}
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-gray-100 space-y-0 text-left">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+              {form.iconName
+                ? <MatIcon name={form.iconName} size={26} className="text-gray-700" />
+                : <Tag className="h-5 w-5 text-gray-300" />}
+            </div>
+            <div className="min-w-0">
+              <DialogTitle className="text-base">{title}</DialogTitle>
+              <DialogDescription className="text-xs mt-0.5">{description}</DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 pt-1">
-          {/* Parent picker */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Parent</Label>
-            <Select
-              value={form.parentId}
-              onValueChange={v => set('parentId', v)}
-              disabled={parentLocked}
-            >
-              <SelectTrigger className="bg-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">- Top-level category -</SelectItem>
-                {parentOptions.map(p => (
-                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-[11px] text-gray-400">
-              {parentLocked
-                ? 'Parent cannot be changed after creation.'
-                : 'Choose "Top-level" for a new umbrella category, or a parent for a subcategory.'}
-            </p>
+        <form onSubmit={handleSubmit} className="flex flex-col min-h-0">
+          <div className="px-6 py-5 space-y-5 overflow-y-auto max-h-[60vh]">
+
+            {/* Identity */}
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</Label>
+                  <Input
+                    placeholder={isSubcategory ? 'e.g. Laptop Repair' : 'e.g. Plumbing'}
+                    value={form.name}
+                    onChange={e => handleNameChange(e.target.value)}
+                    maxLength={60}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Slug</Label>
+                  <Input
+                    placeholder={isSubcategory ? 'repair-laptop' : 'plumbing'}
+                    value={form.slug}
+                    onChange={e => set('slug', slugify(e.target.value))}
+                    maxLength={60}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Parent</Label>
+                <Select value={form.parentId} onValueChange={v => set('parentId', v)} disabled={parentLocked}>
+                  <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Top-level category</SelectItem>
+                    {parentOptions.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-gray-400">
+                  {parentLocked
+                    ? 'Parent cannot be changed after creation.'
+                    : 'Top-level for an umbrella category, or pick a parent for a subcategory.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Icon */}
+            <div className="space-y-2 border-t border-gray-100 pt-4">
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Icon</Label>
+              <IconPicker value={form.iconName} onChange={v => set('iconName', v)} usedIcons={usedIcons} />
+            </div>
+
+            {/* Bid pricing */}
+            <div className="space-y-3 border-t border-gray-100 pt-4">
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Bid Pricing</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-gray-400">Min Bid (GHS)</Label>
+                  <Input type="number" placeholder="30.00" min="0" step="0.01" value={form.minBid} onChange={e => set('minBid', e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-gray-400">High-Bid Flag (GHS)</Label>
+                  <Input type="number" placeholder="5000.00" min="0" step="0.01" value={form.highBidFlag} onChange={e => set('highBidFlag', e.target.value)} />
+                </div>
+              </div>
+
+              {form.minBid && form.highBidFlag && !isNaN(parseFloat(form.minBid)) && !isNaN(parseFloat(form.highBidFlag)) && (
+                <div className="bg-gray-50 rounded-lg px-3 py-2.5 text-xs text-gray-500 space-y-1">
+                  <p>Artisans can bid from <strong className="text-gray-700">{formatGhs(ghsToPesewas(form.minBid))}</strong> with no upper limit.</p>
+                  <p className="flex items-start gap-1.5">
+                    <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5 text-amber-500" />
+                    <span>Bids above <strong className="text-gray-700">{formatGhs(ghsToPesewas(form.highBidFlag))}</strong> are flagged for admin review before the client sees them.</span>
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {error && (
+              <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-red-700">{error}</p>
+              </div>
+            )}
           </div>
 
-          {/* Name + Slug */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</Label>
-              <Input
-                placeholder={isSubcategory ? 'e.g. Laptop Repair' : 'e.g. Plumbing'}
-                value={form.name}
-                onChange={e => handleNameChange(e.target.value)}
-                maxLength={60}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Slug</Label>
-              <Input
-                placeholder={isSubcategory ? 'repair-laptop' : 'plumbing'}
-                value={form.slug}
-                onChange={e => set('slug', slugify(e.target.value))}
-                maxLength={60}
-                className="font-mono text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Icon + sort order */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Material Icon</Label>
-              <Input
-                placeholder="e.g. handyman, laptop_mac"
-                value={form.iconName}
-                onChange={e => set('iconName', e.target.value.toLowerCase())}
-                maxLength={60}
-                className="font-mono text-sm"
-              />
-              <p className="text-[11px] text-gray-400">
-                Lowercase snake_case (Flutter <code>Icons.X</code>). Optional.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sort Order</Label>
-              <Input
-                type="number"
-                min={0}
-                max={999}
-                value={form.sortOrder}
-                onChange={e => set('sortOrder', e.target.value)}
-              />
-              <p className="text-[11px] text-gray-400">Lower = first (0-999).</p>
-            </div>
-          </div>
-
-          {/* Bid pricing */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Min Bid (GHS)</Label>
-              <Input
-                type="number"
-                placeholder="30.00"
-                min="0"
-                step="0.01"
-                value={form.minBid}
-                onChange={e => set('minBid', e.target.value)}
-              />
-              <p className="text-[11px] text-gray-400">Lowest a bid can be submitted</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                High-Bid Flag (GHS)
-              </Label>
-              <Input
-                type="number"
-                placeholder="5000.00"
-                min="0"
-                step="0.01"
-                value={form.highBidFlag}
-                onChange={e => set('highBidFlag', e.target.value)}
-              />
-              <p className="text-[11px] text-gray-400">Bids above this need admin review</p>
-            </div>
-          </div>
-
-          {/* Pricing preview */}
-          {form.minBid && form.highBidFlag && !isNaN(parseFloat(form.minBid)) && !isNaN(parseFloat(form.highBidFlag)) && (
-            <div className="bg-orange-50 rounded-lg px-3 py-2.5 text-xs text-orange-700 space-y-1">
-              <p>Artisans can bid from <strong>{formatGhs(ghsToPesewas(form.minBid))}</strong> with no upper limit.</p>
-              <p className="flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 shrink-0" />
-                Bids above <strong>{formatGhs(ghsToPesewas(form.highBidFlag))}</strong> will be flagged for admin review before the client sees them.
-              </p>
-            </div>
-          )}
-
-          {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-
-          <DialogFooter className="pt-2">
+          <DialogFooter className="px-6 py-4 border-t border-gray-100">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button
               type="submit"
@@ -639,10 +718,8 @@ export default function CategoriesPage() {
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</TableHead>
-              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Slug</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Min Bid</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">High-Bid Flag</TableHead>
-              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-center">Order</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</TableHead>
               <TableHead className="w-20" />
             </TableRow>
@@ -651,14 +728,14 @@ export default function CategoriesPage() {
             {loading ? (
               [...Array(6)].map((_, i) => (
                 <TableRow key={i}>
-                  {[...Array(7)].map((_, j) => (
+                  {[...Array(5)].map((_, j) => (
                     <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : displayList.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-14 text-gray-400">
+                <TableCell colSpan={5} className="text-center py-14 text-gray-400">
                   <Tag className="h-8 w-8 mx-auto mb-2 text-gray-200" />
                   <p className="text-sm">{search ? 'No categories match your search.' : 'No service categories yet.'}</p>
                   {!search && (
@@ -683,35 +760,22 @@ export default function CategoriesPage() {
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={cat.iconUrl} alt="" className="w-7 h-7 rounded-md object-cover shrink-0" />
                         ) : (
-                          <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-gray-100">
-                            <Tag className="h-3.5 w-3.5 text-gray-600" />
+                          <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-gray-100 text-gray-600">
+                            {cat.iconName
+                              ? <MatIcon name={cat.iconName} size={18} />
+                              : <Tag className="h-3.5 w-3.5" />}
                           </div>
                         )}
-                        <div className="flex flex-col min-w-0">
-                          <span className={`text-sm ${isChild ? 'text-gray-600' : 'font-medium text-gray-900'}`}>
-                            {cat.name}
-                          </span>
-                          {cat.iconName && (
-                            <span className="text-[10px] font-mono text-gray-400 truncate" title={`Icons.${cat.iconName}`}>
-                              {cat.iconName}
-                            </span>
-                          )}
-                        </div>
+                        <span className={`text-sm min-w-0 truncate ${isChild ? 'text-gray-600' : 'font-medium text-gray-900'}`}>
+                          {cat.name}
+                        </span>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="font-mono text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                        {cat.slug}
-                      </span>
                     </TableCell>
                     <TableCell className="text-right text-sm font-semibold text-gray-800">
                       {formatGhs(cat.minBidPesewas)}
                     </TableCell>
                     <TableCell className="text-right text-sm">
                       <span className="text-amber-600 font-medium">{formatGhs(cat.highBidFlagPesewas)}</span>
-                    </TableCell>
-                    <TableCell className="text-center text-sm text-gray-400">
-                      {cat.sortOrder}
                     </TableCell>
                     <TableCell>
                       <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">

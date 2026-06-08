@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
+import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
 import { AlertTriangle, Phone, ArrowUpRight, Loader2, ExternalLink, Check } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -205,26 +206,30 @@ export default function ClawbacksPage() {
                     <TableCell>
                       <div className="flex items-center gap-2 justify-end">
                         {isEligible && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7 text-emerald-600 hover:bg-emerald-50"
-                            disabled={isActing}
-                            onClick={() => handleWriteOff(cb)}
-                          >
-                            {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Write Off'}
-                          </Button>
+                          <RoleGate permission="write_off_clawback">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-7 text-emerald-600 hover:bg-emerald-50"
+                              disabled={isActing}
+                              onClick={() => handleWriteOff(cb)}
+                            >
+                              {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Write Off'}
+                            </Button>
+                          </RoleGate>
                         )}
                         {isHighValue && cb.status !== 'escalated' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7 text-red-600 hover:bg-red-50 gap-1"
-                            disabled={isActing}
-                            onClick={() => handleEscalate(cb.id)}
-                          >
-                            {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <><ArrowUpRight className="h-3.5 w-3.5" /> Escalate</>}
-                          </Button>
+                          <RoleGate permission="escalate_clawback">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-7 text-red-600 hover:bg-red-50 gap-1"
+                              disabled={isActing}
+                              onClick={() => handleEscalate(cb.id)}
+                            >
+                              {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <><ArrowUpRight className="h-3.5 w-3.5" /> Escalate</>}
+                            </Button>
+                          </RoleGate>
                         )}
                         {cb.status === 'escalated' && (
                           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">Escalated</span>

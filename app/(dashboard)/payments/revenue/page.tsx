@@ -13,8 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PageHeader } from '@/components/common/page-header'
 import { getRevenueReport, type RevenueReport } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { formatPeriodLabel } from '@/lib/format-date'
 import {
-  LineChart, Line, PieChart, Pie, Cell,
+  AreaChart, Area, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 
@@ -215,30 +216,51 @@ export default function RevenuePage() {
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
             <Card className="xl:col-span-2">
-              <CardHeader className="pb-2"><CardTitle className="text-base">Revenue Trend</CardTitle></CardHeader>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Revenue Trend</CardTitle>
+                <p className="text-xs text-gray-400">Collections, commission, payouts and tips per {groupBy} over the selected range</p>
+              </CardHeader>
               <CardContent>
                 {chartData.length === 0 ? (
                   <div className="flex items-center justify-center h-64 text-gray-400 text-sm">No data in this range</div>
                 ) : (
                   <ResponsiveContainer width="100%" height={260}>
-                    <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                    <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="revCollections" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#F5A623" stopOpacity={0.18} />
+                          <stop offset="95%" stopColor="#F5A623" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={v => v.slice(5)} interval={Math.max(0, Math.floor(chartData.length / 8))} />
-                      <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `₵${Number(v).toFixed(0)}`} />
-                      <Tooltip formatter={(v, n) => [formatGhs(Number(v)), n]} />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 11, fill: '#9ca3af' }}
+                        tickFormatter={v => formatPeriodLabel(String(v), groupBy)}
+                        interval={Math.max(0, Math.floor(chartData.length / 8))}
+                      />
+                      <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={v => `₵${Number(v).toFixed(0)}`} />
+                      <Tooltip
+                        formatter={(v, n) => [formatGhs(Number(v)), n]}
+                        labelFormatter={label => formatPeriodLabel(String(label), groupBy)}
+                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Line type="monotone" dataKey="collections" stroke="#F5A623" strokeWidth={2} dot={false} name="Collections" />
+                      <Area type="monotone" dataKey="collections" stroke="#F5A623" strokeWidth={2} fill="url(#revCollections)" dot={false} name="Collections" />
                       <Line type="monotone" dataKey="commission"  stroke="#10B981" strokeWidth={2} dot={false} name="Commission" />
                       <Line type="monotone" dataKey="payouts"     stroke="#3B82F6" strokeWidth={2} dot={false} name="Payouts" />
                       <Line type="monotone" dataKey="tips"        stroke="#A855F7" strokeWidth={2} dot={false} name="Tips" />
-                    </LineChart>
+                    </AreaChart>
                   </ResponsiveContainer>
                 )}
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-base">Revenue Mix</CardTitle></CardHeader>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Revenue Mix</CardTitle>
+                <p className="text-xs text-gray-400">How total revenue splits across payouts, commission and tips</p>
+              </CardHeader>
               <CardContent className="flex flex-col items-center">
                 {pieData.length === 0 ? (
                   <div className="flex items-center justify-center h-48 text-gray-400 text-sm">No data</div>

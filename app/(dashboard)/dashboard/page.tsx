@@ -15,6 +15,7 @@ import {
   getOverviewReport, getRevenueReport, getRecentActivity, getEmergencyAlerts, acknowledgeEmergency,
   type OverviewReport, type RevenueDataPoint, type ActivityItem, type EmergencyAlert,
 } from '@/lib/api'
+import { formatDayShort } from '@/lib/format-date'
 
 // ─── Activity helpers ─────────────────────────────────────────────────────────
 
@@ -195,7 +196,7 @@ export default function DashboardPage() {
     { label: 'Active trips',   value: overview ? overview.activeRides.toString()             : '-', sub: null, icon: Navigation,   color: 'text-gray-600', bg: 'bg-gray-100' },
     { label: 'Active jobs',    value: overview ? overview.activeJobs.toString()              : '-', sub: null, icon: UserCheck,    color: 'text-gray-600', bg: 'bg-gray-100' },
     { label: 'Commission (month)', value: overview ? fmtGhs(overview.commissionRevenue.monthGhs) : '-', sub: overview ? `${fmtGhs(overview.commissionRevenue.weekGhs)} this week` : null, icon: TrendingUp, color: 'text-gray-600', bg: 'bg-gray-100' },
-    { label: 'Payment success', value: overview ? overview.paymentSuccessRatePct + '%'        : '-', sub: null, icon: CheckCircle2, color: 'text-gray-600', bg: 'bg-gray-100' },
+    { label: 'Payment success', value: overview?.paymentSuccessRatePct != null ? overview.paymentSuccessRatePct + '%' : '-', sub: null, icon: CheckCircle2, color: 'text-gray-600', bg: 'bg-gray-100' },
   ]
 
   // Secondary context — registration scale, lower visual weight.
@@ -206,7 +207,7 @@ export default function DashboardPage() {
   ]
 
   const growthData = revenueData.slice(-14).map(d => ({
-    date: d.period.slice(5),
+    date: formatDayShort(d.period),
     'Collections (GHS)': Math.round(d.collectionsGhs),
     'Commission (GHS)':  Math.round(d.commissionGhs),
     'Payouts (GHS)':     Math.round(d.payoutsGhs),

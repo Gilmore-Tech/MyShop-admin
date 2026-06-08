@@ -2,14 +2,41 @@
 
 import { useState, useEffect } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
-import { Download, FileText, Calendar, Loader2, TrendingUp, Users, Star, CheckCircle } from 'lucide-react'
+import { Download, FileText, Calendar, Loader2, TrendingUp, Users, Star, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/common/page-header'
 import {
-  getOverviewReport, getRevenueReport, getProviderReport, getPilotReport,
+  getOverviewReport, getRevenueReport, getProviderReport, getPilotReport, listUsers,
   type OverviewReport, type RevenueReport, type ProviderReport, type PilotMetric,
 } from '@/lib/api'
+import { formatDate } from '@/lib/format-date'
+
+// Shared pagination control.
+function Pager({ page, pageSize, total, onPage }: {
+  page: number; pageSize: number; total: number; onPage: (p: number) => void
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  if (totalPages <= 1) return null
+  const start = (page - 1) * pageSize
+  return (
+    <div className="flex items-center justify-between mt-3">
+      <p className="text-xs text-gray-400">
+        Showing {start + 1}-{Math.min(start + pageSize, total)} of {total}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+          <ChevronLeft className="h-3.5 w-3.5" /> Prev
+        </Button>
+        <span className="text-xs text-gray-500 tabular-nums px-1">Page {page} of {totalPages}</span>
+        <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>
+          Next <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 function fmt(ghs: number) {
   return 'GHS ' + ghs.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -19,8 +46,11 @@ function pct(n: number) { return n.toFixed(1) + '%' }
 
 // ── Overview panel ────────────────────────────────────────────────────────────
 
-function OverviewPanel({ data }: { data: OverviewReport }) {
-  const totalUsers = data.registeredClients + data.registeredDrivers + data.registeredArtisans
+function OverviewPanel({ data, userTotal }: { data: OverviewReport; userTotal: number | null }) {
+  // Distinct accounts from /admin/users — summing role counts double-counts
+  // users who hold more than one role (e.g. a client who is also a driver).
+  const roleSum = data.registeredClients + data.registeredDrivers + data.registeredArtisans
+  const totalUsers = userTotal ?? roleSum
   const stats = [
     { label: 'Total Users',           value: totalUsers.toLocaleString() },
     { label: 'Registered Clients',    value: data.registeredClients.toLocaleString() },
@@ -33,7 +63,7 @@ function OverviewPanel({ data }: { data: OverviewReport }) {
     { label: 'Commission (month)',    value: fmt(data.commissionRevenue.monthGhs) },
     { label: 'Commission (week)',     value: fmt(data.commissionRevenue.weekGhs) },
     { label: 'Commission (today)',    value: fmt(data.commissionRevenue.todayGhs) },
-    { label: 'Payment Success',       value: data.paymentSuccessRatePct + '%' },
+    { label: 'Payment Success',       value: data.paymentSuccessRatePct != null ? data.paymentSuccessRatePct + '%' : '-' },
   ]
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -49,11 +79,21 @@ function OverviewPanel({ data }: { data: OverviewReport }) {
 
 // ── Revenue panel ─────────────────────────────────────────────────────────────
 
+const REVENUE_PAGE_SIZE = 12
+
 function RevenuePanel({ data }: { data: RevenueReport }) {
   const totalCollections = data.periods.reduce((s, d) => s + d.collectionsGhs, 0)
   const totalCommission  = data.periods.reduce((s, d) => s + d.commissionGhs, 0)
   const totalPayouts     = data.periods.reduce((s, d) => s + d.payoutsGhs, 0)
   const totalPayments    = data.periods.reduce((s, d) => s + d.totalPayments, 0)
+
+  // Most recent first, paginated.
+  const rows = [...data.periods].sort((a, b) => b.period.localeCompare(a.period))
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(rows.length / REVENUE_PAGE_SIZE))
+  const current = Math.min(page, totalPages)
+  const start = (current - 1) * REVENUE_PAGE_SIZE
+  const pageRows = rows.slice(start, start + REVENUE_PAGE_SIZE)
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -81,9 +121,9 @@ function RevenuePanel({ data }: { data: RevenueReport }) {
               </tr>
             </thead>
             <tbody>
-              {data.periods.slice(0, 14).map(row => (
+              {pageRows.map(row => (
                 <tr key={row.period} className="border-b border-gray-50">
-                  <td className="py-1.5 pr-4 text-gray-700">{row.period.slice(0, 10)}</td>
+                  <td className="py-1.5 pr-4 text-gray-700">{formatDate(row.period)}</td>
                   <td className="py-1.5 pr-4 text-right text-gray-900 font-medium">{fmt(row.collectionsGhs)}</td>
                   <td className="py-1.5 pr-4 text-right text-gray-600">{fmt(row.commissionGhs)}</td>
                   <td className="py-1.5 text-right text-gray-600">{row.totalPayments}</td>
@@ -91,6 +131,7 @@ function RevenuePanel({ data }: { data: RevenueReport }) {
               ))}
             </tbody>
           </table>
+          <Pager page={current} pageSize={REVENUE_PAGE_SIZE} total={rows.length} onPage={setPage} />
         </div>
       )}
     </div>
@@ -99,13 +140,27 @@ function RevenuePanel({ data }: { data: RevenueReport }) {
 
 // ── Provider panel ────────────────────────────────────────────────────────────
 
+const PROVIDER_PAGE_SIZE = 8
+
 function ProviderPanel({ data }: { data: ProviderReport }) {
+  // Sort by performance: drivers by earnings, artisans by completed jobs.
+  const drivers = [...data.drivers].sort((a, b) => b.totalEarningsGhs - a.totalEarningsGhs)
+  const artisans = [...data.artisans].sort((a, b) => b.completedJobsCount - a.completedJobsCount)
+
+  const [driverPage, setDriverPage] = useState(1)
+  const [artisanPage, setArtisanPage] = useState(1)
+
+  const dStart = (Math.min(driverPage, Math.max(1, Math.ceil(drivers.length / PROVIDER_PAGE_SIZE))) - 1) * PROVIDER_PAGE_SIZE
+  const aStart = (Math.min(artisanPage, Math.max(1, Math.ceil(artisans.length / PROVIDER_PAGE_SIZE))) - 1) * PROVIDER_PAGE_SIZE
+  const driverRows = drivers.slice(dStart, dStart + PROVIDER_PAGE_SIZE)
+  const artisanRows = artisans.slice(aStart, aStart + PROVIDER_PAGE_SIZE)
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Drivers</p>
         <div className="space-y-2">
-          {data.drivers.slice(0, 5).map(d => (
+          {driverRows.map(d => (
             <div key={d.driverId} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{d.name}</p>
@@ -113,17 +168,20 @@ function ProviderPanel({ data }: { data: ProviderReport }) {
               </div>
               <div className="text-right shrink-0">
                 <p className="text-xs font-semibold text-gray-800">{fmt(d.totalEarningsGhs)}</p>
-                <p className="text-xs text-amber-500">★ {d.avgRating != null ? d.avgRating.toFixed(1) : '-'}</p>
+                <p className="text-xs text-amber-500">
+                  {d.ratingCount > 0 && d.avgRating != null ? `★ ${d.avgRating.toFixed(1)}` : <span className="text-gray-300">No ratings</span>}
+                </p>
               </div>
             </div>
           ))}
-          {data.drivers.length === 0 && <p className="text-xs text-gray-400 py-4 text-center">No driver data</p>}
+          {drivers.length === 0 && <p className="text-xs text-gray-400 py-4 text-center">No driver data</p>}
         </div>
+        <Pager page={Math.min(driverPage, Math.max(1, Math.ceil(drivers.length / PROVIDER_PAGE_SIZE)))} pageSize={PROVIDER_PAGE_SIZE} total={drivers.length} onPage={setDriverPage} />
       </div>
       <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Artisans</p>
         <div className="space-y-2">
-          {data.artisans.slice(0, 5).map(a => (
+          {artisanRows.map(a => (
             <div key={a.artisanId} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{a.name}</p>
@@ -133,12 +191,15 @@ function ProviderPanel({ data }: { data: ProviderReport }) {
                 </p>
               </div>
               <div className="text-right shrink-0">
-                <p className="text-xs text-amber-500">★ {a.avgRating != null ? a.avgRating.toFixed(1) : '-'}</p>
+                <p className="text-xs text-amber-500">
+                  {a.ratingCount > 0 && a.avgRating != null ? `★ ${a.avgRating.toFixed(1)}` : <span className="text-gray-300">No ratings</span>}
+                </p>
               </div>
             </div>
           ))}
-          {data.artisans.length === 0 && <p className="text-xs text-gray-400 py-4 text-center">No artisan data</p>}
+          {artisans.length === 0 && <p className="text-xs text-gray-400 py-4 text-center">No artisan data</p>}
         </div>
+        <Pager page={Math.min(artisanPage, Math.max(1, Math.ceil(artisans.length / PROVIDER_PAGE_SIZE)))} pageSize={PROVIDER_PAGE_SIZE} total={artisans.length} onPage={setArtisanPage} />
       </div>
     </div>
   )
@@ -150,8 +211,8 @@ function PilotPanel({ metrics }: { metrics: PilotMetric[] }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {metrics.map(m => {
-        const progress = Math.min((m.actual / m.target) * 100, 100)
-        const met = m.actual >= m.target
+        const progress = m.target > 0 ? Math.min((m.actual / m.target) * 100, 100) : 0
+        const met = m.target > 0 && m.actual >= m.target
         return (
           <div key={m.key} className="bg-gray-50 rounded-lg p-3">
             <div className="flex items-start justify-between gap-2 mb-2">
@@ -187,6 +248,7 @@ export default function ReportsPage() {
   const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month'>('day')
 
   const [overview,   setOverview]   = useState<OverviewReport | null>(null)
+  const [userTotal,  setUserTotal]  = useState<number | null>(null)
   const [revenue,    setRevenue]    = useState<RevenueReport | null>(null)
   const [providers,  setProviders]  = useState<ProviderReport | null>(null)
   const [pilot,      setPilot]      = useState<PilotMetric[] | null>(null)
@@ -199,7 +261,9 @@ export default function ReportsPage() {
     setError(null)
 
     let p: Promise<void>
-    if (tab === 'overview')   p = getOverviewReport().then(setOverview).catch(e => { setError(e.message) })
+    if (tab === 'overview')   p = Promise.all([getOverviewReport(), listUsers({ limit: 1 })])
+      .then(([ov, u]) => { setOverview(ov); setUserTotal(u.total) })
+      .catch(e => { setError(e.message) })
     else if (tab === 'revenue') p = getRevenueReport({ groupBy }).then(setRevenue).catch(e => { setError(e.message) })
     else if (tab === 'providers') p = getProviderReport().then(setProviders).catch(e => { setError(e.message) })
     else p = getPilotReport().then(setPilot).catch(e => { setError(e.message) })
@@ -275,7 +339,7 @@ export default function ReportsPage() {
                 {error}
               </div>
             )}
-            {!loading && !error && tab === 'overview'  && overview   && <OverviewPanel  data={overview} />}
+            {!loading && !error && tab === 'overview'  && overview   && <OverviewPanel  data={overview} userTotal={userTotal} />}
             {!loading && !error && tab === 'revenue'   && revenue    && <RevenuePanel   data={revenue} />}
             {!loading && !error && tab === 'providers' && providers  && <ProviderPanel  data={providers} />}
             {!loading && !error && tab === 'pilot'     && pilot      && <PilotPanel     metrics={pilot} />}

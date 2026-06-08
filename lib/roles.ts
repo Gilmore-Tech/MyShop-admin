@@ -30,6 +30,8 @@ export type Permission =
   | 'delete_job'
   | 'view_payments'
   | 'run_batch_payouts'
+  | 'write_off_clawback'
+  | 'escalate_clawback'
   | 'view_reports'
   | 'view_config'
   | 'view_ussd'
@@ -137,6 +139,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     permissions: [
       { key: 'view_payments', label: 'View payments', description: 'Transactions, revenue, payouts, clawbacks' },
       { key: 'run_batch_payouts', label: 'Run batch payouts', description: 'Force-run a payout batch' },
+      { key: 'write_off_clawback', label: 'Write off clawbacks', description: 'Cancel an outstanding clawback balance' },
+      { key: 'escalate_clawback', label: 'Escalate clawbacks', description: 'Escalate a clawback for manual collection' },
     ],
   },
   {
