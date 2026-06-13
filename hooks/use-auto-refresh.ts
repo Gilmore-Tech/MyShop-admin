@@ -1,6 +1,13 @@
 import { useEffect, useRef } from 'react'
 
 /**
+ * Set NEXT_PUBLIC_DISABLE_AUTO_REFRESH=true to turn off all background polling
+ * (this hook, the transactions feed poll, and the sidebar badge counts).
+ */
+export const AUTO_REFRESH_DISABLED =
+  process.env.NEXT_PUBLIC_DISABLE_AUTO_REFRESH === 'true'
+
+/**
  * Calls `fn` on a fixed interval while the tab is visible. Pauses when the tab
  * is hidden and refires once on re-show so stale data refreshes immediately.
  *
@@ -12,6 +19,7 @@ export function useAutoRefresh(fn: () => void, ms = 30_000) {
   fnRef.current = fn
 
   useEffect(() => {
+    if (AUTO_REFRESH_DISABLED) return
     let id: ReturnType<typeof setInterval> | null = null
 
     function start() {

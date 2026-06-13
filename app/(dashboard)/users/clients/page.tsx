@@ -30,25 +30,43 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-// Registration completion. `registrationComplete` is true/false from the backend,
-// or null/undefined when the backend hasn't shipped the field yet → show a neutral
-// dash so we never imply "incomplete" for data we don't actually have.
+// Whether a user finished registration. The backend has no dedicated flag yet
+// (see docs/backend-requests.md §4), so we DERIVE it from the user payload:
+// a finished registration has a name, at least one role, and the profile row for
+// each claimed role populated, and is not parked in `pending`. If/when the backend
+// adds `registrationComplete`, that authoritative value wins automatically.
+function isRegistrationComplete(u: PlatformUser): boolean {
+  if (u.registrationComplete != null) return u.registrationComplete
+  if (u.status === 'pending') return false
+  if (!u.fullName?.trim()) return false
+  if (u.roles.length === 0) return false
+  return u.roles.every(r =>
+    r === 'client'  ? u.client  != null :
+    r === 'driver'  ? u.driver  != null :
+    r === 'artisan' ? u.artisan != null :
+    true, // unknown role types don't block completion
+  )
+}
+
 function RegistrationCell({ user }: { user: PlatformUser }) {
-  if (user.registrationComplete == null) {
-    return <span className="text-gray-300" title="Not reported by the API yet">—</span>
-  }
-  if (user.registrationComplete) {
+  const complete = isRegistrationComplete(user)
+  // Tooltip notes the source so admins know derived vs. backend-reported.
+  const derived = user.registrationComplete == null
+  if (complete) {
     return (
       <span
         className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700"
-        title={user.registrationCompletedAt ? `Completed ${formatDate(user.registrationCompletedAt)}` : 'Registration completed'}
+        title={user.registrationCompletedAt ? `Completed ${formatDate(user.registrationCompletedAt)}` : derived ? 'Registration complete (derived from profile)' : 'Registration completed'}
       >
         <CheckCircle2 className="h-3.5 w-3.5" /> Completed
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700" title="Registration not finished">
+    <span
+      className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700"
+      title={derived ? 'Registration incomplete (derived from profile)' : 'Registration not finished'}
+    >
       <CircleDashed className="h-3.5 w-3.5" /> Incomplete
     </span>
   )

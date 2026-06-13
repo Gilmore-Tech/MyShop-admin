@@ -102,7 +102,7 @@ export default function ClawbacksPage() {
       if (res.sent > 0) {
         setRemindSent(true)
       } else {
-        setRemindError('The SMS could not be delivered. Please try again.')
+        setRemindError(res.reason ?? 'The SMS could not be delivered. Please try again.')
       }
     } catch (err) {
       setRemindError(err instanceof ApiError ? err.message : 'Failed to send the reminder.')

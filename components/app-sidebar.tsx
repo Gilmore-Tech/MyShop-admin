@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { getOverviewReport, getEmergencyAlerts, getClientKycQueue, getUnassignedJobs, getHighBidQueue, listSessionRecoveryRequests } from '@/lib/api'
 import { FEATURES } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
+import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
 import { type Permission } from '@/lib/roles'
 
 type ChildItem = { title: string; href: string; permission?: Permission; badge?: number; badgeVariant?: 'red' | 'amber' }
@@ -152,6 +153,7 @@ export default function AppSidebar() {
         .catch(() => {})
     }
     loadCounts()
+    if (AUTO_REFRESH_DISABLED) return
     const id = setInterval(loadCounts, 60_000)
     return () => clearInterval(id)
   }, [])

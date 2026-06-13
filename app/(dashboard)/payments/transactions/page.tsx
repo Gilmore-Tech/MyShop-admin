@@ -18,6 +18,7 @@ import { listTransactions, type AdminTransaction } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatTransactionAmount } from '@/lib/money'
 import { paymentMethodLabel } from '@/lib/payment-labels'
+import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
 
 const txTypeColors: Record<string, string> = {
   collection: 'bg-gray-100 text-gray-600',
@@ -132,7 +133,7 @@ export default function TransactionsPage() {
   // is open so a refetch doesn't replace the row out from under them.
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   useEffect(() => {
-    if (selected) return
+    if (AUTO_REFRESH_DISABLED || selected) return
     pollRef.current = setInterval(() => fetchTransactions(true), POLL_INTERVAL_MS)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [fetchTransactions, selected])

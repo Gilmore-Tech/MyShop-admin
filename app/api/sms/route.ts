@@ -74,15 +74,40 @@ async function fetchPhoneForUser(userId: string, token: string): Promise<string 
   return data?.phone ?? null
 }
 
+// Normalises a Ghana phone number to the format Arkesel expects: 233XXXXXXXXX
+// (international, no leading + or 0). Returns null if it can't be made valid.
+function normalisePhone(raw: string): string | null {
+  const digits = raw.replace(/[^\d]/g, '') // strip +, spaces, dashes
+  if (digits.startsWith('233') && digits.length === 12) return digits
+  if (digits.startsWith('0') && digits.length === 10) return '233' + digits.slice(1)
+  if (digits.length === 9) return '233' + digits // bare 9-digit local number
+  return null
+}
+
 // ── Send to Arkesel in batches of 100 ────────────────────────────────────────
 
-async function sendArkeselBatch(recipients: string[], message: string): Promise<{ sent: number; failed: number }> {
+async function sendArkeselBatch(
+  recipients: string[],
+  message: string,
+): Promise<{ sent: number; failed: number; reason?: string }> {
   const BATCH = 100
   let sent = 0
   let failed = 0
+  let reason: string | undefined
 
-  for (let i = 0; i < recipients.length; i += BATCH) {
-    const batch = recipients.slice(i, i + BATCH)
+  // Normalise up front; drop (and count as failed) anything we can't format.
+  const normalised: string[] = []
+  for (const r of recipients) {
+    const n = normalisePhone(r)
+    if (n) normalised.push(n)
+    else {
+      failed++
+      reason = 'One or more phone numbers are not in a valid Ghana format.'
+    }
+  }
+
+  for (let i = 0; i < normalised.length; i += BATCH) {
+    const batch = normalised.slice(i, i + BATCH)
 
     const res = await fetch(ARKESEL_URL, {
       method: 'POST',
@@ -97,29 +122,30 @@ async function sendArkeselBatch(recipients: string[], message: string): Promise<
       }),
     })
 
-    if (!res.ok) {
-      failed += batch.length
-      continue
-    }
+    const rawBody = await res.text()
+    let result: any = null
+    try { result = JSON.parse(rawBody) } catch { /* non-JSON error page */ }
 
-    const result = await res.json()
-    // Arkesel v2 returns data[] with per-recipient status
-    const data: { status?: string }[] = result?.data ?? []
-    for (const item of data) {
-      if (item.status === 'sent' || item.status === 'success') {
-        sent++
-      } else {
-        failed++
-      }
-    }
+    // Arkesel v2 signals batch-level acceptance via top-level status/code, NOT a
+    // per-recipient `status` field. Treat the batch as accepted when the API says so.
+    const ok =
+      res.ok &&
+      (result?.status === 'success' || result?.code === 'ok' || result?.code === 2000)
 
-    // If the response has no per-recipient data, count the whole batch as sent
-    if (data.length === 0 && res.ok) {
+    if (ok) {
       sent += batch.length
+    } else {
+      failed += batch.length
+      reason =
+        result?.message ??
+        result?.status ??
+        `Arkesel rejected the send (HTTP ${res.status}).`
+      // Surface the real reason in server logs — never logs the phone numbers.
+      console.error('[SMS route] Arkesel send failed:', res.status, rawBody.slice(0, 300))
     }
   }
 
-  return { sent, failed }
+  return { sent, failed, reason }
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
@@ -172,9 +198,15 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Send via Arkesel
-    const { sent, failed } = await sendArkeselBatch(phones, message.trim())
+    const { sent, failed, reason } = await sendArkeselBatch(phones, message.trim())
 
-    return NextResponse.json({ success: true, total: phones.length, sent, failed })
+    return NextResponse.json({
+      success: true,
+      total: phones.length,
+      sent,
+      failed,
+      ...(failed > 0 && reason ? { reason } : {}),
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[SMS route]', message)

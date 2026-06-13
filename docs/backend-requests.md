@@ -155,9 +155,11 @@ registrationCompletedAt: string | null // ISO timestamp when it completed, else 
   does **not** re-derive this from KYC/verification — those are separate concerns.
 - `registrationCompletedAt` is optional polish (shown in the cell tooltip). Omit it
   if you don't track the timestamp.
-- **Graceful degradation:** until this ships, the field is absent and the column
-  renders a neutral "—" (never a false "Incomplete"). camelCase or snake_case both
-  accepted by the frontend.
+- **Currently derived on the frontend.** Until this field ships, the column infers
+  completion from the user payload (has name + ≥1 role + the profile row for each
+  claimed role populated + status ≠ `pending`). The derivation is best-effort; an
+  authoritative `registrationComplete` from the backend will override it
+  automatically. camelCase or snake_case both accepted.
 - **Nice-to-have filter:** accept `?registration=complete|incomplete` on
   `GET /v1/admin/users` so the column can be filtered server-side. Not required for
   v1 — the column works without it.

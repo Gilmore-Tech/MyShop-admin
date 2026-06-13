@@ -1888,6 +1888,7 @@ export interface SmsResult {
   total: number
   sent: number
   failed: number
+  reason?: string   // present when failed > 0 — the provider's rejection reason
 }
 
 export function sendSms(audience: SmsAudience, message: string) {
