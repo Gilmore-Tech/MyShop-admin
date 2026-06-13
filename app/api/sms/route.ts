@@ -54,6 +54,26 @@ async function fetchPhones(role: string | undefined, token: string): Promise<str
   return phones
 }
 
+// ── Fetch a single user's phone from the NestJS backend ───────────────────────
+
+async function fetchPhoneForUser(userId: string, token: string): Promise<string | null> {
+  const res = await fetch(`${BACKEND_BASE}/admin/users/${userId}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!res.ok) {
+    throw new Error(`Backend returned ${res.status} while fetching user`)
+  }
+
+  const body = await res.json()
+  // NestJS TransformInterceptor wraps in { success, data, meta }
+  const data = body?.data ?? body
+  return data?.phone ?? null
+}
+
 // ── Send to Arkesel in batches of 100 ────────────────────────────────────────
 
 async function sendArkeselBatch(recipients: string[], message: string): Promise<{ sent: number; failed: number }> {
@@ -106,13 +126,22 @@ async function sendArkeselBatch(recipients: string[], message: string): Promise<
 
 export async function POST(req: NextRequest) {
   try {
-    const { audience, message } = (await req.json()) as { audience: SmsAudience; message: string }
-
-    if (!audience || !message?.trim()) {
-      return NextResponse.json({ error: 'audience and message are required' }, { status: 400 })
+    const { audience, userId, message } = (await req.json()) as {
+      audience?: SmsAudience
+      userId?: string
+      message: string
     }
 
-    if (!Object.keys(ROLE_MAP).includes(audience)) {
+    if (!message?.trim()) {
+      return NextResponse.json({ error: 'message is required' }, { status: 400 })
+    }
+
+    // Either a single-recipient send (userId) or an audience broadcast is required.
+    if (!userId && !audience) {
+      return NextResponse.json({ error: 'userId or audience is required' }, { status: 400 })
+    }
+
+    if (audience && !Object.keys(ROLE_MAP).includes(audience)) {
       return NextResponse.json({ error: `Invalid audience: ${audience}` }, { status: 400 })
     }
 
@@ -127,12 +156,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized — no admin token' }, { status: 401 })
     }
 
-    // 1. Fetch phone numbers
-    const role = ROLE_MAP[audience]
-    const phones = await fetchPhones(role, token)
-
-    if (phones.length === 0) {
-      return NextResponse.json({ error: 'No phone numbers found for the selected audience' }, { status: 404 })
+    // 1. Resolve recipient phone numbers server-side (never exposed to the browser)
+    let phones: string[]
+    if (userId) {
+      const phone = await fetchPhoneForUser(userId, token)
+      if (!phone) {
+        return NextResponse.json({ error: 'No phone number on file for this provider' }, { status: 404 })
+      }
+      phones = [phone]
+    } else {
+      phones = await fetchPhones(ROLE_MAP[audience!], token)
+      if (phones.length === 0) {
+        return NextResponse.json({ error: 'No phone numbers found for the selected audience' }, { status: 404 })
+      }
     }
 
     // 2. Send via Arkesel

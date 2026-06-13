@@ -539,6 +539,11 @@ export interface PlatformUser {
   status: string
   createdAt: string
   roles: string[]
+  // Whether the user finished the full registration/onboarding flow.
+  // true = completed, false = still incomplete, null = backend hasn't shipped
+  // this field yet (column degrades to "—"). See docs/backend-requests.md §4.
+  registrationComplete: boolean | null
+  registrationCompletedAt: string | null
   client: {
     id: string
     loyaltyPointsBalance: number
@@ -1751,6 +1756,14 @@ export interface AdminClawback {
   id: string
   providerName: string | null
   providerId: string
+  // The provider's user-account id. `providerId` is the drivers/artisans row id,
+  // a different namespace that /admin/users/:id does NOT accept — SMS reminders
+  // must target this userId instead. May be empty until the backend includes it
+  // on the clawbacks response (see docs/backend-requests.md).
+  userId: string
+  source: string | null
+  amountPesewas: number
+  paidAmountPesewas: number
   outstandingPesewas: number
   originalDisputeId: string | null
   initiatedAt: string
@@ -1770,6 +1783,10 @@ export async function listClawbacks(): Promise<ClawbackListResponse> {
     id:                 c.id,
     providerName:       c.providerName ?? c.provider_name ?? null,
     providerId:         c.providerId ?? c.provider_id ?? '',
+    userId:             c.userId ?? c.user_id ?? '',
+    source:             c.source ?? null,
+    amountPesewas:      c.amountPesewas ?? c.amount_pesewas ?? 0,
+    paidAmountPesewas:  c.paidAmountPesewas ?? c.paid_amount_pesewas ?? 0,
     outstandingPesewas: c.outstandingPesewas ?? c.outstanding_pesewas ?? 0,
     originalDisputeId:  c.originalDisputeId ?? c.original_dispute_id ?? null,
     initiatedAt:        c.initiatedAt ?? c.initiated_at ?? c.createdAt ?? '',
@@ -1875,6 +1892,12 @@ export interface SmsResult {
 
 export function sendSms(audience: SmsAudience, message: string) {
   return api.post<SmsResult>('/api/sms', { audience, message }, { localRoute: true })
+}
+
+// Sends an SMS to a single user. The recipient's phone is resolved server-side
+// from their userId, so the raw number is never handled by the browser.
+export function sendSmsToUser(userId: string, message: string) {
+  return api.post<SmsResult>('/api/sms', { userId, message }, { localRoute: true })
 }
 
 // ── Announcement History ──────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
-import { Search, MoreHorizontal, UserX, Shield, RefreshCw, Users, UserPlus, RotateCcw, IdCard } from 'lucide-react'
+import { Search, MoreHorizontal, UserX, Shield, RefreshCw, Users, UserPlus, RotateCcw, IdCard, CheckCircle2, CircleDashed } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -28,6 +28,30 @@ function initials(name: string) {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+// Registration completion. `registrationComplete` is true/false from the backend,
+// or null/undefined when the backend hasn't shipped the field yet → show a neutral
+// dash so we never imply "incomplete" for data we don't actually have.
+function RegistrationCell({ user }: { user: PlatformUser }) {
+  if (user.registrationComplete == null) {
+    return <span className="text-gray-300" title="Not reported by the API yet">—</span>
+  }
+  if (user.registrationComplete) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700"
+        title={user.registrationCompletedAt ? `Completed ${formatDate(user.registrationCompletedAt)}` : 'Registration completed'}
+      >
+        <CheckCircle2 className="h-3.5 w-3.5" /> Completed
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700" title="Registration not finished">
+      <CircleDashed className="h-3.5 w-3.5" /> Incomplete
+    </span>
+  )
 }
 
 type ActionType = 'suspend' | 'ban' | 'reinstate'
@@ -167,6 +191,7 @@ export default function UsersPage() {
               <TableHead>Phone</TableHead>
               <TableHead>Roles</TableHead>
               <TableHead>Registered</TableHead>
+              <TableHead>Registration</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Loyalty Pts</TableHead>
               <TableHead>Payment</TableHead>
@@ -177,14 +202,14 @@ export default function UsersPage() {
             {loading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 8 }).map((_, j) => (
+                  {Array.from({ length: 9 }).map((_, j) => (
                     <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-gray-400">
+                <TableCell colSpan={9} className="text-center py-12 text-gray-400">
                   <Users className="h-8 w-8 mx-auto mb-2 text-gray-200" />
                   {search ? 'No users match your search.' : 'No users found.'}
                 </TableCell>
@@ -216,6 +241,7 @@ export default function UsersPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-sm text-gray-500">{formatDate(u.createdAt)}</TableCell>
+                  <TableCell><RegistrationCell user={u} /></TableCell>
                   <TableCell><StatusBadge status={u.status} /></TableCell>
                   <TableCell className="text-sm text-gray-600">
                     {u.client ? u.client.loyaltyPointsBalance.toLocaleString() : '-'}

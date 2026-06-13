@@ -4,13 +4,15 @@ import { useState, useEffect, useCallback } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
-import { AlertTriangle, Phone, ArrowUpRight, Loader2, ExternalLink, Check } from 'lucide-react'
+import { AlertTriangle, Phone, ArrowUpRight, Loader2, ExternalLink, MessageSquare, Send, CheckCircle2 } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 import { PageHeader } from '@/components/common/page-header'
-import { listClawbacks, writeOffClawback, escalateClawback, type AdminClawback } from '@/lib/api'
+import { listClawbacks, writeOffClawback, escalateClawback, sendSmsToUser, type AdminClawback } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 
 const WRITEOFF_THRESHOLD = 10000 // GHS 100 in pesewas
@@ -24,6 +26,40 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+function formatSource(source: string | null) {
+  if (!source) return '-'
+  return source
+    .toLowerCase()
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+function defaultReminderMessage(cb: AdminClawback) {
+  const name = cb.providerName?.trim() || 'there'
+  return `Hi ${name}, you have an outstanding MyShop balance of ${formatGhs(cb.outstandingPesewas)}. `
+    + `Please settle it via the MyShop app to avoid restrictions on your account. Thank you.`
+}
+
+function formatStatus(status: string) {
+  if (!status) return '-'
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
+
+function statusBadgeClass(status: string) {
+  const base = 'inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium '
+  switch (status) {
+    case 'settled':
+      return base + 'bg-emerald-50 text-emerald-700'
+    case 'partial':
+      return base + 'bg-amber-50 text-amber-700'
+    case 'escalated':
+      return base + 'bg-red-50 text-red-700'
+    default:
+      return base + 'bg-gray-100 text-gray-600'
+  }
+}
+
 export default function ClawbacksPage() {
   const [clawbacks, setClawbacks] = useState<AdminClawback[]>([])
   const [totalOutstanding, setTotalOutstanding] = useState(0)
@@ -31,6 +67,49 @@ export default function ClawbacksPage() {
   const [error, setError] = useState('')
   const [actionId, setActionId] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
+
+  // Reminder SMS dialog state
+  const [remindFor, setRemindFor] = useState<AdminClawback | null>(null)
+  const [remindMessage, setRemindMessage] = useState('')
+  const [remindSending, setRemindSending] = useState(false)
+  const [remindError, setRemindError] = useState('')
+  const [remindSent, setRemindSent] = useState(false)
+
+  function openReminder(cb: AdminClawback) {
+    setRemindFor(cb)
+    setRemindMessage(defaultReminderMessage(cb))
+    setRemindError('')
+    setRemindSent(false)
+  }
+
+  function closeReminder() {
+    if (remindSending) return
+    setRemindFor(null)
+  }
+
+  async function handleSendReminder() {
+    if (!remindFor || !remindMessage.trim()) return
+    // SMS must target the provider's user-account id. `providerId` is the
+    // drivers/artisans row id and is rejected by the backend user lookup (404).
+    if (!remindFor.userId) {
+      setRemindError('No user account is linked to this provider yet, so a reminder can’t be sent. Use Contact to reach them.')
+      return
+    }
+    setRemindSending(true)
+    setRemindError('')
+    try {
+      const res = await sendSmsToUser(remindFor.userId, remindMessage.trim())
+      if (res.sent > 0) {
+        setRemindSent(true)
+      } else {
+        setRemindError('The SMS could not be delivered. Please try again.')
+      }
+    } catch (err) {
+      setRemindError(err instanceof ApiError ? err.message : 'Failed to send the reminder.')
+    } finally {
+      setRemindSending(false)
+    }
+  }
 
   const load = useCallback(() => {
     setLoading(true)
@@ -140,11 +219,14 @@ export default function ClawbacksPage() {
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead>Provider</TableHead>
+              <TableHead>Source</TableHead>
+              <TableHead className="text-right">Original Amount</TableHead>
+              <TableHead className="text-right">Paid</TableHead>
               <TableHead className="text-right">Outstanding</TableHead>
               <TableHead>Original Dispute</TableHead>
               <TableHead>Initiated</TableHead>
               <TableHead className="text-right">Days Outstanding</TableHead>
-              <TableHead>Eligible for Write-off</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -152,14 +234,14 @@ export default function ClawbacksPage() {
             {loading ? (
               [...Array(5)].map((_, i) => (
                 <TableRow key={i}>
-                  {[...Array(7)].map((_, j) => (
+                  {[...Array(10)].map((_, j) => (
                     <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : clawbacks.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-gray-400 text-sm">
+                <TableCell colSpan={10} className="text-center py-12 text-gray-400 text-sm">
                   {error ? 'No clawbacks to display while the endpoint is unavailable.' : 'No outstanding clawbacks'}
                 </TableCell>
               </TableRow>
@@ -174,6 +256,9 @@ export default function ClawbacksPage() {
                       <p className="font-medium text-sm text-gray-900">{cb.providerName ?? '-'}</p>
                       <p className="text-xs text-gray-500 font-mono">{cb.providerId.slice(-12).toUpperCase()}</p>
                     </TableCell>
+                    <TableCell className="text-sm text-gray-600">{formatSource(cb.source)}</TableCell>
+                    <TableCell className="text-right text-sm text-gray-700">{formatGhs(cb.amountPesewas)}</TableCell>
+                    <TableCell className="text-right text-sm text-emerald-600">{formatGhs(cb.paidAmountPesewas)}</TableCell>
                     <TableCell className="text-right text-sm font-semibold text-red-600">
                       {formatGhs(cb.outstandingPesewas)}
                     </TableCell>
@@ -197,11 +282,7 @@ export default function ClawbacksPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      {isEligible
-                        ? <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium"><Check className="h-4 w-4 text-gray-600" /> Eligible</span>
-                        : isHighValue
-                        ? <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Escalate Required</span>
-                        : <span className="text-xs text-gray-500">Not yet</span>}
+                      <span className={statusBadgeClass(cb.status)}>{formatStatus(cb.status)}</span>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2 justify-end">
@@ -234,6 +315,17 @@ export default function ClawbacksPage() {
                         {cb.status === 'escalated' && (
                           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">Escalated</span>
                         )}
+                        <RoleGate permission="send_announcement">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-7 gap-1"
+                            onClick={() => openReminder(cb)}
+                            title={cb.providerName ? `Send ${cb.providerName} an SMS reminder` : 'Send an SMS reminder'}
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" /> Remind
+                          </Button>
+                        </RoleGate>
                         <Button
                           asChild
                           size="sm"
@@ -261,6 +353,59 @@ export default function ClawbacksPage() {
           </p>
         </div>
       </div>
+
+      <Dialog open={remindFor !== null} onOpenChange={o => { if (!o) closeReminder() }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-gray-900">Send debt reminder</DialogTitle>
+            <DialogDescription className="text-xs text-gray-400">
+              Sends an SMS to {remindFor?.providerName?.trim() || 'this provider'} about their outstanding balance of{' '}
+              {remindFor ? formatGhs(remindFor.outstandingPesewas) : ''}.
+            </DialogDescription>
+          </DialogHeader>
+
+          {remindSent ? (
+            <div className="flex flex-col items-center text-center py-6 gap-2">
+              <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+              <p className="text-sm font-medium text-gray-900">Reminder sent</p>
+              <p className="text-xs text-gray-500">The SMS has been delivered to the provider.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <Textarea
+                value={remindMessage}
+                onChange={e => setRemindMessage(e.target.value)}
+                rows={5}
+                maxLength={320}
+                disabled={remindSending}
+                className="resize-none text-sm"
+                placeholder="Reminder message…"
+              />
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-400">{remindMessage.length}/320 characters</p>
+                <p className="text-xs text-gray-400">Sent via SMS</p>
+              </div>
+              {remindError && (
+                <div className="bg-red-50 text-red-700 text-xs rounded-lg px-3 py-2">{remindError}</div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            {remindSent ? (
+              <Button size="sm" onClick={closeReminder}>Done</Button>
+            ) : (
+              <>
+                <Button size="sm" variant="outline" onClick={closeReminder} disabled={remindSending}>Cancel</Button>
+                <Button size="sm" className="gap-1" onClick={handleSendReminder} disabled={remindSending || !remindMessage.trim()}>
+                  {remindSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  Send reminder
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   </PageGuard>
   )
