@@ -1,0 +1,10 @@
+---
+deployment:
+  tasks:
+    # Replace CPANELUSER with your cPanel username, and confirm the folder
+    # matches the "Application root" you set in Setup Node.js App.
+    - export DEPLOYPATH=/home/CPANELUSER/myshop-admin
+    # Copy the checked-out source into the app root. Excluded paths are NOT
+    # transferred and NOT deleted at the destination, so the server's
+    # node_modules, .next build, and manually-uploaded .env.production survive.
+    - /usr/bin/rsync -a --delete --exclude='.git' --exclude='node_modules' --exclude='.next' --exclude='tmp' --exclude='.env.production' --exclude='.env.local' --exclude='.env.development' ./ "$DEPLOYPATH/"
