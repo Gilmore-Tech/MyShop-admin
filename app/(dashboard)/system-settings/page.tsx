@@ -489,8 +489,8 @@ export default function SystemSettingsPage() {
               <IntegCard name="Firebase Cloud Messaging" description="Push notifications to client and provider apps" status="operational" />
               <IntegCard name="Arkesel SMS" description="OTP delivery and transactional SMS (sender: MyShop)" status="operational" />
               <IntegCard name="Mobile Money (MoMo)" description="MTN, Vodafone Cash, AirtelTigo payouts via payment gateway" status="operational" />
-              <IntegCard name="Google Maps" description="Geocoding, distance matrix, and route planning for rides" status="operational" />
-              <IntegCard name="Mapbox" description="Artisan navigation tiles and map rendering" status="operational" />
+              <IntegCard name="Google Maps" description="Admin map rendering (live ops, emergency, dispute routes), geocoding, distance matrix, and route planning" status="operational" />
+              <IntegCard name="Mapbox" description="Artisan navigation tiles in the mobile provider app" status="operational" />
               <IntegCard name="Cloudinary" description="Provider document and image storage" status="operational" />
               <IntegCard name="Neon PostgreSQL" description="Primary database (Neon serverless, eu-central-1)" status="operational" />
             </div>

@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Map, { Marker, NavigationControl } from 'react-map-gl/mapbox'
-import 'mapbox-gl/dist/mapbox-gl.css'
+import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
@@ -583,7 +582,8 @@ function EmergencyDetailDrawer({
   const wc = alert.welfareCheck
   const wcLabel = wc ? welfareStatusLabel(wc.status) : null
   const hasCoords = alert.lat != null && alert.lng != null
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
+  const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+  const mapsMapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? 'DEMO_MAP_ID'
   const RoleIcon = ROLE_ICON[alert.actorRole] ?? User
 
   return (
@@ -641,37 +641,34 @@ function EmergencyDetailDrawer({
 
             {hasCoords ? (
               <>
-                {mapboxToken ? (
+                {mapsApiKey ? (
                   <div className="h-56 rounded-lg overflow-hidden border border-gray-100">
-                    <Map
-                      mapboxAccessToken={mapboxToken}
-                      initialViewState={{
-                        latitude: alert.lat as number,
-                        longitude: alert.lng as number,
-                        zoom: 14,
-                      }}
-                      mapStyle="mapbox://styles/mapbox/streets-v12"
-                      style={{ width: '100%', height: '100%' }}
-                    >
-                      <NavigationControl position="top-right" />
-                      <Marker
-                        latitude={alert.lat as number}
-                        longitude={alert.lng as number}
-                        anchor="bottom"
+                    <APIProvider apiKey={mapsApiKey}>
+                      <Map
+                        mapId={mapsMapId}
+                        defaultCenter={{ lat: alert.lat as number, lng: alert.lng as number }}
+                        defaultZoom={14}
+                        gestureHandling="greedy"
+                        zoomControl
+                        style={{ width: '100%', height: '100%' }}
                       >
-                        <div className={`w-6 h-6 rounded-full border-2 border-white shadow-md flex items-center justify-center ${
-                          isSos ? 'bg-red-500' : 'bg-amber-500'
-                        }`}>
-                          {isSos
-                            ? <ShieldAlert className="h-3 w-3 text-white" />
-                            : <HeartPulse  className="h-3 w-3 text-white" />}
-                        </div>
-                      </Marker>
-                    </Map>
+                        <AdvancedMarker
+                          position={{ lat: alert.lat as number, lng: alert.lng as number }}
+                        >
+                          <div className={`w-6 h-6 rounded-full border-2 border-white shadow-md flex items-center justify-center ${
+                            isSos ? 'bg-red-500' : 'bg-amber-500'
+                          }`}>
+                            {isSos
+                              ? <ShieldAlert className="h-3 w-3 text-white" />
+                              : <HeartPulse  className="h-3 w-3 text-white" />}
+                          </div>
+                        </AdvancedMarker>
+                      </Map>
+                    </APIProvider>
                   </div>
                 ) : (
                   <div className="text-[11px] text-gray-400 italic bg-gray-50 rounded-lg p-3">
-                    Map preview disabled - NEXT_PUBLIC_MAPBOX_TOKEN not set.
+                    Map preview disabled - NEXT_PUBLIC_GOOGLE_MAPS_API_KEY not set.
                   </div>
                 )}
                 <div className="text-[11px] text-gray-500 space-y-0.5">

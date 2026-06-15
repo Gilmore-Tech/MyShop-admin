@@ -3,8 +3,7 @@
 import { useState, useEffect, useMemo, use } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Map, { Source, Layer, NavigationControl, ScaleControl } from 'react-map-gl/mapbox'
-import 'mapbox-gl/dist/mapbox-gl.css'
+import { APIProvider, Map, Polyline, useMap } from '@vis.gl/react-google-maps'
 import {
   ArrowLeft, AlertTriangle, Loader2, Scale, MapPin, User as UserIcon,
   Wrench, Car, Clock, Receipt, CheckCircle2, XCircle, Info,
@@ -34,29 +33,28 @@ type ResolutionMode = 'REFUND_FULL' | 'REFUND_PARTIAL' | 'REJECT'
 const ROUTE_EXCESS_THRESHOLD = 30 // PRD 4.8.1
 const NOTES_MIN_CHARS = 20
 
-function trailToFeature(points: { lat: number; lng: number }[]): GeoJSON.Feature<GeoJSON.LineString> {
-  return {
-    type: 'Feature',
-    geometry: { type: 'LineString', coordinates: points.map(p => [p.lng, p.lat]) },
-    properties: {},
-  }
+function toPath(points: { lat: number; lng: number }[]): google.maps.LatLngLiteral[] {
+  return points.map(p => ({ lat: p.lat, lng: p.lng }))
 }
 
-function fitBoundsFromPoints(points: { lat: number; lng: number }[]) {
-  if (points.length === 0) return null
-  let minLat = points[0].lat, maxLat = points[0].lat, minLng = points[0].lng, maxLng = points[0].lng
-  for (const p of points) {
-    if (p.lat < minLat) minLat = p.lat
-    if (p.lat > maxLat) maxLat = p.lat
-    if (p.lng < minLng) minLng = p.lng
-    if (p.lng > maxLng) maxLng = p.lng
-  }
-  return {
-    longitude: (minLng + maxLng) / 2,
-    latitude: (minLat + maxLat) / 2,
-    // Rough zoom from bbox — fine for an initial view; the user can pan/zoom.
-    zoom: 12,
-  }
+// Dashed-line style for the optimal route: a repeated dot symbol with the
+// underlying stroke made invisible (strokeOpacity 0 on the Polyline).
+const DASHED_LINE_ICONS: google.maps.IconSequence[] = [{
+  icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeWeight: 2, scale: 3 },
+  offset: '0',
+  repeat: '14px',
+}]
+
+// Fits the map viewport to all route points once the map instance is ready.
+function FitBounds({ points }: { points: { lat: number; lng: number }[] }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!map || points.length === 0) return
+    const bounds = new google.maps.LatLngBounds()
+    points.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }))
+    map.fitBounds(bounds, 48)
+  }, [map, points])
+  return null
 }
 
 export default function DisputeDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -93,7 +91,8 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
 
   const isResolved = detail?.status?.startsWith('resolved') || detail?.status === 'rejected'
 
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
+  const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+  const mapsMapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? 'DEMO_MAP_ID'
   const hasRouteData = !!(detail?.gpsTrail?.length && detail.optimalRoute?.length)
   const allPoints = useMemo(() => {
     const pts: { lat: number; lng: number }[] = []
@@ -101,7 +100,6 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
     detail?.optimalRoute?.forEach(p => pts.push({ lat: p.lat, lng: p.lng }))
     return pts
   }, [detail])
-  const initialView = useMemo(() => fitBoundsFromPoints(allPoints), [allPoints])
 
   const maxRefundPesewas = detail?.amountPesewas ?? detail?.payment?.grossPesewas ?? null
 
@@ -228,47 +226,42 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                     </span>
                   )}
                 </div>
-                {hasRouteData && mapboxToken && initialView ? (
+                {hasRouteData && mapsApiKey ? (
                   <div className="h-80">
-                    <Map
-                      mapboxAccessToken={mapboxToken}
-                      initialViewState={initialView}
-                      mapStyle="mapbox://styles/mapbox/streets-v12"
-                      style={{ width: '100%', height: '100%' }}
-                    >
-                      <NavigationControl position="top-right" />
-                      <ScaleControl position="bottom-left" />
-                      <Source
-                        id="optimal"
-                        type="geojson"
-                        data={trailToFeature(detail.optimalRoute as { lat: number; lng: number }[])}
+                    <APIProvider apiKey={mapsApiKey}>
+                      <Map
+                        mapId={mapsMapId}
+                        defaultCenter={{ lat: allPoints[0].lat, lng: allPoints[0].lng }}
+                        defaultZoom={12}
+                        gestureHandling="greedy"
+                        zoomControl
+                        scaleControl
+                        style={{ width: '100%', height: '100%' }}
                       >
-                        <Layer
-                          id="optimal-line"
-                          type="line"
-                          paint={{ 'line-color': '#3B82F6', 'line-width': 3, 'line-dasharray': [2, 2] }}
+                        <FitBounds points={allPoints} />
+                        {/* Optimal route — dashed blue */}
+                        <Polyline
+                          path={toPath(detail.optimalRoute as { lat: number; lng: number }[])}
+                          strokeColor="#3B82F6"
+                          strokeOpacity={0}
+                          icons={DASHED_LINE_ICONS}
                         />
-                      </Source>
-                      <Source
-                        id="actual"
-                        type="geojson"
-                        data={trailToFeature(detail.gpsTrail as { lat: number; lng: number }[])}
-                      >
-                        <Layer
-                          id="actual-line"
-                          type="line"
-                          paint={{ 'line-color': '#EF4444', 'line-width': 3 }}
+                        {/* Actual GPS trail — solid red */}
+                        <Polyline
+                          path={toPath(detail.gpsTrail as { lat: number; lng: number }[])}
+                          strokeColor="#EF4444"
+                          strokeWeight={3}
                         />
-                      </Source>
-                    </Map>
+                      </Map>
+                    </APIProvider>
                   </div>
                 ) : (
                   <div className="h-40 flex items-center justify-center text-center px-6">
                     <div className="space-y-1">
                       <MapPin className="h-6 w-6 text-gray-300 mx-auto" />
                       <p className="text-sm text-gray-400">
-                        {!mapboxToken
-                          ? 'Map disabled - NEXT_PUBLIC_MAPBOX_TOKEN not set.'
+                        {!mapsApiKey
+                          ? 'Map disabled - NEXT_PUBLIC_GOOGLE_MAPS_API_KEY not set.'
                           : 'No GPS trail captured for this dispute.'}
                       </p>
                     </div>

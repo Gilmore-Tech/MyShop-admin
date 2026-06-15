@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { PageGuard } from '@/components/common/page-guard'
-import Map, { Marker, NavigationControl, FullscreenControl, ScaleControl } from 'react-map-gl/mapbox'
-import 'mapbox-gl/dist/mapbox-gl.css'
+import { APIProvider, Map, AdvancedMarker, AdvancedMarkerAnchorPoint, ColorScheme } from '@vis.gl/react-google-maps'
 import {
   Car, Wrench, Search, X, RefreshCw, Activity, MapPin,
   ChevronDown, ChevronUp, AlertCircle,
@@ -432,8 +431,8 @@ export default function LiveMapPage() {
   const rideCount = markers.filter(m => m.type === 'ride').length
   const jobCount  = markers.filter(m => m.type === 'job').length
 
-  const token    = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!
-  const styleUrl = 'mapbox://styles/mapbox/dark-v11'
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!
+  const mapId  = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? 'DEMO_MAP_ID'
 
   return (
     <PageGuard permission="view_live_map">
@@ -522,29 +521,31 @@ export default function LiveMapPage() {
           {/* Map + side panel */}
           <div className="flex flex-1 overflow-hidden">
             <div className="flex-1 relative">
-              <Map
-                mapboxAccessToken={token}
-                initialViewState={{ longitude: -1.6244, latitude: 6.6884, zoom: 13 }}
-                style={{ width: '100%', height: '100%' }}
-                mapStyle={styleUrl}
-                onClick={() => setSelected(null)}
-              >
-                <NavigationControl position="top-right" />
-                <FullscreenControl position="top-right" />
-                <ScaleControl position="bottom-right" unit="metric" />
-
-                {filtered.map(m => (
-                  <Marker
-                    key={m.bookingId}
-                    longitude={m.lng}
-                    latitude={m.lat}
-                    anchor="center"
-                    onClick={e => { e.originalEvent.stopPropagation(); handleMarkerClick(m) }}
-                  >
-                    <Pin type={m.type} status={m.status} selected={selected?.bookingId === m.bookingId} />
-                  </Marker>
-                ))}
-              </Map>
+              <APIProvider apiKey={apiKey}>
+                <Map
+                  mapId={mapId}
+                  colorScheme={ColorScheme.DARK}
+                  defaultCenter={{ lat: 6.6884, lng: -1.6244 }}
+                  defaultZoom={13}
+                  gestureHandling="greedy"
+                  fullscreenControl
+                  zoomControl
+                  scaleControl
+                  style={{ width: '100%', height: '100%' }}
+                  onClick={() => setSelected(null)}
+                >
+                  {filtered.map(m => (
+                    <AdvancedMarker
+                      key={m.bookingId}
+                      position={{ lat: m.lat, lng: m.lng }}
+                      anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                      onClick={() => handleMarkerClick(m)}
+                    >
+                      <Pin type={m.type} status={m.status} selected={selected?.bookingId === m.bookingId} />
+                    </AdvancedMarker>
+                  ))}
+                </Map>
+              </APIProvider>
 
               {/* Legend overlay */}
               <div className="absolute bottom-8 left-4 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-xs space-y-2 z-10 min-w-[160px]">
