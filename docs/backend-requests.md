@@ -166,6 +166,108 @@ registrationCompletedAt: string | null // ISO timestamp when it completed, else 
 
 ---
 
+## 5. Active suspension detail on the provider object (`GET /v1/admin/users/:id`, ideally `/admin/users` too)
+
+Powers the **suspension context** an admin sees before lifting an auto-suspension
+on **User Management → Drivers/Artisans → profile sheet**. When a driver hits the
+3-cancellations-in-30-days threshold (EDD §6.3) the cancellation engine flips
+`driver.verificationStatus → 'suspended'` and writes a row to `provider_suspensions`.
+The panel already exposes the **Lift verification suspension** action, but the admin
+currently decides blind — they can't see *why* or *when* the provider was suspended.
+
+Please include the currently-active (not-yet-reinstated) `provider_suspensions` row
+on each provider sub-profile (`driver` and `artisan`) in the user payload:
+
+```ts
+driver: {
+  // …existing fields…
+  activeSuspension: {
+    triggerType: string        // 'cancellation' | 'rating' | 'background_check' | 'manual'
+    reason: string | null      // the reason logged at suspension time (EDD §6.3: "reason required and logged")
+    suspendedAt: string        // ISO
+    cancellationCount: number | null  // rolling count captured at trigger time, when triggerType = 'cancellation'
+  } | null
+}
+```
+
+- `activeSuspension` = the `provider_suspensions` row where `reinstatedAt IS NULL`
+  (the open one). Return `null` when the provider isn't suspended.
+- camelCase or snake_case both accepted; the panel also reads `suspension` /
+  `active_suspension` and `trigger`/`trigger_type` as aliases.
+- **Currently degrades gracefully.** Until this ships, the suspension block renders
+  "Reason unavailable — pending backend support." and falls back to the live
+  `cancellationCount30d` for the count line. The lift action already works without it.
+- On **`/admin/users` (list)** it's nice-to-have (lets the list hint context without
+  opening the sheet); the detail endpoint is the priority.
+
+---
+
+## 6. Provider cancellation-suspension management — `/v1/admin/providers/*`
+
+Powers the new **Trust & Safety → Cancellation Suspensions** page, where admins view
+who is auto-suspended for exceeding the cancellation limit and lift the suspension.
+The data lives in `provider_suspensions` (trigger `cancellation_limit`, `isAutomatic`).
+The panel already calls these paths; they 404 until deployed (the page shows the error
+and an empty table). Direct-object responses (no envelope); errors as
+`{ error, message }` with the HTTP status.
+
+### 6.1 `GET /v1/admin/providers/suspensions` — permission `view_users`
+Query: `providerType=driver|artisan`, `triggerType` (default filter `cancellation_limit`),
+`activeOnly=true` (`reinstatedAt IS NULL`), `page`, `limit`. Join provider + user:
+```ts
+{
+  items: {
+    suspensionId: string
+    providerType: 'driver' | 'artisan'
+    providerId: string                 // drivers/artisans row id
+    userId: string | null              // user-account id (for cross-links)
+    fullName: string | null
+    phone: string | null               // normalised/masked
+    cancellationCount30d: number       // current rolling count
+    verificationStatus: string         // 'suspended' while active
+    reason: string | null
+    triggerType: string                // 'cancellation_limit'
+    isAutomatic: boolean
+    suspendedAt: string                // ProviderSuspension.createdAt, ISO
+    reinstatedAt: string | null
+  }[]
+  total: number; page: number; limit: number; totalPages: number
+}
+```
+camelCase or snake_case both accepted; provider/user may be flattened or nested
+(`item.user.fullName` etc.) — the panel normalises either.
+
+### 6.2 `GET /v1/admin/providers/:providerId/suspensions` — permission `view_users`
+Full suspension history for one provider (same item shape, all rows incl. lifted).
+
+### 6.3 `PATCH /v1/admin/providers/:providerId/suspensions/:suspensionId/lift` — permission `lift_verification_suspension`
+Body: `{ note?: string }`. Atomically, mirroring `reinstateUser`:
+- set `ProviderSuspension.reinstatedAt = now()`, `reinstatedBy = <adminId>`
+- set the driver/artisan `verificationStatus = 'approved'`
+- **reset `cancellationCount30d = 0`** (so they aren't instantly re-suspended on the
+  next cancellation — the panel's modal tells the admin this happens)
+- write an `audit_log` entry (`action: 'lift_cancellation_suspension'`, include `note`)
+- `404` if the suspension doesn't exist; `409` if already lifted (`reinstatedAt` set).
+
+> Uses the **existing** `lift_verification_suspension` permission — do **not** add a
+> cancellation-specific one. (This is distinct from §`/admin/verifications/:id/lift-suspension`,
+> which the profile sheet uses; both may coexist, or consolidate server-side.)
+
+### 6.4 Config plumbing for the policy editor
+The page's **Cancellation Policy** editor reads/writes two `platform_config` keys via the
+existing `GET /v1/config` + `PATCH /v1/config/:key`:
+- **Reconcile the key name.** Runtime reads `cancellation_suspension_count` but the seed
+  writes `cancellation_suspension_threshold`. **Standardise on `cancellation_suspension_count`**
+  — migrate/rename the seeded row and drop the stale key. The admin frontend now writes
+  `cancellation_suspension_count` (both this editor and the Marketplace Config page); until
+  the seed is migrated, the old row is orphaned and edits land on the correct runtime key.
+- **Guard the write.** `PATCH /v1/config/:key` currently requires only `view_config`. Add a
+  new **`edit_config`** permission and require it for the PATCH (keep `view_config` for GET).
+  Once it exists, add `edit_config` to `lib/roles.ts` and the panel will gate the editor on
+  it; **until then the editor is gated on `view_config`** (interim — view implies edit).
+
+---
+
 ## Done
 - Ride detail `GET /v1/admin/rides/:id` — deployed.
 - Batch payouts `GET /v1/admin/payouts/batches` + `POST .../force` — deployed.

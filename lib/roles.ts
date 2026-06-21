@@ -25,6 +25,8 @@ export type Permission =
   | 'view_categories'
   | 'edit_categories'
   | 'delete_category'
+  | 'view_ride_categories'
+  | 'edit_ride_categories'
   | 'view_jobs'
   | 'assign_job'
   | 'delete_job'
@@ -121,6 +123,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'view_categories', label: 'View categories', description: 'Browse service categories' },
       { key: 'edit_categories', label: 'Edit categories', description: 'Create and edit service categories' },
       { key: 'delete_category', label: 'Delete categories', description: 'Hard-delete a service category' },
+      { key: 'view_ride_categories', label: 'View ride tiers', description: 'Browse ride tiers and their pricing' },
+      { key: 'edit_ride_categories', label: 'Edit ride tiers', description: 'Create, edit, activate/deactivate ride tiers' },
     ],
   },
   {

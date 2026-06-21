@@ -194,6 +194,7 @@ export default function AppSidebar() {
               ? [{ title: 'High Bid Review', href: '/artisan-jobs/high-bid-review', permission: 'review_bid' as const, badge: highBidCount ?? undefined }]
               : []),
             { title: 'Service Categories', href: '/categories', permission: 'view_categories' },
+            { title: 'Ride Tiers',         href: '/ride-categories', permission: 'view_ride_categories' },
           ],
         },
         {
@@ -215,6 +216,7 @@ export default function AppSidebar() {
           children: [
             { title: 'Verification Queue', href: '/verifications',           permission: 'view_verifications',    badge: pendingVerifications ?? undefined },
             { title: 'Client KYC Queue',   href: '/users/clients/kyc-queue',  permission: 'view_verifications',    badge: pendingClientKyc ?? undefined },
+            { title: 'Cancellation Suspensions', href: '/suspensions',        permission: 'view_users' },
             { title: 'Account Recovery',   href: '/account-recovery',         permission: 'view_session_recovery', badge: pendingRecoveryCount ?? undefined },
           ],
         },

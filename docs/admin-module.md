@@ -39,6 +39,7 @@
 | Analytics                 | ✅     | Revenue charts, provider stats, ride/job/payment breakdowns        |
 | Live Map                  | ✅     | Mapbox GL markers, HTTP polling, ride/job detail panels            |
 | Verification Queue        | ✅     | Step-through document review; per-doc and provider-level actions   |
+| Cancellation Suspensions  | ⚠️     | View/lift cancellation-suspended providers + policy editor; blocked on `/admin/providers/*` (see Known Gaps) |
 | Disputes                  | ✅     | List, detail drawer, resolve with refund/reject                    |
 | User Management           | ⚠️     | Clients/Drivers/Artisans tabs; profile sheet; suspend/ban implemented; reinstate + profile edit blocked on backend (see Known Gaps) |
 | Service Categories        | ✅     | List, create, edit, toggle active; role-gated create/edit (L1 only)|
@@ -263,6 +264,33 @@ async updateUser(userId: string, dto: UpdateUserDto, admin: AdminJwtPayload) {
 - Reinstate button visible only when `user.status === 'suspended'`; reason field is optional; confirm dialog is emerald-coloured
 - Drivers page: "Ride History" navigates to `/rides?search={name}`
 - Artisans page: "Job History" navigates to `/artisan-jobs?search={name}`, "Trigger Re-verification" calls `POST /admin/users/:id/reverification`
+
+---
+
+### Provider Suspensions (`/v1/admin/providers/`)
+
+Powers **Trust & Safety → Cancellation Suspensions** (`/suspensions`) — viewing and
+lifting providers auto-suspended for exceeding the cancellation limit, plus a
+**Cancellation Policy** editor for the two `platform_config` thresholds.
+
+| Method | Path                                                              | Permission                     | Description                              | Status |
+| ------ | ---------------------------------------------------------------- | ------------------------------ | ---------------------------------------- | ------ |
+| GET    | `/v1/admin/providers/suspensions`                                | `view_users`                   | Active suspensions (filter by provider/trigger) | ⬜ |
+| GET    | `/v1/admin/providers/:providerId/suspensions`                    | `view_users`                   | Full suspension history for one provider | ⬜     |
+| PATCH  | `/v1/admin/providers/:providerId/suspensions/:suspensionId/lift` | `lift_verification_suspension` | Lift a suspension (resets status + count) | ⬜    |
+
+- **Lift** uses the existing `lift_verification_suspension` permission — no new
+  cancellation-specific permission was added. Body `{ note? }`; atomically sets
+  `reinstatedAt`/`reinstatedBy`, `verificationStatus='approved'`, resets
+  `cancellationCount30d=0`, writes an audit log; `404` if missing, `409` if already lifted.
+- **Config editor** reuses `GET /v1/config` + `PATCH /v1/config/:key` for
+  `cancellation_suspension_count` and `cancellation_rolling_period_days`. It is gated on
+  `view_config` as an **interim** until a dedicated `edit_config` permission is added on the
+  backend PATCH guard (today the PATCH only requires `view_config`).
+- Frontend: `app/(dashboard)/suspensions/page.tsx`; API wrappers
+  `listProviderSuspensions` / `getProviderSuspensions` / `liftProviderSuspension` in
+  `lib/api.ts` (defensive camel/snake normaliser). Full backend contract +
+  config-key reconciliation in [backend-requests.md §6](backend-requests.md).
 
 ---
 
@@ -557,6 +585,7 @@ Every admin action creates an `audit_log` entry with:
 | ------------------------------ | -------- | -------------------------------------------------------------------------------------------- |
 | User reinstate + profile edit  | P1       | `PATCH /admin/users/:id` not implemented on backend. Frontend `reinstateUser()` sends `{ status: 'active' }` and `updateUser()` sends `{ fullName, email }` — both blocked. NestJS controller + DTO + service code documented above in User Management section. |
 | High Bid Review UI             | P1       | No `GET /v1/admin/bids/flagged` endpoint exists — UI page blocked until backend adds it      |
+| Cancellation suspensions API   | P1       | `/v1/admin/providers/suspensions` (list/history/lift) not yet deployed; Cancellation Suspensions page shows the error + empty table until live. Also: config key needs reconciling to `cancellation_suspension_count`, and PATCH `/v1/config/:key` should require a new `edit_config` permission. See [backend-requests.md §6](backend-requests.md). |
 | Verification documents empty   | P1       | `GET /admin/verifications` returns `documents: []` despite `total_docs > 0`. Backend query needs `JSON_AGG` to populate document rows. Frontend normaliser (`normaliseDoc`) is ready — blocked on backend SQL fix. |
 | WebSocket live map             | P2       | Live map polls every 30s via HTTP GET; no WS subscription stream                             |
 | Regional admin scoping         | P2       | All admins see global data; L2 should see Ashanti-only data (backend filter not implemented) |

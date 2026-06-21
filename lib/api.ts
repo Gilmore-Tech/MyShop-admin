@@ -391,6 +391,98 @@ export function liftVerificationSuspension(
   return api.post(`/admin/verifications/${providerId}/lift-suspension`, { providerType, reason })
 }
 
+// ── Provider Suspensions ──────────────────────────────────────────────────────
+// Admin management of the auto-suspension that fires when a provider hits the
+// cancellation threshold (Driver.cancellationCount30d ≥ cancellation_suspension_count
+// over the rolling window). Backed by the `provider_suspensions` table. These call
+// the /admin/providers/* endpoints documented in docs/backend-requests.md §6.
+
+// One row from the suspensions list/history, joined to the provider + user.
+export interface SuspensionListItem {
+  suspensionId: string
+  providerType: 'driver' | 'artisan'
+  providerId: string
+  userId: string | null
+  fullName: string | null
+  phone: string | null               // backend returns normalised/masked
+  cancellationCount30d: number       // current rolling count
+  verificationStatus: string         // 'suspended' while active
+  reason: string | null
+  triggerType: string | null         // e.g. 'cancellation_limit'
+  isAutomatic: boolean
+  suspendedAt: string                // ProviderSuspension.createdAt (ISO)
+  reinstatedAt: string | null        // null while active
+}
+
+export interface SuspensionListResponse {
+  items: SuspensionListItem[]
+  total: number
+  page: number
+  limit: number
+  totalPages: number
+}
+
+// Defensive normaliser — accepts camelCase or snake_case, and provider/user either
+// flattened or nested, so the page renders regardless of the exact backend shape.
+function normaliseSuspensionItem(raw: any): SuspensionListItem {
+  const u = raw.user ?? null
+  const p = raw.provider ?? null
+  return {
+    suspensionId:         raw.suspensionId ?? raw.id ?? raw.suspension_id ?? '',
+    providerType:         (raw.providerType ?? raw.provider_type ?? 'driver') as 'driver' | 'artisan',
+    providerId:           raw.providerId ?? raw.provider_id ?? p?.id ?? '',
+    userId:               raw.userId ?? raw.user_id ?? u?.id ?? null,
+    fullName:             raw.fullName ?? raw.full_name ?? raw.name ?? u?.fullName ?? u?.full_name ?? null,
+    phone:                raw.phone ?? u?.phone ?? null,
+    cancellationCount30d: Number(raw.cancellationCount30d ?? raw.cancellation_count_30d ?? raw.cancellationCount ?? p?.cancellationCount30d ?? 0),
+    verificationStatus:   raw.verificationStatus ?? raw.verification_status ?? p?.verificationStatus ?? 'suspended',
+    reason:               raw.reason ?? null,
+    triggerType:          raw.triggerType ?? raw.trigger_type ?? raw.trigger ?? null,
+    isAutomatic:          Boolean(raw.isAutomatic ?? raw.is_automatic ?? false),
+    suspendedAt:          raw.suspendedAt ?? raw.suspended_at ?? raw.createdAt ?? raw.created_at ?? '',
+    reinstatedAt:         raw.reinstatedAt ?? raw.reinstated_at ?? null,
+  }
+}
+
+// GET /admin/providers/suspensions — active suspensions, filterable by provider/trigger.
+export async function listProviderSuspensions(params?: {
+  providerType?: 'driver' | 'artisan'
+  triggerType?: string
+  activeOnly?: boolean
+  page?: number
+  limit?: number
+}): Promise<SuspensionListResponse> {
+  const qs = params ? '?' + new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
+  ).toString() : ''
+  const raw = await api.get<any>(`/admin/providers/suspensions${qs}`)
+  const list = Array.isArray(raw) ? raw : (raw.items ?? [])
+  return {
+    items:      list.map(normaliseSuspensionItem),
+    total:      Number(raw.total ?? list.length),
+    page:       Number(raw.page ?? params?.page ?? 1),
+    limit:      Number(raw.limit ?? params?.limit ?? 50),
+    totalPages: Number(raw.totalPages ?? 1),
+  }
+}
+
+// GET /admin/providers/:providerId/suspensions — full history for one provider.
+export async function getProviderSuspensions(providerId: string): Promise<SuspensionListItem[]> {
+  const raw = await api.get<any>(`/admin/providers/${providerId}/suspensions`)
+  const list = Array.isArray(raw) ? raw : (raw.items ?? [])
+  return list.map(normaliseSuspensionItem)
+}
+
+// PATCH /admin/providers/:providerId/suspensions/:suspensionId/lift — reinstates the
+// provider: sets reinstatedAt/reinstatedBy, verificationStatus='approved', resets the
+// rolling cancellation counter. Requires `lift_verification_suspension`.
+export function liftProviderSuspension(providerId: string, suspensionId: string, note?: string) {
+  return api.patch(
+    `/admin/providers/${providerId}/suspensions/${suspensionId}/lift`,
+    note && note.trim() ? { note: note.trim() } : {},
+  )
+}
+
 // ReviewClientKycDto: { action: 'approve'|'reject', reason (min 5 on reject) }
 export function reviewClientKyc(
   clientId: string,
@@ -531,6 +623,35 @@ export function resolveDispute(
 
 // ── User Management ───────────────────────────────────────────────────────────
 
+// The currently-active auto/manual suspension sitting on a provider sub-profile
+// (driver or artisan), sourced from the `provider_suspensions` table. Lets an
+// admin see WHY a provider is suspended before lifting it. All fields are
+// nullable because the backend has not shipped this on the user payload yet —
+// the UI degrades to "reason unavailable" until it does. See
+// docs/backend-requests.md §5.
+export interface ProviderSuspension {
+  // Why automatic suspension fired. Known: 'cancellation' (3 in 30 days),
+  // 'rating' (rating-engine), 'background_check', 'manual' (admin). Free string
+  // so new backend triggers render without a frontend change.
+  triggerType: string | null
+  reason: string | null
+  suspendedAt: string | null   // ISO
+  // Rolling cancellation count captured at suspension time, when triggerType is
+  // 'cancellation'. Falls back to the live driver.cancellationCount30d if absent.
+  cancellationCount: number | null
+}
+
+function normaliseSuspension(raw: any): ProviderSuspension | null {
+  const s = raw?.activeSuspension ?? raw?.active_suspension ?? raw?.suspension ?? null
+  if (!s) return null
+  return {
+    triggerType:       s.triggerType ?? s.trigger_type ?? s.trigger ?? null,
+    reason:            s.reason ?? null,
+    suspendedAt:       s.suspendedAt ?? s.suspended_at ?? s.createdAt ?? s.created_at ?? null,
+    cancellationCount: s.cancellationCount ?? s.cancellation_count ?? null,
+  }
+}
+
 export interface PlatformUser {
   id: string
   fullName: string
@@ -573,6 +694,7 @@ export interface PlatformUser {
     ratingCount: number
     completedRidesCount: number
     cancellationCount30d: number
+    suspension: ProviderSuspension | null
   } | null
   artisan: {
     id: string
@@ -591,6 +713,7 @@ export interface PlatformUser {
     ratingCount: number
     completedJobsCount: number
     cancellationCount30d: number
+    suspension: ProviderSuspension | null
   } | null
 }
 
@@ -651,6 +774,7 @@ function normalisePlatformUser(raw: any): PlatformUser {
       ratingCount:         Number(d.ratingCount ?? d.rating_count ?? 0),
       completedRidesCount: Number(d.completedRidesCount ?? d.completed_rides_count ?? d._count?.completedRides ?? 0),
       cancellationCount30d: Number(d.cancellationCount30d ?? d.cancellation_count_30d ?? 0),
+      suspension:          normaliseSuspension(d),
     } : null,
     artisan: a ? {
       id:                  a.id,
@@ -669,6 +793,7 @@ function normalisePlatformUser(raw: any): PlatformUser {
       ratingCount:         Number(a.ratingCount ?? a.rating_count ?? 0),
       completedJobsCount:  Number(a.completedJobsCount ?? a.completed_jobs_count ?? a._count?.completedJobs ?? 0),
       cancellationCount30d: Number(a.cancellationCount30d ?? a.cancellation_count_30d ?? 0),
+      suspension:          normaliseSuspension(a),
     } : null,
   }
 }
@@ -1148,6 +1273,175 @@ export function deleteCategory(
     method: 'DELETE',
     body: JSON.stringify({ reason: opts.reason }),
   })
+}
+
+// ── Ride Categories (tiers) ─────────────────────────────────────────────────────
+// Tiered rides: each tier (seeded Regular + Comfort) carries its own fare rates.
+// All rates are integer PESEWAS on the wire (GHS 26.00 = 2600) — never floats.
+// See docs/ride-categories-admin-integration.md. Endpoints:
+//   GET   /admin/ride-categories             (perm view_ride_categories) — incl. inactive
+//   POST  /admin/ride-categories             (perm edit_ride_categories)
+//   PATCH /admin/ride-categories/:id         (perm edit_ride_categories) — edit / (de)activate
+// There is no DELETE — tiers are deactivated, never hard-deleted.
+
+export interface RideCategory {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  baseFarePesewas: number
+  perKmPesewas: number
+  perMinPesewas: number
+  minimumFarePesewas: number
+  capacityPersons: number
+  iconUrl: string | null
+  isActive: boolean
+  sortOrder: number
+}
+
+// Defensive normaliser — accepts camelCase or snake_case so the page renders
+// regardless of the exact backend serialisation.
+function normaliseRideCategory(raw: any): RideCategory {
+  return {
+    id:                String(raw.id ?? ''),
+    name:              raw.name ?? '',
+    slug:              raw.slug ?? '',
+    description:       raw.description ?? null,
+    baseFarePesewas:   Number(raw.baseFarePesewas    ?? raw.base_fare_pesewas    ?? 0),
+    perKmPesewas:      Number(raw.perKmPesewas        ?? raw.per_km_pesewas       ?? 0),
+    perMinPesewas:     Number(raw.perMinPesewas       ?? raw.per_min_pesewas      ?? 0),
+    minimumFarePesewas:Number(raw.minimumFarePesewas  ?? raw.minimum_fare_pesewas ?? 0),
+    capacityPersons:   Number(raw.capacityPersons     ?? raw.capacity_persons     ?? 4),
+    iconUrl:           raw.iconUrl ?? raw.icon_url ?? null,
+    isActive:          Boolean(raw.isActive ?? raw.is_active ?? false),
+    sortOrder:         Number(raw.sortOrder ?? raw.sort_order ?? 0),
+  }
+}
+
+// GET /admin/ride-categories — all tiers, including inactive, ordered by sortOrder.
+// The api-client unwrap() already peels the { success, data } envelope; we also
+// tolerate a bare array in case the interceptor shape differs (see §3 of the spec).
+export async function getRideCategories(): Promise<RideCategory[]> {
+  const raw = await api.get<any>('/admin/ride-categories')
+  const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.items ?? [])
+  return list.map(normaliseRideCategory).sort((a, b) => a.sortOrder - b.sortOrder)
+}
+
+export interface RideCategoryInput {
+  name: string
+  slug: string
+  baseFarePesewas: number
+  perKmPesewas: number
+  perMinPesewas: number
+  minimumFarePesewas: number
+  description?: string
+  capacityPersons?: number
+  iconUrl?: string
+  sortOrder?: number
+}
+
+// POST /admin/ride-categories — create a tier.
+// Errors: 409 SLUG_ALREADY_EXISTS, 400 INVALID_SLUG, 400 INVALID_RATE_<field>.
+export async function createRideCategory(data: RideCategoryInput): Promise<RideCategory> {
+  const raw = await api.post<any>('/admin/ride-categories', {
+    name: data.name,
+    slug: data.slug,
+    baseFarePesewas: data.baseFarePesewas,
+    perKmPesewas: data.perKmPesewas,
+    perMinPesewas: data.perMinPesewas,
+    minimumFarePesewas: data.minimumFarePesewas,
+    ...(data.description != null && { description: data.description }),
+    ...(data.capacityPersons != null && { capacityPersons: data.capacityPersons }),
+    ...(data.iconUrl && { iconUrl: data.iconUrl }),
+    ...(data.sortOrder != null && { sortOrder: data.sortOrder }),
+  })
+  return normaliseRideCategory(raw?.data ?? raw)
+}
+
+// PATCH /admin/ride-categories/:id — update / activate / deactivate (any subset).
+// Deactivate = { isActive: false }; Reactivate = { isActive: true }.
+// Errors: 404 RIDE_CATEGORY_NOT_FOUND, 409 SLUG_ALREADY_EXISTS, 400 INVALID_SLUG / INVALID_RATE_*.
+export async function updateRideCategory(
+  id: string,
+  data: Partial<RideCategoryInput & { isActive: boolean }>,
+): Promise<RideCategory> {
+  const raw = await api.patch<any>(`/admin/ride-categories/${id}`, data)
+  return normaliseRideCategory(raw?.data ?? raw)
+}
+
+// ── Driver tier verification ──────────────────────────────────────────────────
+// Per-driver, per-tier approve/reject. Matching is mutually exclusive: a driver
+// only receives a tier's requests once an admin approves them for it.
+//   GET   /admin/drivers/:driverId/ride-categories                  (perm view_verifications)
+//   PATCH /admin/drivers/:driverId/ride-categories/:rideCategoryId  (perm review_verification)
+
+export type DriverRideCategoryStatus = 'pending' | 'approved' | 'rejected'
+
+export interface DriverRideCategory {
+  // Row id of the driver↔tier link (null when the driver has no row yet).
+  id: string | null
+  status: DriverRideCategoryStatus
+  rejectionReason: string | null
+  reviewedAt: string | null
+  rideCategory: {
+    id: string
+    name: string
+    slug: string
+    isActive: boolean
+  }
+}
+
+function normaliseDriverRideCategory(raw: any): DriverRideCategory {
+  const rc = raw.rideCategory ?? raw.ride_category ?? {}
+  return {
+    id:              raw.id != null ? String(raw.id) : null,
+    status:          (raw.status ?? 'pending') as DriverRideCategoryStatus,
+    rejectionReason: raw.rejectionReason ?? raw.rejection_reason ?? null,
+    reviewedAt:      raw.reviewedAt ?? raw.reviewed_at ?? null,
+    rideCategory: {
+      id:       String(rc.id ?? ''),
+      name:     rc.name ?? '',
+      slug:     rc.slug ?? '',
+      isActive: Boolean(rc.isActive ?? rc.is_active ?? true),
+    },
+  }
+}
+
+// GET /admin/drivers/:driverId/ride-categories — a driver's per-tier statuses.
+// Only includes tiers the driver requested (or an admin granted). Error: 404 PROVIDER_NOT_FOUND.
+export async function getDriverRideCategories(driverId: string): Promise<DriverRideCategory[]> {
+  const raw = await api.get<any>(`/admin/drivers/${driverId}/ride-categories`)
+  const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.items ?? [])
+  return list.map(normaliseDriverRideCategory)
+}
+
+// Bare response (no envelope): { driverId, rideCategoryId, status }.
+export interface DriverRideCategoryReviewResult {
+  driverId: string
+  rideCategoryId: string
+  status: DriverRideCategoryStatus
+}
+
+// PATCH /admin/drivers/:driverId/ride-categories/:rideCategoryId — approve/reject.
+// Approving makes the driver matchable for that tier immediately. Rejecting
+// requires a reason (≥5 chars). Upserts: an admin can grant a tier the driver
+// never requested. Errors: 404 PROVIDER_NOT_FOUND, 404 RIDE_CATEGORY_NOT_FOUND, 400 REASON_REQUIRED.
+export async function reviewDriverRideCategory(
+  driverId: string,
+  rideCategoryId: string,
+  action: 'approve' | 'reject',
+  reason?: string,
+): Promise<DriverRideCategoryReviewResult> {
+  const raw = await api.patch<any>(
+    `/admin/drivers/${driverId}/ride-categories/${rideCategoryId}`,
+    { action, ...(action === 'reject' && reason ? { reason } : {}) },
+  )
+  const body = raw?.data ?? raw
+  return {
+    driverId:       body?.driverId ?? body?.driver_id ?? driverId,
+    rideCategoryId: body?.rideCategoryId ?? body?.ride_category_id ?? rideCategoryId,
+    status:         (body?.status ?? (action === 'approve' ? 'approved' : 'rejected')) as DriverRideCategoryStatus,
+  }
 }
 
 // ── Platform Config ───────────────────────────────────────────────────────────

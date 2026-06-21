@@ -42,7 +42,7 @@ const DEFAULTS = {
   jobStalenessEscalationHours:     24,
   jobStalenessPayoutFreezeHours:   48,
   artisanMinServiceRadiusKm:       3,
-  cancellationSuspensionThreshold: 3,
+  cancellationSuspensionCount:     3,
   cancellationRollingPeriodDays:   30,
   ratingWarningThreshold:          3.5,
   ratingSuspensionThreshold:       3.0,
@@ -100,7 +100,7 @@ const RULES: Partial<Record<ConfigKey, ValidationRule>> = {
   jobStalenessEscalationHours:     { min: 1, message: 'Must be at least 1 hour' },
   jobStalenessPayoutFreezeHours:   { min: 1, message: 'Must be at least 1 hour' },
   artisanMinServiceRadiusKm:       { min: 0.1, max: 50, message: 'Must be 0.1-50 km' },
-  cancellationSuspensionThreshold: { min: 1, max: 50, message: 'Must be 1-50' },
+  cancellationSuspensionCount:     { min: 1, max: 50, message: 'Must be 1-50' },
   cancellationRollingPeriodDays:   { min: 1, max: 365, message: 'Must be 1-365 days' },
   ratingWarningThreshold:          { min: 1, max: 5, message: 'Must be 1.0-5.0 stars' },
   ratingSuspensionThreshold:       { min: 1, max: 5, message: 'Must be 1.0-5.0 stars' },
@@ -495,7 +495,7 @@ export default function ConfigurationPage() {
 
           <Section title="Provider Behaviour Thresholds" description="Automatic suspension and rating-based intervention rules">
             {field('Min Artisan Service Radius (km)', 'artisanMinServiceRadiusKm', { description: 'Smallest radius an artisan can set' })}
-            {field('Cancellation Suspension Threshold', 'cancellationSuspensionThreshold', { description: 'Number of cancellations that triggers suspension' })}
+            {field('Cancellation Suspension Count', 'cancellationSuspensionCount', { description: 'Number of cancellations that triggers suspension' })}
             {field('Cancellation Rolling Period (days)', 'cancellationRollingPeriodDays', { description: 'Lookback window for cancellation count' })}
             {field('Rating Warning Threshold (stars)', 'ratingWarningThreshold', { description: 'Warning sent below this average' })}
             {field('Rating Suspension Threshold (stars)', 'ratingSuspensionThreshold', { description: 'Auto-suspend below this average' })}
