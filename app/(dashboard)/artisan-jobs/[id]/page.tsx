@@ -117,7 +117,7 @@ function BidCard({ bid, isAssigned, onAssign, assigning, onUnexpire, unexpiring 
         </div>
       </div>
       {bid.message && (
-        <p className="mt-1.5 text-xs text-gray-600 italic">"{bid.message}"</p>
+        <p className="mt-1.5 text-xs text-gray-600 italic">&ldquo;{bid.message}&rdquo;</p>
       )}
       <div className="flex items-center justify-between mt-2 gap-2 flex-wrap">
         <p className="text-[11px] text-gray-400">
@@ -569,7 +569,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                         <p className="text-sm text-gray-700">Additional amount</p>
                         <p className="text-sm font-bold text-amber-600">{fmtGhs(job.supplementRequest.additionalAmountPesewas)}</p>
                       </div>
-                      <p className="text-xs text-gray-600 italic">"{job.supplementRequest.reason}"</p>
+                      <p className="text-xs text-gray-600 italic">&ldquo;{job.supplementRequest.reason}&rdquo;</p>
                       <div className="flex items-center justify-between text-xs text-gray-400">
                         <StatusBadge status={job.supplementRequest.status} />
                         <span>Requested {fmtDateShort(job.supplementRequest.createdAt)}</span>
