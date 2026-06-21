@@ -181,14 +181,28 @@ Not an admin endpoint — public, returns **active** tiers only, same item shape
 
 ### Surface B — Driver tier verification (extend the driver/verification detail page)
 
+**Status:** ✅ Shipped. Implemented once as the shared component
+[`components/users/driver-ride-categories-section.tsx`](../components/users/driver-ride-categories-section.tsx)
+(`<DriverRideCategoriesSection driverId canReview />`) and mounted in **two** places so
+the same review surface appears wherever an admin is assessing a driver:
+
+- **Driver profile sheet** (Users → Drivers → open a driver) — `components/users/user-profile-sheet.tsx`.
+- **Document verification drawer** (Verifications → Review a driver → final decision step) —
+  `app/(dashboard)/verifications/page.tsx`. This is where an admin confirms the driver's
+  vehicle photos actually qualify for each requested tier, alongside the document review.
+
+In both, `driverId` is the driver-record id (the same id `PATCH /v1/admin/verifications/:id`
+uses for a driver). The section is shown for drivers only and gated on `view_verifications`;
+the approve/reject/grant actions are gated on `review_verification` (`canReview`).
+
 **Workflow:**
 
-1. On the driver verification/detail page, fetch `GET /v1/admin/drivers/:driverId/ride-categories` (gated on `view_verifications`) and render a small table: Tier name · Status badge (`pending`/`approved`/`rejected`) · Reviewed at · Rejection reason.
+1. On open, fetch `GET /v1/admin/drivers/:driverId/ride-categories` (gated on `view_verifications`) and render a small table: Tier name · Status badge (`pending`/`approved`/`rejected`) · Reviewed at · Rejection reason.
 2. Per row, **Approve** / **Reject** actions (gated on `review_verification`):
-   - **Approve** → `PATCH …/:rideCategoryId` `{ action: 'approve' }`.
+   - **Approve** → `PATCH …/:rideCategoryId` `{ action: 'approve' }` (optimistic flip, then refetch).
    - **Reject** → open a reason prompt (min 5 chars, required) → `{ action: 'reject', reason }`.
 3. Optimistically reflect the new status, then refetch. Show the notification side-effect implicitly (no extra call needed — backend notifies the driver).
-4. Optional "Grant tier" affordance: because the PATCH upserts, an admin can approve a tier the driver never requested. If you expose this, populate the tier dropdown from `GET /v1/admin/ride-categories` (active only).
+4. **Grant tier** affordance: because the PATCH upserts, an admin can approve a tier the driver never requested. The tier dropdown is populated from `GET /v1/admin/ride-categories` (active only, minus tiers the driver already has a row for).
 
 ---
 

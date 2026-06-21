@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Radio, BadgeCheck, Scale, Users,
   Settings, Car, CreditCard, Megaphone, BarChart3, UserCog,
-  ChevronDown, LogOut, ClipboardList, BookOpen, Ticket,
+  ChevronDown, LogOut, ClipboardList, BookOpen, Gift,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -23,6 +23,9 @@ type NavItem = {
   icon: React.ElementType
   badge?: number
   permission?: Permission
+  // Visible only to the single root admin (is_super_admin). Used for the Admin
+  // Accounts entry so account/permission management is root-only.
+  superAdmin?: boolean
   children?: ChildItem[]
 }
 
@@ -117,7 +120,7 @@ function NavLink({ item, can }: { item: NavItem; can: (p: Permission) => boolean
 }
 
 export default function AppSidebar() {
-  const { can, adminName } = useRole()
+  const { can, adminName, isSuperAdmin } = useRole()
   const [pendingVerifications, setPendingVerifications] = useState<number | null>(null)
   const [openDisputes, setOpenDisputes] = useState<number | null>(null)
   const [unacknowledgedEmergencies, setUnacknowledgedEmergencies] = useState<number | null>(null)
@@ -228,7 +231,13 @@ export default function AppSidebar() {
       label: 'Engagement',
       items: [
         { title: 'Announcements', href: '/announcements', icon: Megaphone, permission: 'send_announcement' },
-        { title: 'Promotions',    href: '/promotions',    icon: Ticket,    permission: 'view_promotions' },
+        {
+          title: 'Growth', href: '/promotions', icon: Gift,
+          children: [
+            { title: 'Promotions', href: '/promotions', permission: 'view_promotions' },
+            { title: 'Referrals',  href: '/referrals',  permission: 'view_referrals' },
+          ],
+        },
         { title: 'Help Center',   href: '/help/articles', icon: BookOpen,  permission: 'view_help_articles' },
       ],
     },
@@ -244,13 +253,14 @@ export default function AppSidebar() {
           ],
         },
         { title: 'Audit Logs',      href: '/audit-logs',    icon: ClipboardList, permission: 'view_audit_logs' },
-        { title: 'Admin Accounts',  href: '/admin-accounts', icon: UserCog,      permission: 'manage_admins' },
+        { title: 'Admin Accounts',  href: '/admin-accounts', icon: UserCog,      superAdmin: true },
       ],
     },
   ]
 
   // A section is visible if at least one of its items survives permission filtering.
   function itemVisible(item: NavItem): boolean {
+    if (item.superAdmin) return isSuperAdmin
     if (item.children) {
       return item.children.some(c => !c.permission || can(c.permission))
     }

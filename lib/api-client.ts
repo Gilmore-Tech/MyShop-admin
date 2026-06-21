@@ -83,6 +83,11 @@ export interface AdminUser {
   fullName: string
   permissions: Permission[]
   regionScope: string | null
+  // The single immutable root admin. Only this account may create admins and
+  // assign permissions; the backend enforces it server-side and carries the flag
+  // in the JWT. Optional so the UI degrades to the legacy `manage_admins` check
+  // until the backend ships the field (see docs/backend-requests.md §8).
+  isSuperAdmin?: boolean
 }
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────────

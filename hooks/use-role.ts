@@ -13,16 +13,26 @@ export function useRole() {
     if (typeof window === 'undefined') return ''
     return getAdminUser()?.fullName ?? ''
   })
+  const [superFlag, setSuperFlag] = useState<boolean | undefined>(() => {
+    if (typeof window === 'undefined') return undefined
+    return getAdminUser()?.isSuperAdmin
+  })
 
   useEffect(() => {
     const user = getAdminUser()
     setPermissions(user?.permissions ?? null)
     setAdminName(user?.fullName ?? '')
+    setSuperFlag(user?.isSuperAdmin)
   }, [])
 
   return {
     permissions,
     adminName,
     can: (permission: Permission) => can(permissions, permission),
+    // Effective "root" admin: the only account allowed to create admins and
+    // assign permissions. Uses the explicit backend flag when present; until the
+    // backend ships `isSuperAdmin`, falls back to the legacy `manage_admins`
+    // holder so the page keeps working. See docs/backend-requests.md §8.
+    isSuperAdmin: superFlag ?? can(permissions, 'manage_admins'),
   }
 }

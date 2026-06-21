@@ -2514,3 +2514,165 @@ export interface HealthStatus {
 export function getHealth() {
   return api.get<HealthStatus>('/health')
 }
+
+// ── Referrals ─────────────────────────────────────────────────────────────────
+// User-level referrals (one per phone identity, shared across client/driver/artisan
+// roles). The referrer's reward fires on the referee's first completed activity in
+// ANY role. Reward amount = config `referral_bonus_pesewas`, credited as loyalty
+// points at `loyalty_ghs_per_point_pesewas`. All money is integer PESEWAS on the wire.
+// Endpoints (see docs/backend-requests.md §7):
+//   GET   /admin/referrals                 (perm view_referrals)   — paginated ledger
+//   GET   /admin/referrals/metrics         (perm view_referrals)   — KPI cards + byDay trend
+//   GET   /admin/users/:userId/referrals   (perm view_referrals)   — per-user funnel
+//   PATCH /admin/referrals/:id/void        (perm manage_referrals) — reverse an awarded bonus
+//   POST  /admin/referrals/:id/award       (perm manage_referrals) — manually award a pending one
+
+export type ReferralStatusFilter = 'pending' | 'awarded' | 'all'
+
+// A user reference embedded in a referral row. `roles` reflects every role the
+// single user identity holds (e.g. ['client', 'driver']).
+export interface ReferralUserRef {
+  userId: string
+  fullName: string | null
+  phone: string | null         // backend returns normalised/masked
+  roles: string[]
+}
+
+export interface ReferralListItem {
+  id: string
+  referralCode: string
+  referrer: ReferralUserRef
+  referee: ReferralUserRef
+  firstBookingCompleted: boolean
+  bonusAwarded: boolean
+  bonusPoints: number | null   // null until awarded (or after a void)
+  createdAt: string
+}
+
+export interface ReferralListResponse {
+  items: ReferralListItem[]
+  total: number
+  page: number
+  limit: number
+}
+
+// Defensive normaliser — tolerates camelCase or snake_case, and referrer/referee
+// either nested or flattened, so the page renders regardless of the exact shape.
+function normaliseReferralUserRef(raw: any): ReferralUserRef {
+  const r = raw ?? {}
+  const roles = Array.isArray(r.roles)
+    ? r.roles.map((x: any) => (typeof x === 'string' ? x : x?.name ?? '')).filter(Boolean)
+    : []
+  return {
+    userId:   r.userId ?? r.user_id ?? r.id ?? '',
+    fullName: r.fullName ?? r.full_name ?? r.name ?? null,
+    phone:    r.phone ?? null,
+    roles,
+  }
+}
+
+function normaliseReferralItem(raw: any): ReferralListItem {
+  return {
+    id:                    String(raw.id ?? ''),
+    referralCode:          raw.referralCode ?? raw.referral_code ?? '',
+    referrer:              normaliseReferralUserRef(raw.referrer),
+    referee:               normaliseReferralUserRef(raw.referee),
+    firstBookingCompleted: Boolean(raw.firstBookingCompleted ?? raw.first_booking_completed ?? false),
+    bonusAwarded:          Boolean(raw.bonusAwarded ?? raw.bonus_awarded ?? false),
+    bonusPoints:           raw.bonusPoints ?? raw.bonus_points ?? null,
+    createdAt:             raw.createdAt ?? raw.created_at ?? '',
+  }
+}
+
+export interface ListReferralsParams {
+  page?: number
+  limit?: number
+  status?: ReferralStatusFilter
+  search?: string
+  from?: string
+  to?: string
+}
+
+export async function listReferrals(params?: ListReferralsParams): Promise<ReferralListResponse> {
+  const qs = params ? '?' + new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== '').map(([k, v]) => [k, String(v)]))
+  ).toString() : ''
+  const raw = await api.get<any>(`/admin/referrals${qs}`)
+  const list = Array.isArray(raw) ? raw : (raw.items ?? [])
+  return {
+    items: list.map(normaliseReferralItem),
+    total: Number(raw.total ?? list.length),
+    page:  Number(raw.page ?? params?.page ?? 1),
+    limit: Number(raw.limit ?? params?.limit ?? 20),
+  }
+}
+
+export interface ReferralByDayPoint {
+  date: string       // yyyy-mm-dd
+  created: number
+  awarded: number
+}
+
+export interface ReferralMetrics {
+  totalReferrals: number
+  awardedCount: number
+  pendingCount: number
+  conversionRatePct: number          // awarded / total, 0–100
+  totalBonusPointsAwarded: number
+  totalBonusValuePesewas: number
+  byDay: ReferralByDayPoint[]
+}
+
+export async function getReferralMetrics(params?: { from?: string; to?: string }): Promise<ReferralMetrics> {
+  const qs = params ? '?' + new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== '').map(([k, v]) => [k, String(v)]))
+  ).toString() : ''
+  const raw = await api.get<any>(`/admin/referrals/metrics${qs}`)
+  const byDayRaw: any[] = Array.isArray(raw?.byDay) ? raw.byDay : Array.isArray(raw?.by_day) ? raw.by_day : []
+  return {
+    totalReferrals:          Number(raw?.totalReferrals          ?? raw?.total_referrals            ?? 0),
+    awardedCount:            Number(raw?.awardedCount            ?? raw?.awarded_count              ?? 0),
+    pendingCount:            Number(raw?.pendingCount            ?? raw?.pending_count              ?? 0),
+    conversionRatePct:       Number(raw?.conversionRatePct       ?? raw?.conversion_rate_pct        ?? 0),
+    totalBonusPointsAwarded: Number(raw?.totalBonusPointsAwarded ?? raw?.total_bonus_points_awarded ?? 0),
+    totalBonusValuePesewas:  Number(raw?.totalBonusValuePesewas  ?? raw?.total_bonus_value_pesewas  ?? 0),
+    byDay: byDayRaw.map(d => ({
+      date:    d.date ?? '',
+      created: Number(d.created ?? 0),
+      awarded: Number(d.awarded ?? 0),
+    })),
+  }
+}
+
+export interface UserReferralFunnel {
+  referralCode: string | null
+  referralsMade: ReferralListItem[]
+  referralReceived: ReferralListItem | null
+  loyaltyPointsBalance: number
+}
+
+export async function getUserReferrals(userId: string): Promise<UserReferralFunnel> {
+  const raw = await api.get<any>(`/admin/users/${userId}/referrals`)
+  const made: any[] = Array.isArray(raw?.referralsMade) ? raw.referralsMade
+    : Array.isArray(raw?.referrals_made) ? raw.referrals_made : []
+  const received = raw?.referralReceived ?? raw?.referral_received ?? null
+  return {
+    referralCode:         raw?.referralCode ?? raw?.referral_code ?? null,
+    referralsMade:        made.map(normaliseReferralItem),
+    referralReceived:     received ? normaliseReferralItem(received) : null,
+    loyaltyPointsBalance: Number(raw?.loyaltyPointsBalance ?? raw?.loyalty_points_balance ?? 0),
+  }
+}
+
+// PATCH /admin/referrals/:id/void — reverse an awarded bonus. Deducts bonusPoints
+// from the referrer's balance (floor 0), writes a compensating `adjusted` loyalty
+// transaction, sets bonus_awarded=false. Idempotent: 409 if not awarded.
+export function voidReferralBonus(referralId: string, reason: string) {
+  return api.patch<ReferralListItem>(`/admin/referrals/${referralId}/void`, { reason })
+}
+
+// POST /admin/referrals/:id/award — manually award a still-pending referral,
+// bypassing the first-activity check. Idempotent: 409 if already awarded.
+export function awardReferral(referralId: string) {
+  return api.post<ReferralListItem>(`/admin/referrals/${referralId}/award`, {})
+}

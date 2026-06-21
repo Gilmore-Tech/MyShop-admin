@@ -268,6 +268,149 @@ existing `GET /v1/config` + `PATCH /v1/config/:key`:
 
 ---
 
+## 7. Referral Management — `/v1/admin/referrals/*`  ⛔ requested (new)
+
+Powers the new **Referrals** page (`/referrals`). Referrals and the loyalty wallet are
+**user-level** (one per phone identity, shared across client/driver/artisan roles):
+`users.referral_code` (`MYSHOP-{A-Z0-9}{6}`), `users.loyalty_points_balance`; tables
+`referrals` (`referrer_id`/`referee_id` → `users`, `referee_id` UNIQUE) and
+`loyalty_transactions`. The referrer's reward fires on the referee's **first completed
+activity in any role** (a ride/job they booked OR delivered): reward = config
+`referral_bonus_pesewas` (default 100 = GHS 1.00), credited as loyalty points at
+`loyalty_ghs_per_point_pesewas` (default 10p/pt → 10 pts). All money is integer **pesewas**.
+
+### 7.0 Permissions (seed via migration, mirror how `view_payments` / `write_off_clawback` were added)
+- **`view_referrals`** — grant to L1–L4. Gates the three read endpoints below.
+- **`manage_referrals`** — grant to L1 only. Gates void + manual-award.
+
+The frontend already declares both in `lib/roles.ts` (group "Referrals & Loyalty") and
+gates the page on `view_referrals`, with the row actions on `manage_referrals`.
+
+### 7.1 `GET /v1/admin/referrals` — permission `view_referrals`
+Paginated, newest-first ledger.
+Query: `page`, `limit` (max 100), `status` (`pending|awarded|all`, default `all`),
+`search` (matches referrer/referee name, phone, or code), `from`/`to` (created_at range).
+```ts
+{
+  items: {
+    id: string
+    referralCode: string
+    referrer: { userId: string; fullName: string | null; phone: string | null; roles: string[] }
+    referee:  { userId: string; fullName: string | null; phone: string | null; roles: string[] }
+    firstBookingCompleted: boolean
+    bonusAwarded: boolean
+    bonusPoints: number | null     // null until awarded (or after a void)
+    createdAt: string              // ISO
+  }[]
+  total: number
+  page: number
+  limit: number
+}
+```
+`roles` is every role the single user identity holds (e.g. `['client','driver']`). Phones
+returned normalised/masked, consistent with the rest of the admin API.
+
+### 7.2 `GET /v1/admin/referrals/metrics` — permission `view_referrals`
+KPI cards + trend chart. `byDay` spans the requested `from`/`to` (default last 30 days).
+```ts
+{
+  totalReferrals: number
+  awardedCount: number
+  pendingCount: number
+  conversionRatePct: number          // awarded / total × 100
+  totalBonusPointsAwarded: number
+  totalBonusValuePesewas: number     // points × loyalty_ghs_per_point_pesewas
+  byDay: { date: string; created: number; awarded: number }[]   // date = yyyy-mm-dd
+}
+```
+
+### 7.3 `GET /v1/admin/users/:userId/referrals` — permission `view_referrals`
+Per-user funnel for the drilldown panel. `referralsMade` / `referralReceived` reuse the
+item shape from §7.1.
+```ts
+{
+  referralCode: string | null
+  referralsMade: ReferralItem[]            // referrals where :userId is the referrer
+  referralReceived: ReferralItem | null    // the referral where :userId is the referee (or null)
+  loyaltyPointsBalance: number
+}
+```
+
+### 7.4 `PATCH /v1/admin/referrals/:id/void` — permission `manage_referrals`
+Body `{ reason: string }` (**min 10 chars**, validated). Reverses an awarded bonus:
+deduct `bonusPoints` from the referrer's `users.loyalty_points_balance` (**floor at 0**),
+write a compensating `loyalty_transactions` row (`adjusted`, **negative** points,
+`description` carries the reason), set `bonus_awarded=false`, `bonus_points=null`.
+**Idempotent — `409` if not awarded.** Audit-log `referral.bonus_voided`. Returns the
+updated referral item (§7.1 shape).
+
+### 7.5 `POST /v1/admin/referrals/:id/award` — permission `manage_referrals`
+Manually award a still-pending referral — same logic as
+`ReferralService.awardReferralBonusIfApplicable`, **bypassing the first-activity check**.
+**Idempotent — `409` if already awarded.** Audit-log `referral.bonus_awarded_manual`.
+Returns the updated referral item.
+
+### 7.6 Reward config — already tunable, just surface it
+The page's reward card reads `referral_bonus_pesewas` + `loyalty_ghs_per_point_pesewas`
+via the existing `GET /v1/config`, and edits the bonus via the existing
+`PATCH /v1/config/referral_bonus_pesewas`. **No new endpoint needed** — just ensure both
+keys are seeded. The edit control is gated on `view_config` (interim — see §6.4; switch to
+`edit_config` once that permission ships).
+
+### 7.7 Error codes the frontend maps
+`409` on void → "not in an awarded state"; `409` on award → "already awarded";
+`404` → "no longer exists / not found". Keep these as the failure modes for those routes.
+
+---
+
+## 8. Single root admin — lock admin creation to ONE account  ⛔ requested (new)
+
+**Goal:** only **one** account may create admins and assign permissions. Today any
+holder of `manage_admins` can create another admin *and grant them `manage_admins`*, so
+the privilege propagates — there can be many "super admins". We want exactly one,
+immutable, root account.
+
+### 8.1 Schema (migration)
+- Add **`admins.is_super_admin boolean NOT NULL DEFAULT false`**.
+- Seed it **`true` for exactly one** existing account (the designated root), `false` for
+  all others. Add a partial unique index (or a migration/runtime assertion) so **at most
+  one** row can ever have `is_super_admin = true`.
+
+### 8.2 JWT + responses
+- Include `isSuperAdmin` in the **admin JWT claims**, in the `POST /auth/admin/login`
+  response (`admin` object), and in `GET /v1/admin/admins` + `/admins/:id` items. The
+  frontend already reads `AdminUser.isSuperAdmin` and gates the Admin Accounts page + nav
+  on it (falling back to `manage_admins` only until this ships).
+
+### 8.3 Enforcement — require **root**, not `manage_admins`
+Change the guard on **every** `/v1/admin/admins/*` route (create, update permissions,
+deactivate, reactivate, reset-password, delete) to require **`is_super_admin = true`**,
+not the `manage_admins` permission. Return `403 NOT_ROOT_ADMIN` otherwise.
+
+### 8.4 Stop the privilege from propagating
+- **Reject any request that assigns `manage_admins`** (in `CreateAdminDto` /
+  `UpdateAdminPermissionsDto`) — `400 CANNOT_GRANT_MANAGE_ADMINS`. Root is designated by
+  the flag, so `manage_admins` should no longer be handed out at all (the frontend already
+  hides it from the permission picker via `excludeKeys`). Optionally retire `manage_admins`
+  from the catalogue once migrated.
+- **Never expose an endpoint that sets `is_super_admin`.** It is set once by the seed
+  migration and is not mutable through the API.
+
+### 8.5 Protect the root account (anti-lockout)
+The root admin cannot be **deactivated, deleted, or have `is_super_admin` cleared** by any
+API call (including itself) — `400 CANNOT_MODIFY_ROOT`. Password reset for root stays
+allowed.
+
+### 8.6 Audit
+Audit-log root-gated actions as today; add `admin.root_action_denied` for rejected
+non-root attempts so escalation attempts are visible.
+
+> Until this ships, the panel degrades gracefully: `isSuperAdmin` is absent, so the page
+> falls back to the legacy `manage_admins` holder. Once the flag is present it takes over,
+> and non-root admins lose access to the page, nav entry, and actions.
+
+---
+
 ## Done
 - Ride detail `GET /v1/admin/rides/:id` — deployed.
 - Batch payouts `GET /v1/admin/payouts/batches` + `POST .../force` — deployed.

@@ -10,6 +10,13 @@ interface PermissionPickerProps {
   onChange: (next: Permission[]) => void
   /** Permissions whose checkbox is locked (e.g. your own `manage_admins`). */
   disabledKeys?: Permission[]
+  /**
+   * Permissions to omit entirely from the picker (not grantable via UI). Used to
+   * keep `manage_admins` off-limits so root privilege can never be handed out —
+   * the single root admin is designated by the `is_super_admin` flag, not this
+   * permission. See docs/backend-requests.md §8.
+   */
+  excludeKeys?: Permission[]
 }
 
 /**
@@ -17,9 +24,14 @@ interface PermissionPickerProps {
  * entirely by PERMISSION_GROUPS in lib/roles.ts. Each group header has a
  * tri-state "select all" toggle.
  */
-export function PermissionPicker({ value, onChange, disabledKeys = [] }: PermissionPickerProps) {
+export function PermissionPicker({ value, onChange, disabledKeys = [], excludeKeys = [] }: PermissionPickerProps) {
   const selected = new Set(value)
   const isDisabled = (key: Permission) => disabledKeys.includes(key)
+
+  // Drop excluded permissions, then any group left empty.
+  const groups = PERMISSION_GROUPS
+    .map(g => ({ ...g, permissions: g.permissions.filter(p => !excludeKeys.includes(p.key)) }))
+    .filter(g => g.permissions.length > 0)
 
   function setKey(key: Permission, on: boolean) {
     if (isDisabled(key)) return
@@ -41,7 +53,7 @@ export function PermissionPicker({ value, onChange, disabledKeys = [] }: Permiss
 
   return (
     <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
-      {PERMISSION_GROUPS.map(group => {
+      {groups.map(group => {
         const keys = group.permissions.map(p => p.key)
         const selectedCount = keys.filter(k => selected.has(k)).length
         const groupState: boolean | 'indeterminate' =

@@ -82,6 +82,7 @@ defined in `lib/roles.ts` (`PERMISSION_GROUPS`).
 | Payments             | `view_payments`, `run_batch_payouts`                                                         |
 | Config & USSD        | `view_config`, `view_ussd`                                                                   |
 | Comms & Help         | `send_announcement`, `view_promotions`, `manage_promotions`, `view_help_articles`, `edit_help_articles`, `delete_help_articles` |
+| Referrals & Loyalty  | `view_referrals`, `manage_referrals`                                                         |
 | Admin & Audit        | `manage_admins`, `view_audit_logs`                                                           |
 
 `intervene_ride` (cancel / force-complete a ride) and `run_batch_payouts` (force-run a payout
@@ -118,16 +119,19 @@ actions by `RoleGate`; the backend re-checks every mutating endpoint.
 
 ### Provider Verification (`/v1/admin/verifications/`)
 
-| Method | Path                                    | Roles  | Description                        | Status |
-| ------ | --------------------------------------- | ------ | ---------------------------------- | ------ |
-| GET    | `/v1/admin/verifications`               | L1, L2 | FIFO queue of pending providers    | ✅     |
-| PATCH  | `/v1/admin/verifications/:id`           | L1, L2 | Approve/reject entire provider     | ✅     |
-| PATCH  | `/v1/admin/verifications/documents/:id` | L1, L2 | Approve/reject individual document | ✅     |
+| Method | Path                                                    | Roles  | Description                          | Status |
+| ------ | ------------------------------------------------------- | ------ | ------------------------------------ | ------ |
+| GET    | `/v1/admin/verifications`                               | L1, L2 | FIFO queue of pending providers      | ✅     |
+| PATCH  | `/v1/admin/verifications/:id`                           | L1, L2 | Approve/reject entire provider       | ✅     |
+| PATCH  | `/v1/admin/verifications/documents/:id`                 | L1, L2 | Approve/reject individual document   | ✅     |
+| GET    | `/v1/admin/drivers/:driverId/ride-categories`          | L1, L2 | A driver's per-tier review statuses  | ✅     |
+| PATCH  | `/v1/admin/drivers/:driverId/ride-categories/:rideCategoryId` | L1, L2 | Approve/reject one ride tier for a driver | ✅ |
 
 **DTOs:**
 
 - `ReviewVerificationDto`: `providerType` (driver|artisan), `action` (approve|reject), `reason` (min 5 chars)
 - `ReviewDocumentDto`: `providerType`, `action` (approve|reject), `reason` (optional on approval, required on reject)
+- `ReviewRideCategoryDto`: `action` (approve|reject), `reason` (required, min 5 chars, on reject) — per-tier driver verification
 
 **Business Rules:**
 
@@ -140,6 +144,11 @@ actions by `RoleGate`; the backend re-checks every mutating endpoint.
 - Queue response includes embedded `documents: ProviderDocument[]` — no separate GET per provider needed
 - Document fields use snake_case from backend raw SQL: `file_url`, `uploaded_at`, `review_note`, `provider_type`
 - UI flow: step-through each document → confirm each individually → final provider-level decision
+- For drivers, the final-decision step also embeds the **ride-tier verification** surface
+  (`<DriverRideCategoriesSection>`), so an admin approves/rejects each tier the driver requested
+  at signup (confirming the vehicle qualifies) without leaving the drawer. The same component is
+  reused in the driver profile sheet. Gated on `view_verifications` (read) / `review_verification` (act).
+  See `docs/ride-categories-admin-integration.md` Surface B.
 - `GET /v1/admin/verifications/:id` does **not** exist — do not call it
 
 ---
@@ -461,6 +470,30 @@ lifting providers auto-suspended for exceeding the cancellation limit, plus a
 
 ---
 
+### Referrals (`/v1/admin/referrals/`) — ⛔ requested (see backend-requests.md §7)
+
+User-level referrals + loyalty wallet. Reward fires on the referee's first completed
+activity in any role; amount = config `referral_bonus_pesewas`, credited as points at
+`loyalty_ghs_per_point_pesewas`. Money is integer pesewas.
+
+| Method | Path                                  | Permission         | Description                                   | Status |
+| ------ | ------------------------------------- | ------------------ | --------------------------------------------- | ------ |
+| GET    | `/v1/admin/referrals`                 | `view_referrals`   | Paginated, newest-first ledger (status/search/date filters) | ⛔ |
+| GET    | `/v1/admin/referrals/metrics`         | `view_referrals`   | KPI counts + conversion + `byDay` trend       | ⛔     |
+| GET    | `/v1/admin/users/:userId/referrals`   | `view_referrals`   | Per-user funnel (made / received / points)    | ⛔     |
+| PATCH  | `/v1/admin/referrals/:id/void`        | `manage_referrals` | Reverse an awarded bonus (`{ reason }`, min 10) — idempotent 409 | ⛔ |
+| POST   | `/v1/admin/referrals/:id/award`       | `manage_referrals` | Manually award a pending referral — idempotent 409 | ⛔ |
+
+Reward amount is tuned via the existing `PATCH /v1/config/referral_bonus_pesewas` (no new
+endpoint). Audit actions: `referral.bonus_voided`, `referral.bonus_awarded_manual`.
+
+**Frontend (shipped):** page `app/(dashboard)/referrals/page.tsx` (+ `_components/`), API
+layer in `lib/api.ts` (`listReferrals`, `getReferralMetrics`, `getUserReferrals`,
+`voidReferralBonus`, `awardReferral`), permissions in `lib/roles.ts`, nav item under
+Engagement. Page degrades gracefully (404 → "not yet available") until the routes deploy.
+
+---
+
 ## Frontend File Reference
 
 ### API Layer (`lib/`)
@@ -592,6 +625,8 @@ Every admin action creates an `audit_log` entry with:
 | Category form — hidden fields  | P3       | `parentId`, `iconUrl`, `sortOrder` are valid DTO fields but not exposed in the form yet      |
 | Integration tests              | P2       | No controller-service integration tests; no multi-step E2E                                   |
 | Clawback write-off cron        | P3       | Policy defined but background job not wired to admin alerts                                  |
+| Referral management API        | P1       | `/v1/admin/referrals` (list/metrics/per-user funnel/void/award) + `view_referrals`/`manage_referrals` permissions not yet deployed. Referrals page + API layer + nav are shipped frontend-side and degrade gracefully (404 → "not yet available"). Spec in [backend-requests.md §7](backend-requests.md). Needs unit tests (happy/validation/auth/idempotency) on the backend. |
+| Single root admin enforcement  | P1       | Admin creation/permission assignment should be locked to ONE immutable root account (`admins.is_super_admin`), not any `manage_admins` holder. Frontend is shipped: `AdminUser.isSuperAdmin` + `useRole().isSuperAdmin` gate the Admin Accounts page/nav/actions, and the picker excludes `manage_admins` (no propagation). Backend must add the column + JWT claim, require root on `/admin/admins/*`, reject granting `manage_admins`, and protect the root account. Until shipped, the panel falls back to `manage_admins`. Spec in [backend-requests.md §8](backend-requests.md). |
 
 ---
 

@@ -1,6 +1,7 @@
 'use client'
 
-import { PageGuard } from '@/components/common/page-guard'
+import { AccessDenied } from '@/components/common/access-denied'
+import { useRole } from '@/hooks/use-role'
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Search, MoreHorizontal, Shield, Clock, RefreshCw, KeyRound, Trash2, UserCheck, UserX, Eye, Pencil } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -69,6 +70,8 @@ export default function AdminAccountsPage() {
  const [editPermissions, setEditPermissions] = useState<Permission[]>([])
 
  const currentAdminId = getAdminUser()?.id ?? null
+ // Only the single root admin (is_super_admin) may manage admin accounts.
+ const { isSuperAdmin, permissions } = useRole()
 
  // ── Reset password state
  const [newPw, setNewPw] = useState('')
@@ -149,12 +152,16 @@ export default function AdminAccountsPage() {
  a.email.toLowerCase().includes(search.toLowerCase())
  )
 
+ // permissions is null on first SSR render — wait until hydration resolves
+ // before deciding access, otherwise the root admin briefly sees AccessDenied.
+ if (permissions === null) return null
+ if (!isSuperAdmin) return <AccessDenied />
+
  return (
-  <PageGuard permission="manage_admins">
  <div>
  <PageHeader
  title="Admin Accounts"
- subtitle="Manage admin team accounts and permissions"
+ subtitle="Only the root admin can create accounts and assign permissions"
  actions={
  <Button onClick={() => openDialog({ type:'create' })} className="gap-2 text-white" style={{ backgroundColor:'#F5A623' }}>
  <Plus className="h-4 w-4" /> Create Admin
@@ -316,7 +323,7 @@ export default function AdminAccountsPage() {
  </div>
  <div className="space-y-1.5">
  <Label>Permissions</Label>
- <PermissionPicker value={newPermissions} onChange={setNewPermissions} />
+ <PermissionPicker value={newPermissions} onChange={setNewPermissions} excludeKeys={['manage_admins']} />
  </div>
  {submitError && <p className="text-xs text-red-600">{submitError}</p>}
  </div>
@@ -379,6 +386,7 @@ export default function AdminAccountsPage() {
  <PermissionPicker
  value={editPermissions}
  onChange={setEditPermissions}
+ excludeKeys={['manage_admins']}
  disabledKeys={dialog?.type ==='permissions' && dialog.admin.id === currentAdminId ? ['manage_admins'] : []}
  />
  {submitError && <p className="text-xs text-red-600">{submitError}</p>}
@@ -457,6 +465,5 @@ export default function AdminAccountsPage() {
  </DialogContent>
  </Dialog>
  </div>
-  </PageGuard>
  )
 }

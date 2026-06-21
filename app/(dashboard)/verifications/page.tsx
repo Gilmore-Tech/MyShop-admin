@@ -21,6 +21,8 @@ import {
   type VerificationItem, type ProviderDocument,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { useRole } from '@/hooks/use-role'
+import { DriverRideCategoriesSection } from '@/components/users/driver-ride-categories-section'
 
 function initials(name: string | null) {
   if (!name) return '?'
@@ -370,6 +372,7 @@ function FinalDecisionStep({
   onBack,
   onSubmit,
   submitting,
+  canReviewTiers,
 }: {
   item: VerificationItem
   documents: ProviderDocument[]
@@ -377,6 +380,7 @@ function FinalDecisionStep({
   onBack: () => void
   onSubmit: (action: 'approve' | 'reject', reason: string) => Promise<void>
   submitting: boolean
+  canReviewTiers: boolean
 }) {
   const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded'
   const resolved = documents.map(d => ({
@@ -418,6 +422,15 @@ function FinalDecisionStep({
           </div>
         ))}
       </div>
+
+      {/* Ride-tier verification — drivers pick tiers at signup; an admin must
+          confirm the vehicle qualifies for each before the driver is matched.
+          Reuses the same surface as the driver profile sheet. */}
+      {item.provider_type === 'driver' && (
+        <div className="border border-gray-100 rounded-xl p-3">
+          <DriverRideCategoriesSection driverId={item.provider_id} canReview={canReviewTiers} />
+        </div>
+      )}
 
       {anyRejected && (
         <div className="flex items-start gap-2 bg-red-50 text-red-700 text-xs rounded-lg px-3 py-2">
@@ -510,6 +523,9 @@ function ReviewDrawer({
   const documents: ProviderDocument[] = [...(item.documents ?? [])].sort(
     (a, b) => statusRank(a.status) - statusRank(b.status)
   )
+
+  const { can } = useRole()
+  const canReviewVerification = can('review_verification')
 
   const [currentIndex, setCurrentIndex] = useState(0)
   const [reviews, setReviews] = useState<Map<string, DocReview>>(new Map())
@@ -626,6 +642,7 @@ function ReviewDrawer({
               onBack={() => setStep('docs')}
               onSubmit={handleFinalSubmit}
               submitting={submitting}
+              canReviewTiers={canReviewVerification}
             />
           ) : null}
         </div>

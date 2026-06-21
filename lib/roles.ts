@@ -54,6 +54,8 @@ export type Permission =
   | 'resolve_session_recovery'
   | 'view_promotions'
   | 'manage_promotions'
+  | 'view_referrals'
+  | 'manage_referrals'
 
 /**
  * Source of truth for the granular permission catalogue. Drives the grouped
@@ -163,6 +165,13 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'view_help_articles', label: 'View help articles', description: 'Browse the help centre' },
       { key: 'edit_help_articles', label: 'Edit help articles', description: 'Create and edit help articles' },
       { key: 'delete_help_articles', label: 'Delete help articles', description: 'Delete help articles' },
+    ],
+  },
+  {
+    group: 'Referrals & Loyalty',
+    permissions: [
+      { key: 'view_referrals', label: 'View referrals', description: 'Referral ledger, metrics and per-user funnels' },
+      { key: 'manage_referrals', label: 'Manage referrals', description: 'Manually award or void referral bonuses' },
     ],
   },
   {
