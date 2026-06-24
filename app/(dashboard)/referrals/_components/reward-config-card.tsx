@@ -31,7 +31,11 @@ export function RewardConfigCard() {
   const [bonus, setBonus] = useState<number>(DEFAULT_BONUS)
   const [perPoint, setPerPoint] = useState<number>(DEFAULT_PER_POINT)
   const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
+  // /config exists (the Configuration page uses it), so a failure here is a
+  // permission gap or a transient error — not a missing feature. We keep showing
+  // the defaults and surface a muted note rather than blocking the card.
+  const [liveUnavailable, setLiveUnavailable] = useState(false)
+  const [unavailableHint, setUnavailableHint] = useState<string | null>(null)
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')           // pesewas, as typed
@@ -41,7 +45,8 @@ export function RewardConfigCard() {
 
   const load = useCallback(() => {
     setLoading(true)
-    setLoadError(false)
+    setLiveUnavailable(false)
+    setUnavailableHint(null)
     getAllConfig()
       .then(items => {
         const map = new Map(items.map(i => [i.key, i.value]))
@@ -50,7 +55,12 @@ export function RewardConfigCard() {
         setBonus(Number.isFinite(b) && map.has(BONUS_KEY) ? b : DEFAULT_BONUS)
         setPerPoint(Number.isFinite(p) && p > 0 ? p : DEFAULT_PER_POINT)
       })
-      .catch(() => setLoadError(true))
+      .catch((err) => {
+        setLiveUnavailable(true)
+        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+          setUnavailableHint('needs the View configuration permission')
+        }
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -105,11 +115,6 @@ export function RewardConfigCard() {
           <div className="flex items-center gap-2 text-gray-400 text-sm py-2">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading reward config…
           </div>
-        ) : loadError ? (
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-gray-500">Couldn&apos;t load the reward config.</p>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={load}>Retry</Button>
-          </div>
         ) : editing ? (
           <div className="space-y-3">
             <div className="flex items-end gap-3 flex-wrap">
@@ -157,18 +162,31 @@ export function RewardConfigCard() {
         ) : (
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-2xl font-bold text-gray-900">{formatGhs(bonus)}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-2xl font-bold text-gray-900">{formatGhs(bonus)}</p>
+                {liveUnavailable && (
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">default</span>
+                )}
+              </div>
               <p className="text-xs text-gray-400 mt-0.5">
                 ≈ {points != null ? `${points.toLocaleString('en-GH')} loyalty points` : 'points rate unavailable'}
                 {' '}· {formatGhs(perPoint)}/pt
                 {savedFlash && <span className="text-emerald-600 font-medium"> · Saved</span>}
               </p>
+              {liveUnavailable && (
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Showing default — live value unavailable{unavailableHint ? ` (${unavailableHint})` : ''}.{' '}
+                  <button onClick={load} className="text-orange-600 hover:underline">Retry</button>
+                </p>
+              )}
             </div>
-            <RoleGate permission="view_config">
-              <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" onClick={startEdit}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Button>
-            </RoleGate>
+            {!liveUnavailable && (
+              <RoleGate permission="view_config">
+                <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" onClick={startEdit}>
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </Button>
+              </RoleGate>
+            )}
           </div>
         )}
       </CardContent>
