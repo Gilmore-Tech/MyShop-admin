@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
-import { Download, FileText, Calendar, Loader2, TrendingUp, Users, Star, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useRole } from '@/hooks/use-role'
+import type { Permission } from '@/lib/roles'
+import { Download, FileText, Calendar, Loader2, TrendingUp, Car, Wrench, Star, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -11,6 +13,9 @@ import {
   getOverviewReport, getRevenueReport, getProviderReport, getPilotReport, listUsers,
   type OverviewReport, type RevenueReport, type ProviderReport, type PilotMetric,
 } from '@/lib/api'
+import {
+  exportOverviewCsv, exportRevenueCsv, exportRidesCsv, exportArtisansCsv, exportPilotCsv,
+} from '@/lib/report-export'
 import { formatDate } from '@/lib/format-date'
 
 // Shared pagination control.
@@ -138,69 +143,110 @@ function RevenuePanel({ data }: { data: RevenueReport }) {
   )
 }
 
-// ── Provider panel ────────────────────────────────────────────────────────────
+// ── Vertical KPI strip ────────────────────────────────────────────────────────
+
+// Small per-vertical stat strip shown atop the Rides / Artisans tabs. The wider
+// cross-platform KPIs (commission, disputes, payment success) live on Overview.
+function VerticalStats({ stats }: { stats: { label: string; value: string }[] }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+      {stats.map(s => (
+        <div key={s.label} className="bg-gray-50 rounded-lg px-4 py-3">
+          <p className="text-xs text-gray-500 mb-0.5">{s.label}</p>
+          <p className="text-sm font-semibold text-gray-900">{s.value}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Rides (drivers) panel ─────────────────────────────────────────────────────
 
 const PROVIDER_PAGE_SIZE = 8
 
-function ProviderPanel({ data }: { data: ProviderReport }) {
-  // Sort by performance: drivers by earnings, artisans by completed jobs.
+function RidesPanel({ data, overview }: { data: ProviderReport; overview: OverviewReport | null }) {
+  // Sort by performance: highest earners first.
   const drivers = [...data.drivers].sort((a, b) => b.totalEarningsGhs - a.totalEarningsGhs)
-  const artisans = [...data.artisans].sort((a, b) => b.completedJobsCount - a.completedJobsCount)
-
-  const [driverPage, setDriverPage] = useState(1)
-  const [artisanPage, setArtisanPage] = useState(1)
-
-  const dStart = (Math.min(driverPage, Math.max(1, Math.ceil(drivers.length / PROVIDER_PAGE_SIZE))) - 1) * PROVIDER_PAGE_SIZE
-  const aStart = (Math.min(artisanPage, Math.max(1, Math.ceil(artisans.length / PROVIDER_PAGE_SIZE))) - 1) * PROVIDER_PAGE_SIZE
-  const driverRows = drivers.slice(dStart, dStart + PROVIDER_PAGE_SIZE)
-  const artisanRows = artisans.slice(aStart, aStart + PROVIDER_PAGE_SIZE)
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(drivers.length / PROVIDER_PAGE_SIZE))
+  const start = (Math.min(page, totalPages) - 1) * PROVIDER_PAGE_SIZE
+  const rows = drivers.slice(start, start + PROVIDER_PAGE_SIZE)
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div>
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Drivers</p>
-        <div className="space-y-2">
-          {driverRows.map(d => (
-            <div key={d.driverId} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{d.name}</p>
-                <p className="text-xs text-gray-500">{d.cancellationCount30d} cancellations (30d) - {d.verificationStatus}</p>
-              </div>
-              <div className="text-right shrink-0">
-                <p className="text-xs font-semibold text-gray-800">{fmt(d.totalEarningsGhs)}</p>
-                <p className="text-xs text-amber-500">
-                  {d.ratingCount > 0 && d.avgRating != null ? `★ ${d.avgRating.toFixed(1)}` : <span className="text-gray-300">No ratings</span>}
-                </p>
-              </div>
+    <div>
+      {overview && (
+        <VerticalStats stats={[
+          { label: 'Registered Drivers', value: overview.registeredDrivers.toLocaleString() },
+          { label: 'Active Rides',       value: overview.activeRides.toLocaleString() },
+          { label: 'Drivers Listed',     value: drivers.length.toLocaleString() },
+          { label: 'Commission (month)', value: fmt(overview.commissionRevenue.monthGhs) },
+        ]} />
+      )}
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Driver Performance</p>
+      <div className="space-y-2">
+        {rows.map(d => (
+          <div key={d.driverId} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">{d.name}</p>
+              <p className="text-xs text-gray-500">{d.cancellationCount30d} cancellations (30d) - {d.verificationStatus}</p>
             </div>
-          ))}
-          {drivers.length === 0 && <p className="text-xs text-gray-400 py-4 text-center">No driver data</p>}
-        </div>
-        <Pager page={Math.min(driverPage, Math.max(1, Math.ceil(drivers.length / PROVIDER_PAGE_SIZE)))} pageSize={PROVIDER_PAGE_SIZE} total={drivers.length} onPage={setDriverPage} />
-      </div>
-      <div>
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Artisans</p>
-        <div className="space-y-2">
-          {artisanRows.map(a => (
-            <div key={a.artisanId} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{a.name}</p>
-                <p className="text-xs text-gray-500">
-                  {a.completedJobsCount} jobs - {a.supplementRatePct != null ? pct(a.supplementRatePct) : '-'} suppl. rate
-                  {a.flagged && <span className="ml-1 text-red-500 font-semibold">- Flagged</span>}
-                </p>
-              </div>
-              <div className="text-right shrink-0">
-                <p className="text-xs text-amber-500">
-                  {a.ratingCount > 0 && a.avgRating != null ? `★ ${a.avgRating.toFixed(1)}` : <span className="text-gray-300">No ratings</span>}
-                </p>
-              </div>
+            <div className="text-right shrink-0">
+              <p className="text-xs font-semibold text-gray-800">{fmt(d.totalEarningsGhs)}</p>
+              <p className="text-xs text-amber-500">
+                {d.ratingCount > 0 && d.avgRating != null ? `★ ${d.avgRating.toFixed(1)}` : <span className="text-gray-300">No ratings</span>}
+              </p>
             </div>
-          ))}
-          {artisans.length === 0 && <p className="text-xs text-gray-400 py-4 text-center">No artisan data</p>}
-        </div>
-        <Pager page={Math.min(artisanPage, Math.max(1, Math.ceil(artisans.length / PROVIDER_PAGE_SIZE)))} pageSize={PROVIDER_PAGE_SIZE} total={artisans.length} onPage={setArtisanPage} />
+          </div>
+        ))}
+        {drivers.length === 0 && <p className="text-xs text-gray-400 py-4 text-center">No driver data</p>}
       </div>
+      <Pager page={Math.min(page, totalPages)} pageSize={PROVIDER_PAGE_SIZE} total={drivers.length} onPage={setPage} />
+    </div>
+  )
+}
+
+// ── Artisan services (artisans) panel ─────────────────────────────────────────
+
+function ArtisansPanel({ data, overview }: { data: ProviderReport; overview: OverviewReport | null }) {
+  // Sort by performance: most completed jobs first.
+  const artisans = [...data.artisans].sort((a, b) => b.completedJobsCount - a.completedJobsCount)
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(artisans.length / PROVIDER_PAGE_SIZE))
+  const start = (Math.min(page, totalPages) - 1) * PROVIDER_PAGE_SIZE
+  const rows = artisans.slice(start, start + PROVIDER_PAGE_SIZE)
+  const flaggedCount = artisans.filter(a => a.flagged).length
+
+  return (
+    <div>
+      {overview && (
+        <VerticalStats stats={[
+          { label: 'Registered Artisans', value: overview.registeredArtisans.toLocaleString() },
+          { label: 'Active Jobs',         value: overview.activeJobs.toLocaleString() },
+          { label: 'Artisans Listed',     value: artisans.length.toLocaleString() },
+          { label: 'Flagged',             value: flaggedCount.toLocaleString() },
+        ]} />
+      )}
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Artisan Performance</p>
+      <div className="space-y-2">
+        {rows.map(a => (
+          <div key={a.artisanId} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">{a.name}</p>
+              <p className="text-xs text-gray-500">
+                {a.completedJobsCount} jobs - {a.supplementRatePct != null ? pct(a.supplementRatePct) : '-'} suppl. rate
+                {a.flagged && <span className="ml-1 text-red-500 font-semibold">- Flagged</span>}
+              </p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-xs text-amber-500">
+                {a.ratingCount > 0 && a.avgRating != null ? `★ ${a.avgRating.toFixed(1)}` : <span className="text-gray-300">No ratings</span>}
+              </p>
+            </div>
+          </div>
+        ))}
+        {artisans.length === 0 && <p className="text-xs text-gray-400 py-4 text-center">No artisan data</p>}
+      </div>
+      <Pager page={Math.min(page, totalPages)} pageSize={PROVIDER_PAGE_SIZE} total={artisans.length} onPage={setPage} />
     </div>
   )
 }
@@ -241,9 +287,10 @@ function PilotPanel({ metrics }: { metrics: PilotMetric[] }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-type ReportTab = 'overview' | 'revenue' | 'providers' | 'pilot'
+type ReportTab = 'overview' | 'rides' | 'artisans' | 'revenue' | 'pilot'
 
 export default function ReportsPage() {
+  const { can } = useRole()
   const [tab, setTab] = useState<ReportTab>('overview')
   const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month'>('day')
 
@@ -264,19 +311,47 @@ export default function ReportsPage() {
     if (tab === 'overview')   p = Promise.all([getOverviewReport(), listUsers({ limit: 1 })])
       .then(([ov, u]) => { setOverview(ov); setUserTotal(u.total) })
       .catch(e => { setError(e.message) })
+    // Rides & Artisans share the provider report; each also shows a vertical KPI
+    // strip sourced from the overview report.
+    else if (tab === 'rides' || tab === 'artisans') p = Promise.all([getProviderReport(), getOverviewReport()])
+      .then(([pr, ov]) => { setProviders(pr); setOverview(ov) })
+      .catch(e => { setError(e.message) })
     else if (tab === 'revenue') p = getRevenueReport({ groupBy }).then(setRevenue).catch(e => { setError(e.message) })
-    else if (tab === 'providers') p = getProviderReport().then(setProviders).catch(e => { setError(e.message) })
     else p = getPilotReport().then(setPilot).catch(e => { setError(e.message) })
 
     p.finally(() => setLoading(false))
   }, [tab, groupBy])
 
-  const tabs: { id: ReportTab; label: string; icon: React.ElementType }[] = [
-    { id: 'overview',   label: 'Overview KPIs',        icon: TrendingUp },
-    { id: 'revenue',    label: 'Revenue',              icon: Download },
-    { id: 'providers',  label: 'Provider Performance', icon: Users },
-    { id: 'pilot',      label: 'Pilot Targets',        icon: Star },
+  // Export the active tab's report as CSV. Data is already loaded client-side,
+  // so this is instant. `canExport` gates the button until the data is present.
+  const canExport =
+    (tab === 'overview' && !!overview) ||
+    (tab === 'rides'    && !!providers) ||
+    (tab === 'artisans' && !!providers) ||
+    (tab === 'revenue'  && !!revenue) ||
+    (tab === 'pilot'    && !!pilot)
+
+  function handleExport() {
+    if (tab === 'overview' && overview)  exportOverviewCsv(overview, userTotal)
+    else if (tab === 'rides'    && providers) exportRidesCsv(providers)
+    else if (tab === 'artisans' && providers) exportArtisansCsv(providers)
+    else if (tab === 'revenue'  && revenue)   exportRevenueCsv(revenue)
+    else if (tab === 'pilot'    && pilot)     exportPilotCsv(pilot)
+  }
+
+  // Each report type is gated by its own permission. `view_reports` covers page
+  // access + the overview tab (it's required to reach this page at all); the
+  // other verticals are opt-in grants. Only tabs the admin holds are shown.
+  const allTabs: { id: ReportTab; label: string; icon: React.ElementType; permission: Permission }[] = [
+    { id: 'overview',   label: 'Overview KPIs',    icon: TrendingUp, permission: 'view_reports' },
+    { id: 'rides',      label: 'Rides',            icon: Car,        permission: 'view_rides_report' },
+    { id: 'artisans',   label: 'Artisan Services', icon: Wrench,     permission: 'view_artisans_report' },
+    { id: 'revenue',    label: 'Revenue',          icon: Download,   permission: 'view_revenue_report' },
+    { id: 'pilot',      label: 'Pilot Targets',    icon: Star,       permission: 'view_pilot_report' },
   ]
+  // Overview is always present here (its `view_reports` is required for page
+  // access via PageGuard), so the default tab is always visible.
+  const tabs = allTabs.filter(t => can(t.permission))
 
   return (
     <PageGuard permission="view_reports">
@@ -320,12 +395,25 @@ export default function ReportsPage() {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">{tabs.find(t => t.id === tab)?.label}</CardTitle>
-            {tab === 'pilot' && (
-              <CardDescription className="text-xs">
-                10 PRD §1.3 pilot success targets - Ashanti Region open beta
-              </CardDescription>
-            )}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">{tabs.find(t => t.id === tab)?.label}</CardTitle>
+                {tab === 'pilot' && (
+                  <CardDescription className="text-xs">
+                    10 PRD §1.3 pilot success targets - Ashanti Region open beta
+                  </CardDescription>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs shrink-0"
+                disabled={!canExport}
+                onClick={handleExport}
+              >
+                <Download className="h-3.5 w-3.5" /> Download CSV
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {loading && (
@@ -339,10 +427,11 @@ export default function ReportsPage() {
                 {error}
               </div>
             )}
-            {!loading && !error && tab === 'overview'  && overview   && <OverviewPanel  data={overview} userTotal={userTotal} />}
-            {!loading && !error && tab === 'revenue'   && revenue    && <RevenuePanel   data={revenue} />}
-            {!loading && !error && tab === 'providers' && providers  && <ProviderPanel  data={providers} />}
-            {!loading && !error && tab === 'pilot'     && pilot      && <PilotPanel     metrics={pilot} />}
+            {!loading && !error && tab === 'overview' && overview  && <OverviewPanel data={overview} userTotal={userTotal} />}
+            {!loading && !error && tab === 'rides'    && providers && <RidesPanel    data={providers} overview={overview} />}
+            {!loading && !error && tab === 'artisans' && providers && <ArtisansPanel data={providers} overview={overview} />}
+            {!loading && !error && tab === 'revenue'  && revenue   && <RevenuePanel  data={revenue} />}
+            {!loading && !error && tab === 'pilot'    && pilot     && <PilotPanel    metrics={pilot} />}
           </CardContent>
         </Card>
       </div>

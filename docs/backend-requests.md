@@ -411,6 +411,110 @@ non-root attempts so escalation attempts are visible.
 
 ---
 
+## 9. Admin permission enum is missing 4 values — admin create/edit fails validation  ⛔ blocking
+
+Creating an admin or editing permissions **fails whenever any of four newer permissions
+is selected**. The API rejects the request with:
+
+```json
+{ "success": false, "error": { "code": "VALIDATION_ERROR", "message": "Validation failed",
+  "details": { "validation": [
+    "each value in permissions must be one of the following values: view_dashboard, …, manage_admins, view_audit_logs" ] } } }
+```
+
+The quoted whitelist (43 values) is the `permissions` validator on `CreateAdminDto` /
+`UpdateAdminPermissionsDto`. It is **out of sync** with the permission catalogue: the panel
+offers four keys the validator doesn't accept, so any payload containing one is bounced.
+
+### Missing from the validation enum
+| Permission | Added for | Already requested in |
+| ---------- | --------- | -------------------- |
+| `view_ride_categories` | Ride Tiers page (view) | [ride-categories-admin-integration.md §28](ride-categories-admin-integration.md) |
+| `edit_ride_categories` | Ride Tiers (create/edit/activate) | ride-categories §28 |
+| `view_referrals` | Referrals page (read) | §7.0 above |
+| `manage_referrals` | Referrals void / manual award | §7.0 above |
+
+The seed/grant migrations for these were noted previously, but the **DTO validation list**
+(the `@IsEnum`/`isIn` the admin endpoints validate against) was never updated — that list is
+the actual blocker here, separate from seeding the grants.
+
+### Fix
+Add the four values to the **single source-of-truth permission enum/constant** the admin DTOs
+validate against (the one the error message enumerates), so the validator accepts them. Order
+doesn't matter. After this, the existing seed migrations (ride-categories §28, §7.0) grant them
+and the panel's permission picker saves cleanly — **no frontend change needed**.
+
+- Affected routes: `POST /v1/admin/admins`, `PATCH /v1/admin/admins/:id` (and any other DTO
+  carrying `permissions[]`).
+- The catalogue is now **49 entries** in `lib/roles.ts` (43 in the current backend whitelist + these 4
+  + the 4 report permissions in **§11**).
+- ⚠️ Coordinate with **§8.4**: that asks the backend to *reject* `manage_admins` in these same
+  DTOs. `manage_admins` stays a valid enum value; §8.4's rejection is a separate guard, not its
+  removal from the whitelist. Don't drop `manage_admins` from the enum while wiring this up.
+
+---
+
+## 10. Per-vertical revenue breakdown on `GET /v1/admin/reports/revenue`  ⛔ requested (new)
+
+The Reports page now splits provider performance into two verticals — **Rides** (drivers)
+and **Artisan Services** (artisans). The provider report (`/admin/reports/providers`) and
+overview counts (`activeRides`/`activeJobs`, `registeredDrivers`/`registeredArtisans`)
+already separate cleanly, but **revenue does not**: `/admin/reports/revenue` returns
+combined `collectionsGhs` / `commissionGhs` / `payoutsGhs` per period with no way to tell
+ride income from artisan-job income. So each vertical tab can't show its own revenue trend —
+the Revenue tab stays a single combined view.
+
+### Request
+Add a per-vertical split to each revenue data point, either:
+- a `serviceType` / `vertical` query param (`rides` | `artisans`) that filters the periods, **or**
+- nested per-vertical figures on each period, e.g.
+  ```jsonc
+  {
+    "period": "2026-06-01",
+    "collectionsGhs": 1200, "commissionGhs": 240,        // combined (unchanged)
+    "byVertical": {
+      "rides":    { "collectionsGhs": 800, "commissionGhs": 160, "totalPayments": 40 },
+      "artisans": { "collectionsGhs": 400, "commissionGhs":  80, "totalPayments": 12 }
+    }
+  }
+  ```
+
+Nested figures are preferred — one request renders both verticals plus the combined total.
+Once available, the Rides/Artisans tabs will surface their own commission/collections trend
+and the combined Revenue tab can stay as the cross-platform roll-up.
+
+---
+
+## 11. Four new report-type permissions — add to the admin permission enum  ⛔ blocking (new)
+
+The Reports page now gates each report type behind its own permission so a super admin can grant
+report access per vertical. Four **new** permission keys were added to `lib/roles.ts`:
+
+| Permission | Gates |
+| ---------- | ----- |
+| `view_rides_report` | Rides (driver performance) tab |
+| `view_artisans_report` | Artisan Services (artisan performance) tab |
+| `view_revenue_report` | Revenue tab |
+| `view_pilot_report` | Pilot Targets tab |
+
+`view_reports` (already whitelisted) is unchanged — it still grants Reports **page access + the
+Overview tab**; the four above are opt-in grants for the other tabs.
+
+### Same blocker as §9
+These keys must be added to the **single source-of-truth permission enum/constant** the admin DTOs
+validate against (`CreateAdminDto` / `UpdateAdminPermissionsDto`, routes `POST /v1/admin/admins`,
+`PATCH /v1/admin/admins/:id`). Until then, saving an admin with any of these four is bounced with
+`VALIDATION_ERROR` ("each value in permissions must be one of the following values: …"). Order
+doesn't matter. Bundle these four with §9's four — same one-line enum change.
+
+### Migration — preserve existing access
+Existing admins holding `view_reports` previously saw **all** report tabs. After this change they
+keep page access + Overview but lose Rides/Artisans/Revenue/Pilot until granted. To preserve parity,
+**grant the four new permissions to every admin that currently holds `view_reports`** in the seed/
+grant migration. (Skip this only if you want existing admins re-scoped to overview-only by default.)
+
+---
+
 ## Done
 - Ride detail `GET /v1/admin/rides/:id` — deployed.
 - Batch payouts `GET /v1/admin/payouts/batches` + `POST .../force` — deployed.

@@ -35,6 +35,10 @@ export type Permission =
   | 'write_off_clawback'
   | 'escalate_clawback'
   | 'view_reports'
+  | 'view_rides_report'
+  | 'view_artisans_report'
+  | 'view_revenue_report'
+  | 'view_pilot_report'
   | 'view_config'
   | 'view_ussd'
   | 'send_announcement'
@@ -80,7 +84,16 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'view_dashboard', label: 'View dashboard', description: 'Access the dashboard overview and KPIs' },
       { key: 'view_analytics', label: 'View analytics', description: 'Revenue, ride/job and payment charts' },
       { key: 'view_activity', label: 'View activity feed', description: 'Platform-wide recent activity stream' },
-      { key: 'view_reports', label: 'View reports', description: 'Overview, revenue, provider and pilot reports' },
+    ],
+  },
+  {
+    group: 'Reports',
+    permissions: [
+      { key: 'view_reports', label: 'View reports', description: 'Reports page access + overview KPIs report' },
+      { key: 'view_rides_report', label: 'View rides report', description: 'Driver performance report (rides vertical)' },
+      { key: 'view_artisans_report', label: 'View artisans report', description: 'Artisan performance report (services vertical)' },
+      { key: 'view_revenue_report', label: 'View revenue report', description: 'Collections, commission and payouts report' },
+      { key: 'view_pilot_report', label: 'View pilot report', description: 'Pilot success target metrics' },
     ],
   },
   {
