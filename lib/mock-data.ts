@@ -216,11 +216,11 @@ export type AdminRole = 'super_admin' | 'regional_admin' | 'ops_admin' | 'suppor
 export type AdminStatus = 'active' | 'inactive'
 
 export const adminAccounts = [
-  { id: 'ADM001', name: 'Kwadwo Mensah', email: 'kwadwo@myshop.com.gh', role: 'super_admin' as AdminRole, status: 'active' as AdminStatus, lastLogin: '2026-04-13T09:00:00Z', createdAt: '2026-01-01' },
-  { id: 'ADM002', name: 'Akosua Owusu', email: 'akosua@myshop.com.gh', role: 'regional_admin' as AdminRole, status: 'active' as AdminStatus, lastLogin: '2026-04-13T08:30:00Z', createdAt: '2026-01-05' },
-  { id: 'ADM003', name: 'Fiifi Asante', email: 'fiifi@myshop.com.gh', role: 'ops_admin' as AdminRole, status: 'active' as AdminStatus, lastLogin: '2026-04-12T17:45:00Z', createdAt: '2026-01-10' },
-  { id: 'ADM004', name: 'Ama Boateng', email: 'ama@myshop.com.gh', role: 'support_agent' as AdminRole, status: 'active' as AdminStatus, lastLogin: '2026-04-13T07:20:00Z', createdAt: '2026-01-15' },
-  { id: 'ADM005', name: 'Kofi Frimpong', email: 'kofi@myshop.com.gh', role: 'support_agent' as AdminRole, status: 'inactive' as AdminStatus, lastLogin: '2026-03-20T11:00:00Z', createdAt: '2026-01-20' },
+  { id: 'ADM001', name: 'Kwadwo Mensah', email: 'kwadwo@gilmoretechnologiesgh.com', role: 'super_admin' as AdminRole, status: 'active' as AdminStatus, lastLogin: '2026-04-13T09:00:00Z', createdAt: '2026-01-01' },
+  { id: 'ADM002', name: 'Akosua Owusu', email: 'akosua@gilmoretechnologiesgh.com', role: 'regional_admin' as AdminRole, status: 'active' as AdminStatus, lastLogin: '2026-04-13T08:30:00Z', createdAt: '2026-01-05' },
+  { id: 'ADM003', name: 'Fiifi Asante', email: 'fiifi@gilmoretechnologiesgh.com', role: 'ops_admin' as AdminRole, status: 'active' as AdminStatus, lastLogin: '2026-04-12T17:45:00Z', createdAt: '2026-01-10' },
+  { id: 'ADM004', name: 'Ama Boateng', email: 'ama@gilmoretechnologiesgh.com', role: 'support_agent' as AdminRole, status: 'active' as AdminStatus, lastLogin: '2026-04-13T07:20:00Z', createdAt: '2026-01-15' },
+  { id: 'ADM005', name: 'Kofi Frimpong', email: 'kofi@gilmoretechnologiesgh.com', role: 'support_agent' as AdminRole, status: 'inactive' as AdminStatus, lastLogin: '2026-03-20T11:00:00Z', createdAt: '2026-01-20' },
 ]
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────

@@ -75,7 +75,7 @@ export default function LoginPage() {
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="admin@myshop.com.gh"
+              placeholder="admin@gilmoretechnologiesgh.com"
               autoComplete="email"
               className="w-full rounded-lg px-3.5 py-2.5 text-sm focus:outline-none transition-all"
               style={{

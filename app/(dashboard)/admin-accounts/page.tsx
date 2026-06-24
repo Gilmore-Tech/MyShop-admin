@@ -311,7 +311,7 @@ export default function AdminAccountsPage() {
  </div>
  <div className="space-y-1.5">
  <Label>Email</Label>
- <Input type="email" placeholder="kwame@myshop.com.gh" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+ <Input type="email" placeholder="kwame@gilmoretechnologiesgh.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
  </div>
  <div className="space-y-1.5">
  <Label>Password</Label>
