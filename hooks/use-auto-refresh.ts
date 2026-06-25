@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * Set NEXT_PUBLIC_DISABLE_AUTO_REFRESH=true to turn off all background polling
- * (this hook, the transactions feed poll, and the sidebar badge counts).
+ * Background auto-refresh is disabled across the app — screens refresh on mount,
+ * on user action, and via their manual Refresh buttons only. This flag is kept
+ * (hardcoded) so the hook, the transactions feed poll, and the sidebar badge
+ * counts all remain no-ops from a single source of truth.
  */
-export const AUTO_REFRESH_DISABLED =
-  process.env.NEXT_PUBLIC_DISABLE_AUTO_REFRESH === 'true'
+export const AUTO_REFRESH_DISABLED = true
 
 /**
  * Calls `fn` on a fixed interval while the tab is visible. Pauses when the tab

@@ -221,7 +221,7 @@ export default function EmergencyPage() {
 
   useEffect(() => { load() }, [load])
 
-  // Poll every 30 s — emergencies need near-real-time visibility. Pauses on hidden tabs.
+  // No-op while auto-refresh is globally disabled (see AUTO_REFRESH_DISABLED).
   useAutoRefresh(load, 30_000)
 
   const filtered = alerts.filter(a =>
@@ -483,10 +483,6 @@ export default function EmergencyPage() {
           </>
         )}
 
-        {/* Auto-refresh badge */}
-        <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mt-4 justify-end">
-          <Clock className="h-3 w-3" /> Auto-refreshes every 30 s
-        </div>
       </div>
 
       <EmergencyDetailDrawer

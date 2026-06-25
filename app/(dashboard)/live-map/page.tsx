@@ -388,7 +388,8 @@ export default function LiveMapPage() {
     })
   }, [])
 
-  // Fallback poll catches any missed WS events. useAutoRefresh pauses on hidden tabs.
+  // Fallback poll (no-op while auto-refresh is globally disabled — see
+  // AUTO_REFRESH_DISABLED). Live updates come from the WebSocket below.
   useAutoRefresh(loadMarkers, 30_000)
 
   useEffect(() => {
@@ -447,7 +448,7 @@ export default function LiveMapPage() {
             <div className="flex items-center justify-between px-5 pt-4 pb-3">
               <div>
                 <h1 className="text-xl font-bold text-gray-900 leading-tight">Live Operations Map</h1>
-                <p className="text-sm text-gray-400 mt-0.5">Real-time tracking | auto-refreshes every 30 s</p>
+                <p className="text-sm text-gray-400 mt-0.5">Real-time tracking</p>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
