@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
-import { Download, TrendingUp, TrendingDown, Users, CreditCard, Repeat2 } from 'lucide-react'
+import { Download, TrendingUp, TrendingDown, Users, CreditCard, Repeat2, Car, Wrench } from 'lucide-react'
+import { useRole } from '@/hooks/use-role'
+import type { Permission } from '@/lib/roles'
 import {
  AreaChart, Area,
  LineChart, Line,
@@ -97,8 +99,16 @@ function PieLabel(props: PieLabelRenderProps) {
 
 const RANGES = ['7 days','30 days','3 months']
 
+// Cross-platform charts live on Overview; the rides- and artisans-specific
+// charts are split into their own permission-gated tabs (mirrors the Reports
+// page split). Overview is reachable by anyone holding `view_analytics` (which
+// gates the page), so it's always the safe default tab.
+type AnalyticsTab = 'overview' | 'rides' | 'artisans'
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AnalyticsPage() {
+ const { can } = useRole()
+ const [tab, setTab] = useState<AnalyticsTab>('overview')
  const [range, setRange] = useState('30 days')
  const [revenueData, setRevenue] = useState<RevenueDataPoint[]>([])
  const [providers, setProviders] = useState<ProviderReport | null>(null)
@@ -285,6 +295,16 @@ export default function AnalyticsPage() {
  earnings: a.supplementRatePct != null ? `${a.supplementRatePct.toFixed(0)}% suppl.` : '-',
  }))
 
+ // Rides/artisans analytics are each gated by their own permission; Overview
+ // (cross-platform charts) rides along with `view_analytics`, which is required
+ // to reach this page at all. Only tabs the admin holds are shown.
+ const allTabs: { id: AnalyticsTab; label: string; icon: React.ElementType; permission: Permission }[] = [
+ { id:'overview', label:'Overview',         icon: TrendingUp, permission:'view_analytics' },
+ { id:'rides',    label:'Rides',            icon: Car,        permission:'view_rides_analytics' },
+ { id:'artisans', label:'Artisan Services', icon: Wrench,     permission:'view_artisans_analytics' },
+ ]
+ const tabs = allTabs.filter(t => can(t.permission))
+
  return (
  <PageGuard permission="view_analytics">
  <div className="flex flex-col gap-6">
@@ -313,6 +333,28 @@ export default function AnalyticsPage() {
  </button>
  </div>
  </div>
+
+ {/* Tab switcher — only verticals the admin can view are shown */}
+ {tabs.length > 1 && (
+ <div className="flex items-center gap-1 bg-white rounded-xl shadow-sm p-1.5 w-fit">
+ {tabs.map(t => (
+ <button
+ key={t.id}
+ onClick={() => setTab(t.id)}
+ className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+ tab === t.id ?'bg-orange-50 text-orange-500 font-medium' :'text-gray-500 hover:text-gray-700'
+ }`}
+ >
+ <t.icon className="h-3.5 w-3.5" />
+ {t.label}
+ </button>
+ ))}
+ </div>
+ )}
+
+ {/* ════════════ OVERVIEW (cross-platform) ════════════ */}
+ {tab === 'overview' && (
+ <>
 
  {/* ── KPI strip ─────────────────────────────────────────────────────── */}
  <div className="grid grid-cols-5 gap-3">
@@ -406,9 +448,7 @@ export default function AnalyticsPage() {
  </Card>
  </div>
 
- {/* ── Payments by Day + Ride Status + Job Categories ────────────────── */}
- <div className="grid grid-cols-3 gap-4">
-
+ {/* ── Payments by Day of Week (cross-platform) ──────────────────────── */}
  <Card>
  <div className="flex items-start justify-between mb-1">
  <div>
@@ -440,82 +480,6 @@ export default function AnalyticsPage() {
  <ChartEmpty message="No payment data for this period" />
  )}
  </Card>
-
- <Card>
- <div className="flex items-start justify-between mb-1">
- <div>
- <SectionTitle>Ride Status Breakdown</SectionTitle>
- <p className="text-xs text-gray-400 -mt-2">{rideStatusLabel}</p>
- </div>
- {rideStatusTotal > 0 && (
- <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium shrink-0">
- {rideStatusTotal} {rideBadgeNoun}
- </span>
- )}
- </div>
- {rideStatusData.length > 0 ? (
- <>
- <ResponsiveContainer width="100%" height={160}>
- <PieChart>
- <Pie data={rideStatusData} cx="50%" cy="50%" innerRadius={44} outerRadius={68} dataKey="value" labelLine={false} label={PieLabel}>
- <PieCenter position="center" content={({ viewBox }) => {
- const { cx = 0, cy = 0 } = (viewBox ?? {}) as { cx?: number; cy?: number }
- return (
- <text textAnchor="middle">
- <tspan x={cx} y={cy - 4} fontSize={15} fontWeight={700} fill="#111827">{rideStatusTotal}</tspan>
- <tspan x={cx} y={cy + 13} fontSize={9} fill="#9ca3af">{rideCenterCaption}</tspan>
- </text>
- )
- }} />
- {rideStatusData.map((d, i) => <Cell key={i} fill={d.fill} />)}
- </Pie>
- <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
- </PieChart>
- </ResponsiveContainer>
- <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-1">
- {rideStatusData.map(d => (
- <div key={d.name} className="flex items-center gap-1.5 text-xs">
- <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.fill }} />
- <span className="text-gray-500 truncate">{d.name}</span>
- <span className="font-semibold text-gray-700 ml-auto">{d.value}</span>
- </div>
- ))}
- </div>
- </>
- ) : (
- <ChartEmpty message="No ride data available" />
- )}
- </Card>
-
- <Card>
- <div className="flex items-start justify-between mb-1">
- <div>
- <SectionTitle>Artisan Job Categories</SectionTitle>
- <p className="text-xs text-gray-400 -mt-2">Jobs completed per category</p>
- </div>
- {categoryTotal > 0 && (
- <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium shrink-0">
- {categoryTotal} jobs
- </span>
- )}
- </div>
- {categoryData.length > 0 ? (
- <ResponsiveContainer width="100%" height={200}>
- <BarChart data={categoryData} layout="vertical" margin={{ top: 8, right: 36, left: 10, bottom: 0 }} barSize={10}>
- <XAxis type="number" tick={{ fontSize: 10, fill:'#9ca3af' }} />
- <YAxis type="category" dataKey="category" tick={{ fontSize: 10, fill:'#6b7280' }} width={68} />
- <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
- <Bar dataKey="jobs" radius={[0, 3, 3, 0]}>
- {categoryData.map((d, i) => <Cell key={i} fill={d.fill} />)}
- <LabelList dataKey="jobs" position="right" style={{ fontSize: 10, fill:'#6b7280', fontWeight: 600 }} />
- </Bar>
- </BarChart>
- </ResponsiveContainer>
- ) : (
- <ChartEmpty message={jobCats === null ?'Endpoint not yet available' :'No job category data'} />
- )}
- </Card>
- </div>
 
  {/* ── Payment Methods + Success Rate + Dispute Rate ─────────────────── */}
  <div className="grid grid-cols-3 gap-4">
@@ -635,10 +599,60 @@ export default function AnalyticsPage() {
  </Card>
  </div>
 
- {/* ── Provider Leaderboards ─────────────────────────────────────────── */}
- <div className="grid grid-cols-2 gap-4">
+ </>
+ )}
+
+ {/* ════════════ RIDES (driver vertical) ════════════ */}
+ {tab === 'rides' && (
+ <div className="grid grid-cols-3 gap-4">
 
  <Card>
+ <div className="flex items-start justify-between mb-1">
+ <div>
+ <SectionTitle>Ride Status Breakdown</SectionTitle>
+ <p className="text-xs text-gray-400 -mt-2">{rideStatusLabel}</p>
+ </div>
+ {rideStatusTotal > 0 && (
+ <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium shrink-0">
+ {rideStatusTotal} {rideBadgeNoun}
+ </span>
+ )}
+ </div>
+ {rideStatusData.length > 0 ? (
+ <>
+ <ResponsiveContainer width="100%" height={160}>
+ <PieChart>
+ <Pie data={rideStatusData} cx="50%" cy="50%" innerRadius={44} outerRadius={68} dataKey="value" labelLine={false} label={PieLabel}>
+ <PieCenter position="center" content={({ viewBox }) => {
+ const { cx = 0, cy = 0 } = (viewBox ?? {}) as { cx?: number; cy?: number }
+ return (
+ <text textAnchor="middle">
+ <tspan x={cx} y={cy - 4} fontSize={15} fontWeight={700} fill="#111827">{rideStatusTotal}</tspan>
+ <tspan x={cx} y={cy + 13} fontSize={9} fill="#9ca3af">{rideCenterCaption}</tspan>
+ </text>
+ )
+ }} />
+ {rideStatusData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+ </Pie>
+ <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+ </PieChart>
+ </ResponsiveContainer>
+ <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-1">
+ {rideStatusData.map(d => (
+ <div key={d.name} className="flex items-center gap-1.5 text-xs">
+ <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.fill }} />
+ <span className="text-gray-500 truncate">{d.name}</span>
+ <span className="font-semibold text-gray-700 ml-auto">{d.value}</span>
+ </div>
+ ))}
+ </div>
+ </>
+ ) : (
+ <ChartEmpty message="No ride data available" />
+ )}
+ </Card>
+
+ <Card className="col-span-2">
  <SectionTitle>Top Drivers</SectionTitle>
  <p className="text-xs text-gray-400 -mt-2 mb-4">Ranked by total earnings</p>
  {topDrivers.length > 0 ? (
@@ -683,8 +697,43 @@ export default function AnalyticsPage() {
  <ChartEmpty message="No driver data available" />
  )}
  </Card>
+ </div>
+ )}
+
+ {/* ════════════ ARTISAN SERVICES (artisan vertical) ════════════ */}
+ {tab === 'artisans' && (
+ <div className="grid grid-cols-3 gap-4">
 
  <Card>
+ <div className="flex items-start justify-between mb-1">
+ <div>
+ <SectionTitle>Artisan Job Categories</SectionTitle>
+ <p className="text-xs text-gray-400 -mt-2">Jobs completed per category</p>
+ </div>
+ {categoryTotal > 0 && (
+ <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium shrink-0">
+ {categoryTotal} jobs
+ </span>
+ )}
+ </div>
+ {categoryData.length > 0 ? (
+ <ResponsiveContainer width="100%" height={200}>
+ <BarChart data={categoryData} layout="vertical" margin={{ top: 8, right: 36, left: 10, bottom: 0 }} barSize={10}>
+ <XAxis type="number" tick={{ fontSize: 10, fill:'#9ca3af' }} />
+ <YAxis type="category" dataKey="category" tick={{ fontSize: 10, fill:'#6b7280' }} width={68} />
+ <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+ <Bar dataKey="jobs" radius={[0, 3, 3, 0]}>
+ {categoryData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+ <LabelList dataKey="jobs" position="right" style={{ fontSize: 10, fill:'#6b7280', fontWeight: 600 }} />
+ </Bar>
+ </BarChart>
+ </ResponsiveContainer>
+ ) : (
+ <ChartEmpty message={jobCats === null ?'Endpoint not yet available' :'No job category data'} />
+ )}
+ </Card>
+
+ <Card className="col-span-2">
  <SectionTitle>Top Artisans</SectionTitle>
  <p className="text-xs text-gray-400 -mt-2 mb-4">Ranked by completed jobs</p>
  {topArtisans.length > 0 ? (
@@ -730,6 +779,7 @@ export default function AnalyticsPage() {
  )}
  </Card>
  </div>
+ )}
 
  </div>
  </PageGuard>

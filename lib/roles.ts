@@ -11,6 +11,8 @@
 export type Permission =
   | 'view_dashboard'
   | 'view_analytics'
+  | 'view_rides_analytics'
+  | 'view_artisans_analytics'
   | 'view_live_map'
   | 'view_verifications'
   | 'review_verification'
@@ -82,7 +84,9 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     group: 'Dashboard & Analytics',
     permissions: [
       { key: 'view_dashboard', label: 'View dashboard', description: 'Access the dashboard overview and KPIs' },
-      { key: 'view_analytics', label: 'View analytics', description: 'Revenue, ride/job and payment charts' },
+      { key: 'view_analytics', label: 'View analytics', description: 'Analytics page access + cross-platform overview charts' },
+      { key: 'view_rides_analytics', label: 'View rides analytics', description: 'Ride status breakdown and top-driver leaderboard' },
+      { key: 'view_artisans_analytics', label: 'View artisans analytics', description: 'Job category mix and top-artisan leaderboard' },
       { key: 'view_activity', label: 'View activity feed', description: 'Platform-wide recent activity stream' },
     ],
   },
