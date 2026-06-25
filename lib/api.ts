@@ -301,6 +301,11 @@ export interface ProviderDocument {
   expires_at: string | null
   version: number
   rejection_reason: string | null  // set when status === 'rejected'
+  // True when this is the latest version of the document. Re-uploads supersede
+  // the previous version, and only the current version is reviewable — the
+  // backend rejects a review of a non-current id with DOCUMENT_NOT_FOUND.
+  // Defaults to true until the backend populates is_current on the queue.
+  isCurrent: boolean
 }
 
 export interface VerificationItem {
@@ -331,6 +336,7 @@ function normaliseDoc(d: any): ProviderDocument {
     expires_at:       d.expires_at ?? d.expiresAt ?? null,
     version:          Number(d.version ?? 1),
     rejection_reason: d.rejection_reason ?? d.rejectionReason ?? null,
+    isCurrent:        (d.is_current ?? d.isCurrent ?? true) !== false,
   }
 }
 
@@ -365,6 +371,17 @@ export async function getVerificationQueue(): Promise<VerificationItem[]> {
   const raw = await api.get<any>('/admin/verifications')
   const arr: any[] = Array.isArray(raw) ? raw : (raw as any)?.items ?? []
   return arr.map(normaliseItem)
+}
+
+// Refetch a single provider's queue row so document ids reflect the latest
+// versions. Reuses the deployed queue endpoint (no per-provider route needed).
+// Used to self-heal stale document ids after a re-upload supersedes a version.
+export async function getVerificationItem(
+  providerId: string,
+  providerType: string,
+): Promise<VerificationItem | null> {
+  const queue = await getVerificationQueue()
+  return queue.find(v => v.provider_id === providerId && v.provider_type === providerType) ?? null
 }
 
 // PATCH /admin/verifications/:providerId

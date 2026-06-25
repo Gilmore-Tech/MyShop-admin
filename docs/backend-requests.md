@@ -515,6 +515,83 @@ grant migration. (Skip this only if you want existing admins re-scoped to overvi
 
 ---
 
+## 12. Two new analytics permissions — add to the admin permission enum  ⛔ blocking (new)
+
+The Analytics page now splits the same way Reports did (§11): the rides- and artisans-specific
+charts each sit behind their own permission so a super admin can grant analytics access per
+vertical. Two **new** permission keys were added to `lib/roles.ts`:
+
+| Permission | Gates |
+| ---------- | ----- |
+| `view_rides_analytics` | Rides tab — ride status breakdown + top-driver leaderboard |
+| `view_artisans_analytics` | Artisan Services tab — job-category mix + top-artisan leaderboard |
+
+`view_analytics` (already whitelisted) is unchanged — it still grants Analytics **page access +
+the cross-platform Overview tab** (KPIs, revenue trend, payment volume/methods/success, dispute
+rate, platform users); the two above are opt-in grants for the per-vertical tabs.
+
+### Same blocker as §9 / §11
+These keys must be added to the **single source-of-truth permission enum/constant** the admin DTOs
+validate against (`CreateAdminDto` / `UpdateAdminPermissionsDto`, routes `POST /v1/admin/admins`,
+`PATCH /v1/admin/admins/:id`). Until then, saving an admin with either is bounced with
+`VALIDATION_ERROR` ("each value in permissions must be one of the following values: …"). Order
+doesn't matter. Bundle these two with §9's four and §11's four — same one-line enum change. The
+catalogue is now **51 entries** in `lib/roles.ts`.
+
+### Migration — preserve existing access
+Existing admins holding `view_analytics` previously saw **all** analytics charts. After this change
+they keep page access + Overview but lose the Rides/Artisans tabs until granted. To preserve parity,
+**grant the two new permissions to every admin that currently holds `view_analytics`** in the seed/
+grant migration. (Skip this only if you want existing admins re-scoped to overview-only by default.)
+
+### Related — §10 revenue split
+The per-vertical revenue breakdown requested in **§10** (`byVertical` on
+`GET /v1/admin/reports/revenue`) feeds both the Reports **and** Analytics rides/artisans tabs. Until
+it ships, the per-vertical analytics tabs lead with the data that's already split server-side (ride
+status, job categories, provider leaderboards); the combined revenue trend stays on Overview.
+
+---
+
+## 13. Verification queue must return current-version documents only — re-upload breaks review  ⛔ blocking (new)
+
+Reviewing a document fails after the provider re-uploads it. The admin opens **Provider
+Verification Queue → Review**, approves/rejects a document, and gets:
+
+```
+PATCH /v1/admin/verifications/documents/:id
+404 → { code: "DOCUMENT_NOT_FOUND", message: "Document not found or is not the current version" }
+```
+
+### Root cause
+Re-uploading a verification document creates a **new `ProviderDocument` row** (new `id`,
+incremented `version`, marked current) and supersedes the previous row. The panel gets its
+document `id`s from the aggregated `documents[]` on `GET /v1/admin/verifications`, which is
+**not filtered to current versions** — so it can hand the panel a superseded `id`. The review
+endpoint correctly rejects any non-current `id`, producing the 404. Trigger: a driver/artisan
+uploads a doc, re-uploads it for re-review, then the admin reviews the stale id.
+
+### Fix
+1. In the query that builds each provider's `documents[]` (the `JSON_AGG`), include **only the
+   current version** of each document (e.g. `WHERE is_current = true`, or whatever flags the
+   latest version per `(provider_id, document_type)`). Superseded versions must not appear.
+2. Add **`isCurrent: boolean`** to each document object in that response — mirror the
+   `GET .../documents` (user documents) endpoint that already exposes it. The panel filters on
+   it defensively (`isCurrent !== false`).
+3. Ensure the queue counts (`docs_pending` / `docs_approved` / `docs_rejected` / `total_docs`)
+   reflect **current versions only** — no double-counting superseded rows.
+
+- Affected route: `GET /v1/admin/verifications` (the per-document review route
+  `PATCH /v1/admin/verifications/documents/:id` is correct — it's the queue feeding it stale ids).
+
+### Frontend mitigation (already shipped — no backend dependency)
+The review drawer now refetches the provider's queue row on a `DOCUMENT_NOT_FOUND`/404 (and via a
+manual refresh button), reloads the current version, and prompts the admin to review again instead
+of showing a raw "Save failed". It also drops `isCurrent === false` docs. This recovers the error
+but still re-fetches a stale list until the backend filters server-side — fixes 1–3 remove the
+root cause.
+
+---
+
 ## Done
 - Ride detail `GET /v1/admin/rides/:id` — deployed.
 - Batch payouts `GET /v1/admin/payouts/batches` + `POST .../force` — deployed.

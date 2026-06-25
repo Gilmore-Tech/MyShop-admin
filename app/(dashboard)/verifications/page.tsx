@@ -17,7 +17,7 @@ import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
 import {
-  getVerificationQueue, reviewDocument, reviewVerification,
+  getVerificationQueue, getVerificationItem, reviewDocument, reviewVerification,
   type VerificationItem, type ProviderDocument,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
@@ -192,6 +192,7 @@ function DocumentStep({
   onFinish,
   saving,
   saveError,
+  refreshNote,
 }: {
   doc: ProviderDocument
   index: number
@@ -204,6 +205,7 @@ function DocumentStep({
   onFinish: () => void
   saving: boolean
   saveError: string | null
+  refreshNote: string | null
 }) {
   const defaultAction: 'approve' | 'reject' = doc.status === 'rejected' ? 'reject' : 'approve'
   const [action, setAction] = useState<'approve' | 'reject'>(existingReview?.action ?? defaultAction)
@@ -331,6 +333,16 @@ function DocumentStep({
           <div>
             <p className="text-xs font-semibold text-red-700">Save failed</p>
             <p className="text-xs text-red-600 mt-0.5">{saveError}</p>
+          </div>
+        </div>
+      )}
+
+      {refreshNote && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <RefreshCw className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-amber-700">Document reloaded</p>
+            <p className="text-xs text-amber-600 mt-0.5">{refreshNote}</p>
           </div>
         </div>
       )}
@@ -508,6 +520,15 @@ function FinalDecisionStep({
   )
 }
 
+// Sort: pending_review → uploaded → approved/rejected. Historical versions
+// (isCurrent === false) are dropped — only the current version is reviewable.
+const docStatusRank = (s: string) => s === 'pending_review' ? 0 : s === 'uploaded' ? 1 : 2
+function sortReviewDocs(docs: ProviderDocument[]): ProviderDocument[] {
+  return [...docs]
+    .filter(d => d.isCurrent !== false)
+    .sort((a, b) => docStatusRank(a.status) - docStatusRank(b.status))
+}
+
 // ── Review drawer ─────────────────────────────────────────────────────────────
 function ReviewDrawer({
   item,
@@ -518,40 +539,66 @@ function ReviewDrawer({
   onClose: () => void
   onDone: () => void
 }) {
-  // Sort: pending_review → uploaded → approved/rejected
-  const statusRank = (s: string) => s === 'pending_review' ? 0 : s === 'uploaded' ? 1 : 2
-  const documents: ProviderDocument[] = [...(item.documents ?? [])].sort(
-    (a, b) => statusRank(a.status) - statusRank(b.status)
-  )
-
   const { can } = useRole()
   const canReviewVerification = can('review_verification')
 
+  const [documents, setDocuments] = useState<ProviderDocument[]>(() => sortReviewDocs(item.documents ?? []))
   const [currentIndex, setCurrentIndex] = useState(0)
   const [reviews, setReviews] = useState<Map<string, DocReview>>(new Map())
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [refreshNote, setRefreshNote] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [step, setStep] = useState<'docs' | 'final'>('docs')
   const [submitting, setSubmitting] = useState(false)
 
   const currentDoc = documents[currentIndex]
 
-  // Clear save error when the user navigates to a different document.
-  useEffect(() => { setSaveError(null) }, [currentIndex])
+  // Clear transient banners when the user navigates to a different document.
+  useEffect(() => { setSaveError(null); setRefreshNote(null) }, [currentIndex])
+
+  // Refetch this provider's queue row so document ids reflect the latest
+  // versions. A re-upload supersedes the version we're holding, so a stale
+  // snapshot points at a non-current id the backend rejects with
+  // DOCUMENT_NOT_FOUND. Returns the refreshed (sorted, current-only) list.
+  const refresh = useCallback(async (): Promise<ProviderDocument[]> => {
+    setRefreshing(true)
+    try {
+      const fresh = await getVerificationItem(item.provider_id, item.provider_type)
+      const docs = sortReviewDocs(fresh?.documents ?? [])
+      setDocuments(docs)
+      setCurrentIndex(i => Math.min(i, Math.max(0, docs.length - 1)))
+      return docs
+    } finally {
+      setRefreshing(false)
+    }
+  }, [item.provider_id, item.provider_type])
 
   async function handleDocSave(review: DocReview) {
     if (!currentDoc) return
     setSaving(true)
     setSaveError(null)
+    setRefreshNote(null)
     try {
       await reviewDocument(currentDoc.id, item.provider_type, review.action, review.reason || (review.action === 'approve' ? 'Approved.' : ''))
       setReviews(prev => new Map(prev).set(currentDoc.id, review))
     } catch (err) {
       const e = err as { status?: number; code?: string; message?: string }
       console.error('[verifications] reviewDocument failed', { docId: currentDoc.id, status: e?.status, code: e?.code, message: e?.message, error: err })
-      const status = e?.status ? `${e.status} ` : ''
-      const code = e?.code && e.code !== String(e?.status) ? ` (${e.code})` : ''
-      setSaveError(`${status}${e?.message ?? 'Failed to save document review.'}${code}`)
+      // A re-upload supersedes the version we're holding — refetch the current
+      // version and prompt a retry instead of surfacing a raw 404.
+      if (e?.code === 'DOCUMENT_NOT_FOUND' || e?.status === 404) {
+        try {
+          await refresh()
+          setRefreshNote('This document was re-uploaded since you opened the queue. The latest version is now loaded — please review it again.')
+        } catch {
+          setSaveError('This document was re-uploaded and the latest version could not be reloaded. Close and reopen the review to continue.')
+        }
+      } else {
+        const status = e?.status ? `${e.status} ` : ''
+        const code = e?.code && e.code !== String(e?.status) ? ` (${e.code})` : ''
+        setSaveError(`${status}${e?.message ?? 'Failed to save document review.'}${code}`)
+      }
     } finally {
       setSaving(false)
     }
@@ -591,12 +638,22 @@ function ReviewDrawer({
               </div>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-100"
-          >
-            <XCircle className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => { refresh().catch(() => {}) }}
+              disabled={refreshing}
+              title="Reload latest document versions"
+              className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-100 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-100"
+            >
+              <XCircle className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}
@@ -633,6 +690,7 @@ function ReviewDrawer({
               onFinish={() => setStep('final')}
               saving={saving}
               saveError={saveError}
+              refreshNote={refreshNote}
             />
           ) : step === 'final' ? (
             <FinalDecisionStep
