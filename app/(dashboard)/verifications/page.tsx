@@ -17,12 +17,10 @@ import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
 import {
-  getVerificationQueue, getVerificationItem, reviewDocument, reviewVerification,
+  getVerificationQueue, getVerificationItem, reviewDocument,
   type VerificationItem, type ProviderDocument,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
-import { useRole } from '@/hooks/use-role'
-import { DriverRideCategoriesSection } from '@/components/users/driver-ride-categories-section'
 
 function initials(name: string | null) {
   if (!name) return '?'
@@ -376,150 +374,6 @@ function DocumentStep({
   )
 }
 
-// ── Final provider decision ───────────────────────────────────────────────────
-function FinalDecisionStep({
-  item,
-  documents,
-  reviews,
-  onBack,
-  onSubmit,
-  submitting,
-  canReviewTiers,
-}: {
-  item: VerificationItem
-  documents: ProviderDocument[]
-  reviews: Map<string, DocReview>
-  onBack: () => void
-  onSubmit: (action: 'approve' | 'reject', reason: string) => Promise<void>
-  submitting: boolean
-  canReviewTiers: boolean
-}) {
-  const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded'
-  const resolved = documents.map(d => ({
-    doc: d,
-    review: reviews.get(d.id) ?? (!needsReview(d.status)
-      ? { action: (d.status === 'approved' || d.status === 'confirmed') ? 'approve' : 'reject' as 'approve' | 'reject', reason: d.rejection_reason ?? '' }
-      : null),
-  }))
-  const allApproved = resolved.every(r => r.review?.action === 'approve')
-  const anyRejected = resolved.some(r => r.review?.action === 'reject')
-  const suggested: 'approve' | 'reject' = allApproved ? 'approve' : 'reject'
-
-  const [action, setAction] = useState<'approve' | 'reject'>(suggested)
-  const [reason, setReason] = useState(suggested === 'approve' ? 'All documents reviewed and verified.' : '')
-  const [error, setError] = useState('')
-
-  async function handleSubmit() {
-    if (reason.trim().length < 5) { setError('Reason must be at least 5 characters.'); return }
-    setError('')
-    await onSubmit(action, reason.trim())
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Final Step</p>
-        <p className="text-base font-semibold text-gray-900 mt-0.5">Overall Provider Decision</p>
-      </div>
-
-      {/* Doc summary */}
-      <div className="bg-gray-50 rounded-xl p-3 space-y-2 max-h-44 overflow-y-auto">
-        {resolved.map(({ doc, review }) => (
-          <div key={doc.id} className="flex items-center justify-between gap-2">
-            <p className="text-sm text-gray-700 truncate">{doc.label || doc.type}</p>
-            {review
-              ? <DocStatusBadge status={review.action === 'approve' ? 'approved' : 'rejected'} />
-              : <span className="text-xs text-gray-400 italic">Not reviewed</span>
-            }
-          </div>
-        ))}
-      </div>
-
-      {/* Ride-tier verification — drivers pick tiers at signup; an admin must
-          confirm the vehicle qualifies for each before the driver is matched.
-          Reuses the same surface as the driver profile sheet. */}
-      {item.provider_type === 'driver' && (
-        <div className="border border-gray-100 rounded-xl p-3">
-          <DriverRideCategoriesSection driverId={item.provider_id} canReview={canReviewTiers} />
-        </div>
-      )}
-
-      {anyRejected && (
-        <div className="flex items-start gap-2 bg-red-50 text-red-700 text-xs rounded-lg px-3 py-2">
-          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-          One or more documents rejected - approval not recommended.
-        </div>
-      )}
-      {allApproved && (
-        <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 text-xs rounded-lg px-3 py-2">
-          <CheckCircle className="h-3.5 w-3.5 shrink-0" />
-          All documents approved - provider can be verified.
-        </div>
-      )}
-
-      <div className="flex gap-2">
-        {(['approve', 'reject'] as const).map(a => (
-          <button
-            key={a}
-            type="button"
-            onClick={() => {
-              setAction(a)
-              setReason(a === 'approve' ? 'All documents reviewed and verified.' : '')
-            }}
-            className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors border ${
-              action === a
-                ? a === 'approve'
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : 'bg-red-50 text-red-700 border-red-200'
-                : 'text-gray-500 border-gray-200 hover:bg-gray-50'
-            }`}
-          >
-            {a === 'approve'
-              ? <><CheckCircle className="h-4 w-4" /> Approve Provider</>
-              : <><XCircle className="h-4 w-4" /> Reject Provider</>
-            }
-          </button>
-        ))}
-      </div>
-
-      <div>
-        <label className="block text-xs font-medium text-gray-500 mb-1">
-          Reason <span className="text-gray-400">(required, min 5 chars)</span>
-        </label>
-        <textarea
-          value={reason}
-          onChange={e => { setReason(e.target.value); setError('') }}
-          rows={3}
-          className="w-full rounded-lg border border-gray-200 text-sm px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200"
-          placeholder={action === 'approve' ? 'All documents reviewed and verified.' : 'Provide a reason for rejection…'}
-        />
-      </div>
-
-      {error && (
-        <p className="flex items-center gap-1.5 text-xs text-red-600">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />{error}
-        </p>
-      )}
-
-      <div className="flex gap-2 pt-2 border-t border-gray-100">
-        <Button variant="outline" size="sm" onClick={onBack} className="gap-1">
-          <ChevronLeft className="h-4 w-4" /> Back to Docs
-        </Button>
-        <Button
-          size="sm"
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="flex-1 text-white"
-          style={{ backgroundColor: action === 'approve' ? '#059669' : '#DC2626' }}
-        >
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {submitting ? 'Submitting…' : `Confirm ${action === 'approve' ? 'Approval' : 'Rejection'}`}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
 // Sort: pending_review → uploaded → approved/rejected. Historical versions
 // (isCurrent === false) are dropped — only the current version is reviewable.
 const docStatusRank = (s: string) => s === 'pending_review' ? 0 : s === 'uploaded' ? 1 : 2
@@ -539,9 +393,6 @@ function ReviewDrawer({
   onClose: () => void
   onDone: () => void
 }) {
-  const { can } = useRole()
-  const canReviewVerification = can('review_verification')
-
   const [documents, setDocuments] = useState<ProviderDocument[]>(() => sortReviewDocs(item.documents ?? []))
   const [currentIndex, setCurrentIndex] = useState(0)
   const [reviews, setReviews] = useState<Map<string, DocReview>>(new Map())
@@ -549,8 +400,9 @@ function ReviewDrawer({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [refreshNote, setRefreshNote] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [step, setStep] = useState<'docs' | 'final'>('docs')
-  const [submitting, setSubmitting] = useState(false)
+  // The go-online decision now lives on its own queue (/provider-approvals);
+  // this drawer only reviews documents and then hands off to that queue.
+  const [finished, setFinished] = useState(false)
 
   const currentDoc = documents[currentIndex]
 
@@ -604,17 +456,6 @@ function ReviewDrawer({
     }
   }
 
-  async function handleFinalSubmit(action: 'approve' | 'reject', reason: string) {
-    setSubmitting(true)
-    try {
-      await reviewVerification(item.provider_id, item.provider_type, action, reason)
-      onDone()
-    } catch {
-      setSubmitting(false)
-      throw new Error('Failed to submit provider decision.')
-    }
-  }
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40" onClick={onClose}>
       <div
@@ -658,7 +499,29 @@ function ReviewDrawer({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {documents.length === 0 ? (
+          {finished ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col items-center justify-center h-40 gap-3 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50">
+                  <CheckCircle className="h-7 w-7 text-emerald-500" />
+                </div>
+                <p className="text-sm font-semibold text-gray-800">Documents reviewed</p>
+                <p className="text-xs text-gray-400 max-w-xs">
+                  The overall go-online decision now lives on the{' '}
+                  <span className="font-medium text-gray-600">Go-Online Approvals</span> queue.
+                  This provider will appear there once all documents are reviewed.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => setFinished(false)}>
+                  Back to Docs
+                </Button>
+                <Button size="sm" className="flex-1 text-white" style={{ backgroundColor: '#F5A623' }} onClick={onDone}>
+                  Done
+                </Button>
+              </div>
+            </div>
+          ) : documents.length === 0 ? (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col items-center justify-center h-32 gap-2 text-center">
                 <FileText className="h-8 w-8 text-gray-200" />
@@ -670,14 +533,9 @@ function ReviewDrawer({
                   The backend query needs to include a <code className="font-mono bg-gray-100 px-1 rounded">JSON_AGG</code> of the document rows.
                 </p>
               </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-                <Button size="sm" className="flex-1 text-white" style={{ backgroundColor: '#F5A623' }} onClick={() => setStep('final')}>
-                  Skip to Provider Decision
-                </Button>
-              </div>
+              <Button size="sm" variant="outline" className="w-full" onClick={onClose}>Cancel</Button>
             </div>
-          ) : step === 'docs' && currentDoc ? (
+          ) : currentDoc ? (
             <DocumentStep
               doc={currentDoc}
               index={currentIndex}
@@ -687,20 +545,10 @@ function ReviewDrawer({
               onSave={handleDocSave}
               onPrev={() => setCurrentIndex(i => Math.max(0, i - 1))}
               onNext={() => setCurrentIndex(i => Math.min(documents.length - 1, i + 1))}
-              onFinish={() => setStep('final')}
+              onFinish={() => setFinished(true)}
               saving={saving}
               saveError={saveError}
               refreshNote={refreshNote}
-            />
-          ) : step === 'final' ? (
-            <FinalDecisionStep
-              item={item}
-              documents={documents}
-              reviews={reviews}
-              onBack={() => setStep('docs')}
-              onSubmit={handleFinalSubmit}
-              submitting={submitting}
-              canReviewTiers={canReviewVerification}
             />
           ) : null}
         </div>

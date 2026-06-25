@@ -218,6 +218,7 @@ export default function AppSidebar() {
           title: 'Verifications', href: '/verifications', icon: BadgeCheck,
           children: [
             { title: 'Verification Queue', href: '/verifications',           permission: 'view_verifications',    badge: pendingVerifications ?? undefined },
+            { title: 'Go-Online Approvals', href: '/provider-approvals',      permission: 'view_verifications' },
             { title: 'Client KYC Queue',   href: '/users/clients/kyc-queue',  permission: 'view_verifications',    badge: pendingClientKyc ?? undefined },
             { title: 'Cancellation Suspensions', href: '/suspensions',        permission: 'view_users' },
             { title: 'Account Recovery',   href: '/account-recovery',         permission: 'view_session_recovery', badge: pendingRecoveryCount ?? undefined },
