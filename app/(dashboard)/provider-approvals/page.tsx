@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import {
   Search, CheckCircle, XCircle, RefreshCw,
-  ChevronLeft, Loader2, AlertCircle, Check, X, ShieldCheck,
+  ChevronLeft, Loader2, AlertCircle, Check, X, ShieldCheck, FileSearch,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -15,12 +16,30 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import {
-  getVerificationQueue, reviewVerification,
-  type VerificationItem, type ProviderDocument,
+  listUsers, getVerificationQueue, reviewVerification,
+  type PlatformUser, type ProviderDocument,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { DriverRideCategoriesSection } from '@/components/users/driver-ride-categories-section'
+
+// A provider awaiting the admin's go-online decision: verificationStatus is still
+// 'pending'. Document review happens on the Verification Queue; the doc-queue row
+// (if any) tells us whether their documents are still pending review.
+type PendingProvider = {
+  userId: string
+  providerId: string          // driver.id / artisan.id — the id reviewVerification expects
+  type: 'driver' | 'artisan'
+  name: string | null
+  phone: string | null
+  createdAt: string
+  docsPending: number
+  docsApproved: number
+  docsRejected: number
+  totalDocs: number
+  documents: ProviderDocument[]
+  inDocQueue: boolean         // still has documents awaiting review
+}
 
 function initials(name: string | null) {
   if (!name) return '?'
@@ -28,10 +47,23 @@ function initials(name: string | null) {
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+// Fetch every provider of a role, paging through the list. The /admin/users
+// `status` filter is account status (active/suspended/banned), not verification
+// status, so we filter to verificationStatus === 'pending' client-side.
+async function fetchAllProviders(role: 'driver' | 'artisan'): Promise<PlatformUser[]> {
+  const LIMIT = 100
+  const first = await listUsers({ role, page: 1, limit: LIMIT })
+  let items = first.items
+  const pages = Math.min(first.totalPages ?? 1, 25) // safety cap
+  for (let p = 2; p <= pages; p++) {
+    const res = await listUsers({ role, page: p, limit: LIMIT })
+    items = items.concat(res.items)
+  }
+  return items
 }
 
 function DocStatusBadge({ status }: { status: string }) {
@@ -52,39 +84,45 @@ function DocStatusBadge({ status }: { status: string }) {
   )
 }
 
-function DocsSummary({ approved, rejected, total }: { approved: number; rejected: number; total: number }) {
-  if (total === 0) return <span className="text-xs text-gray-400">No docs</span>
+function ReadinessBadge({ p }: { p: PendingProvider }) {
+  if (p.inDocQueue) return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+      <FileSearch className="h-3 w-3" /> {p.docsPending} doc{p.docsPending !== 1 ? 's' : ''} pending review
+    </span>
+  )
+  if (p.docsRejected > 0) return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700">
+      <X className="h-3 w-3" /> {p.docsRejected} rejected
+    </span>
+  )
+  if (p.totalDocs > 0) return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+      <Check className="h-3 w-3" /> Docs reviewed
+    </span>
+  )
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex gap-0.5">
-        {approved > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-emerald-700 bg-emerald-50 px-1.5 rounded">{approved} <Check className="h-3 w-3" /></span>}
-        {rejected > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-red-700 bg-red-50 px-1.5 rounded">{rejected} <X className="h-3 w-3" /></span>}
-      </div>
-      <span className="text-xs text-gray-400">/ {total}</span>
-    </div>
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+      No documents submitted
+    </span>
   )
 }
 
 // ── Go-online decision drawer ─────────────────────────────────────────────────
-// Documents have already been reviewed on the Verification Queue; here the admin
-// makes the single overall decision that lets the provider go online. The same
-// PATCH /admin/verifications/:id call as before, just surfaced in its own queue.
 function DecisionDrawer({
-  item,
+  provider,
   onClose,
   onDone,
 }: {
-  item: VerificationItem
+  provider: PendingProvider
   onClose: () => void
   onDone: () => void
 }) {
   const { can } = useRole()
   const canReview = can('review_verification')
 
-  // Only the current version of each document is meaningful here.
-  const documents: ProviderDocument[] = (item.documents ?? []).filter(d => d.isCurrent !== false)
-  const anyRejected = documents.some(d => d.status === 'rejected')
-  const allApproved = documents.length > 0 && documents.every(d => d.status === 'approved' || d.status === 'confirmed')
+  const documents = provider.documents.filter(d => d.isCurrent !== false)
+  const anyRejected = documents.some(d => d.status === 'rejected') || provider.docsRejected > 0
+  const allApproved = provider.totalDocs > 0 && !anyRejected && !provider.inDocQueue
   const suggested: 'approve' | 'reject' = allApproved ? 'approve' : 'reject'
 
   const [action, setAction] = useState<'approve' | 'reject'>(suggested)
@@ -100,7 +138,7 @@ function DecisionDrawer({
     setSubmitError(null)
     setSubmitting(true)
     try {
-      await reviewVerification(item.provider_id, item.provider_type, action, reason.trim())
+      await reviewVerification(provider.providerId, provider.type, action, reason.trim())
       onDone()
     } catch (err) {
       setSubmitting(false)
@@ -120,14 +158,14 @@ function DecisionDrawer({
           <div className="flex items-center gap-3">
             <Avatar className="h-9 w-9">
               <AvatarFallback className="bg-gray-100 text-gray-600 text-sm font-bold">
-                {initials(item.provider_name)}
+                {initials(provider.name)}
               </AvatarFallback>
             </Avatar>
             <div>
-              <p className="font-semibold text-sm text-gray-900">{item.provider_name ?? 'Unknown Provider'}</p>
+              <p className="font-semibold text-sm text-gray-900">{provider.name ?? 'Unknown Provider'}</p>
               <div className="flex items-center gap-2 mt-0.5">
-                <StatusBadge status={item.provider_type} />
-                <span className="text-xs text-gray-400 font-mono">{item.provider_id.slice(0, 8)}…</span>
+                <StatusBadge status={provider.type} />
+                <span className="text-xs text-gray-400 font-mono">{provider.providerId.slice(0, 8)}…</span>
               </div>
             </div>
           </div>
@@ -146,28 +184,38 @@ function DecisionDrawer({
               <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Go-Online Approval</p>
               <p className="text-base font-semibold text-gray-900 mt-0.5">Approve provider to go online</p>
               <p className="text-xs text-gray-400 mt-0.5">
-                Documents were reviewed on the Verification Queue. Approving here lets the provider go online and start receiving work.
+                Approving here flips the provider to <span className="font-medium">verified</span> and lets them go online to receive work.
               </p>
             </div>
 
-            {/* Doc summary (read-only) */}
-            <div className="bg-gray-50 rounded-xl p-3 space-y-2 max-h-44 overflow-y-auto">
-              {documents.length === 0 ? (
-                <p className="text-sm text-gray-400 italic">No documents on file.</p>
-              ) : documents.map(doc => (
-                <div key={doc.id} className="flex items-center justify-between gap-2">
-                  <p className="text-sm text-gray-700 truncate">{doc.label || doc.type}</p>
-                  <DocStatusBadge status={doc.status} />
+            {/* Documents still need review — direct the admin to do that first. */}
+            {provider.inDocQueue && (
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                <FileSearch className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
+                <div className="text-xs text-amber-700">
+                  <p className="font-semibold">{provider.docsPending} document{provider.docsPending !== 1 ? 's' : ''} still pending review.</p>
+                  <Link href="/verifications" className="underline font-medium">Review documents on the Verification Queue first →</Link>
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+
+            {/* Doc summary, when the queue still has the row */}
+            {documents.length > 0 && (
+              <div className="bg-gray-50 rounded-xl p-3 space-y-2 max-h-44 overflow-y-auto">
+                {documents.map(doc => (
+                  <div key={doc.id} className="flex items-center justify-between gap-2">
+                    <p className="text-sm text-gray-700 truncate">{doc.label || doc.type}</p>
+                    <DocStatusBadge status={doc.status} />
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Ride-tier verification — drivers pick tiers at signup; an admin must
-                confirm the vehicle qualifies for each before the driver is matched.
-                Reuses the same surface as the driver profile sheet. */}
-            {item.provider_type === 'driver' && (
+                confirm the vehicle qualifies for each before the driver is matched. */}
+            {provider.type === 'driver' && (
               <div className="border border-gray-100 rounded-xl p-3">
-                <DriverRideCategoriesSection driverId={item.provider_id} canReview={canReview} />
+                <DriverRideCategoriesSection driverId={provider.providerId} canReview={canReview} />
               </div>
             )}
 
@@ -180,7 +228,7 @@ function DecisionDrawer({
             {allApproved && (
               <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 text-xs rounded-lg px-3 py-2">
                 <CheckCircle className="h-3.5 w-3.5 shrink-0" />
-                All documents approved — provider can be approved to go online.
+                All documents reviewed and approved — provider can be approved to go online.
               </div>
             )}
 
@@ -277,29 +325,58 @@ function DecisionDrawer({
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-// A provider lands here once every document has been reviewed on the Verification
-// Queue (docs_pending === 0). This is the single "approve to go online" decision,
-// split out of the document-review wizard so it has a home of its own.
 export default function ProviderApprovalsPage() {
-  const [items, setItems] = useState<VerificationItem[]>([])
+  const [providers, setProviders] = useState<PendingProvider[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
-  const [deciding, setDeciding] = useState<VerificationItem | null>(null)
+  const [deciding, setDeciding] = useState<PendingProvider | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const data = await getVerificationQueue()
-      const list: VerificationItem[] = Array.isArray(data)
-        ? data
-        : (data && typeof data === 'object' && Array.isArray((data as { items?: VerificationItem[] }).items))
-          ? (data as { items: VerificationItem[] }).items
-          : []
-      // Awaiting go-online decision = every document reviewed, nothing pending.
-      setItems(list.filter(v => Number(v.total_docs) > 0 && Number(v.docs_pending) === 0))
+      const [drivers, artisans, queue] = await Promise.all([
+        fetchAllProviders('driver'),
+        fetchAllProviders('artisan'),
+        getVerificationQueue().catch(() => []),
+      ])
+      // Index the doc-review queue by provider profile id for doc context.
+      const queueById = new Map(queue.map(q => [q.provider_id, q]))
+
+      const build = (u: PlatformUser, providerId: string, type: 'driver' | 'artisan'): PendingProvider => {
+        const q = queueById.get(providerId)
+        return {
+          userId: u.id,
+          providerId,
+          type,
+          name: u.fullName ?? null,
+          phone: u.phone ?? null,
+          createdAt: u.createdAt ?? '',
+          docsPending: q ? Number(q.docs_pending) : 0,
+          docsApproved: q ? Number(q.docs_approved) : 0,
+          docsRejected: q ? Number(q.docs_rejected) : 0,
+          totalDocs: q ? Number(q.total_docs) : 0,
+          documents: q?.documents ?? [],
+          inDocQueue: !!q && Number(q.docs_pending) > 0,
+        }
+      }
+
+      const pending: PendingProvider[] = []
+      for (const u of drivers) {
+        if (u.driver?.id && u.driver.verificationStatus === 'pending') pending.push(build(u, u.driver.id, 'driver'))
+      }
+      for (const u of artisans) {
+        if (u.artisan?.id && u.artisan.verificationStatus === 'pending') pending.push(build(u, u.artisan.id, 'artisan'))
+      }
+
+      // Ready-for-decision first, then oldest signups first.
+      pending.sort((a, b) => {
+        if (a.inDocQueue !== b.inDocQueue) return a.inDocQueue ? 1 : -1
+        return (a.createdAt || '').localeCompare(b.createdAt || '')
+      })
+      setProviders(pending)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load the approvals queue.')
     } finally {
@@ -310,14 +387,14 @@ export default function ProviderApprovalsPage() {
   useEffect(() => { load() }, [load])
   useAutoRefresh(load)
 
-  const filtered = items.filter(v => {
-    const name = v.provider_name?.toLowerCase() ?? ''
-    const matchSearch = name.includes(search.toLowerCase()) || v.provider_id.includes(search)
-    const matchType = typeFilter === 'all' || v.provider_type === typeFilter
+  const filtered = providers.filter(p => {
+    const name = p.name?.toLowerCase() ?? ''
+    const matchSearch = name.includes(search.toLowerCase()) || p.providerId.includes(search) || (p.phone ?? '').includes(search)
+    const matchType = typeFilter === 'all' || p.type === typeFilter
     return matchSearch && matchType
   })
 
-  const readyCount = items.filter(v => Number(v.docs_rejected) === 0).length
+  const readyCount = providers.filter(p => !p.inDocQueue).length
 
   return (
     <PageGuard permission="view_verifications">
@@ -334,7 +411,7 @@ export default function ProviderApprovalsPage() {
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
-                {items.length} Awaiting decision
+                {providers.length} Pending
               </span>
             </div>
             <Button variant="outline" size="sm" onClick={load} className="gap-2">
@@ -347,7 +424,7 @@ export default function ProviderApprovalsPage() {
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-          <Input placeholder="Search by name or ID…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+          <Input placeholder="Search by name, phone or ID…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger className="w-36 bg-white"><SelectValue placeholder="Type" /></SelectTrigger>
@@ -357,7 +434,7 @@ export default function ProviderApprovalsPage() {
             <SelectItem value="artisan">Artisans</SelectItem>
           </SelectContent>
         </Select>
-        <div className="ml-auto text-sm text-gray-400">{filtered.length} in queue</div>
+        <div className="ml-auto text-sm text-gray-400">{filtered.length} shown</div>
       </div>
 
       {error && (
@@ -370,8 +447,8 @@ export default function ProviderApprovalsPage() {
             <TableRow className="bg-gray-50">
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Provider</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</TableHead>
-              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Documents</TableHead>
-              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">First Upload</TableHead>
+              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Readiness</TableHead>
+              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Joined</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Decision</TableHead>
             </TableRow>
           </TableHeader>
@@ -392,61 +469,53 @@ export default function ProviderApprovalsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map(v => {
-                const rejected = Number(v.docs_rejected) > 0
-                return (
-                  <TableRow key={v.provider_id} className="hover:bg-gray-50">
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback className="bg-gray-100 text-gray-600 text-xs font-bold">
-                            {initials(v.provider_name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium text-sm text-gray-900">{v.provider_name ?? 'Unknown'}</p>
-                          <p className="text-xs text-gray-400 font-mono">{v.provider_id.slice(0, 8)}…</p>
-                        </div>
+              filtered.map(p => (
+                <TableRow key={`${p.type}:${p.providerId}`} className="hover:bg-gray-50">
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback className="bg-gray-100 text-gray-600 text-xs font-bold">
+                          {initials(p.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-medium text-sm text-gray-900">{p.name ?? 'Unknown'}</p>
+                        <p className="text-xs text-gray-400 font-mono">{p.providerId.slice(0, 8)}…</p>
                       </div>
-                    </TableCell>
-                    <TableCell><StatusBadge status={v.provider_type} /></TableCell>
-                    <TableCell>
-                      <DocsSummary
-                        approved={Number(v.docs_approved)}
-                        rejected={Number(v.docs_rejected)}
-                        total={Number(v.total_docs)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-500">{formatDate(v.first_upload_at)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 justify-end">
-                        <Button
-                          size="sm"
-                          className="gap-1.5 text-xs h-7 text-white"
-                          style={{ backgroundColor: rejected ? '#DC2626' : '#059669' }}
-                          onClick={() => setDeciding(v)}
-                        >
-                          {rejected ? 'Review & Reject' : 'Approve'}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })
+                    </div>
+                  </TableCell>
+                  <TableCell><StatusBadge status={p.type} /></TableCell>
+                  <TableCell><ReadinessBadge p={p} /></TableCell>
+                  <TableCell className="text-sm text-gray-500">{formatDate(p.createdAt)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2 justify-end">
+                      <Button
+                        size="sm"
+                        variant={p.inDocQueue ? 'outline' : 'default'}
+                        className="gap-1.5 text-xs h-7 text-white"
+                        style={p.inDocQueue ? undefined : { backgroundColor: p.docsRejected > 0 ? '#DC2626' : '#059669' }}
+                        onClick={() => setDeciding(p)}
+                      >
+                        {p.inDocQueue ? 'Review' : p.docsRejected > 0 ? 'Review & Reject' : 'Approve'}
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>
         <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
           <p className="text-xs text-gray-400">
-            {loading ? 'Loading…' : `Showing ${filtered.length} of ${items.length} providers`}
+            {loading ? 'Loading…' : `Showing ${filtered.length} of ${providers.length} pending providers`}
           </p>
         </div>
       </div>
 
       {deciding && (
         <DecisionDrawer
-          item={deciding}
-          onClose={() => { setDeciding(null); load() }}
+          provider={deciding}
+          onClose={() => setDeciding(null)}
           onDone={() => { setDeciding(null); load() }}
         />
       )}
