@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Radio, BadgeCheck, Scale, Users,
   Settings, Car, CreditCard, Megaphone, BarChart3, UserCog,
-  ChevronDown, LogOut, ClipboardList, BookOpen, Gift,
+  ChevronDown, ClipboardList, BookOpen, Gift,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -120,7 +120,7 @@ function NavLink({ item, can }: { item: NavItem; can: (p: Permission) => boolean
 }
 
 export default function AppSidebar() {
-  const { can, adminName, isSuperAdmin } = useRole()
+  const { can, isSuperAdmin } = useRole()
   const [pendingVerifications, setPendingVerifications] = useState<number | null>(null)
   const [openDisputes, setOpenDisputes] = useState<number | null>(null)
   const [unacknowledgedEmergencies, setUnacknowledgedEmergencies] = useState<number | null>(null)
@@ -271,11 +271,6 @@ export default function AppSidebar() {
     .map(s => ({ ...s, items: s.items.filter(itemVisible) }))
     .filter(s => s.items.length > 0)
 
-  // Initials from name
-  const initials = adminName
-    ? adminName.split(' ').slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('')
-    : '?'
-
   return (
     <aside className="w-56 shrink-0 h-screen bg-white flex flex-col">
       {/* Logo */}
@@ -302,24 +297,9 @@ export default function AppSidebar() {
         ))}
       </nav>
 
-      {/* User footer */}
-      <div className="px-3 py-3 space-y-1">
-        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-gray-50">
-          <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white text-[11px] font-bold" style={{ backgroundColor: '#F5A623' }}>
-            {initials}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-gray-800 truncate leading-tight">{adminName || 'Admin'}</p>
-            <p className="text-xs text-gray-400 truncate">Administrator</p>
-          </div>
-        </div>
-        <Link href="/login">
-          <button className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors text-sm">
-            <LogOut className="h-3.5 w-3.5" />
-            Sign Out
-          </button>
-        </Link>
-        <p className="text-center text-[10px] text-gray-300 pt-1">MyShop Admin v1.0</p>
+      {/* Footer */}
+      <div className="px-3 py-3">
+        <p className="text-center text-[10px] text-gray-300">MyShop Admin v1.0</p>
       </div>
     </aside>
   )

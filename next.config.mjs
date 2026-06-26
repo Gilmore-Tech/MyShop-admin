@@ -18,6 +18,11 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_GIT_SHA: sha,
     NEXT_PUBLIC_GIT_MESSAGE: message,
+    // Bridge the server-side Google Maps vars to the client bundle so the map
+    // components (which read NEXT_PUBLIC_*) work from the single GOOGLE_MAPS_*
+    // names already set in the environment (locally + on Render).
+    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY ?? '',
+    NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: process.env.GOOGLE_MAPS_MAP_ID ?? '',
   },
 }
 
