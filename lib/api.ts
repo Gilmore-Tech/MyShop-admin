@@ -1041,7 +1041,9 @@ export function deleteAdmin(adminId: string) {
 export type AnnouncementTopic = 'all_users' | 'clients' | 'drivers' | 'artisans'
 
 export function sendAnnouncement(title: string, body: string, topic: AnnouncementTopic) {
-  return api.post('/admin/announcements', { title, body, topic })
+  // Backend expects `targetAudience` with `all` (not `all_users`) for everyone.
+  const targetAudience = topic === 'all_users' ? 'all' : topic
+  return api.post('/admin/announcements', { title, body, targetAudience })
 }
 
 // ── Analytics chart endpoints ─────────────────────────────────────────────────

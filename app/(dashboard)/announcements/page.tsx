@@ -22,8 +22,6 @@ const AUDIENCE: { value: AnnouncementTopic; label: string; sub: string; icon: Re
 
 const CHANNEL_LABELS: Record<string, string> = {
   push: 'Push Notification',
-  banner: 'In-App Banner',
-  both: 'Push + In-App',
   sms: 'SMS (Arkesel)',
   sms_push: 'SMS + Push',
 }
@@ -39,7 +37,7 @@ function formatDateTime(iso: string) {
 
 export default function AnnouncementsPage() {
   const [topic, setTopic] = useState<AnnouncementTopic>('all_users')
-  const [channel, setChannel] = useState('both')
+  const [channel, setChannel] = useState('push')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
@@ -70,7 +68,7 @@ export default function AnnouncementsPage() {
     const label = AUDIENCE.find(a => a.value === topic)?.label ?? topic
 
     try {
-      const pushChannels = ['push', 'banner', 'both', 'sms_push']
+      const pushChannels = ['push', 'sms_push']
       const smsChannels = ['sms', 'sms_push']
 
       if (pushChannels.includes(channel)) {
@@ -160,8 +158,6 @@ export default function AnnouncementsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="push">Push Notification</SelectItem>
-                  <SelectItem value="banner">In-App Banner</SelectItem>
-                  <SelectItem value="both">Push + In-App</SelectItem>
                   <SelectItem value="sms">SMS only (Arkesel)</SelectItem>
                   <SelectItem value="sms_push">SMS + Push Notification</SelectItem>
                 </SelectContent>
