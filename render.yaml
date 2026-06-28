@@ -1,0 +1,46 @@
+# ============================================================================
+# MyShop Admin Console — Render Blueprint (staging)
+#
+# A Next.js web service that builds from the `staging` branch and points at the
+# staging backend API. NEXT_PUBLIC_* values are inlined at build time, so they
+# are set here (non-secret) or in the Render dashboard (secret, sync:false).
+#
+# To stand up production later, copy this service with branch: main and the
+# production API URL, or add a second service block below.
+# ============================================================================
+
+services:
+  - type: web
+    name: myshop-admin-staging
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: staging
+    autoDeploy: true
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /login
+    envVars:
+      # ── Environment ──
+      # Drives the bottom env banner + STAGING inference in lib/api-client.ts.
+      - key: NEXT_PUBLIC_ENV
+        value: STAGING
+      # ── Backend API (must include the /v1 prefix; WS has no prefix) ──
+      - key: NEXT_PUBLIC_API_URL
+        value: https://staging-api.myshop.com.gh/v1
+      - key: NEXT_PUBLIC_WS_URL
+        value: wss://staging-api.myshop.com.gh
+      # ── Feature flags ──
+      - key: NEXT_PUBLIC_FEATURE_HIGH_BID_REVIEW
+        value: 'false'
+      - key: NEXT_PUBLIC_FEATURE_NEARBY_ARTISAN_HAVERSINE
+        value: 'false'
+      # ── Secrets (set in the Render dashboard — never committed) ──
+      - key: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
+        sync: false
+      - key: NEXT_PUBLIC_MAPBOX_TOKEN
+        sync: false
+      - key: NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+        sync: false
