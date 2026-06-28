@@ -441,6 +441,17 @@ export function finalizeVerification(
   return api.patch(`/admin/verifications/${providerId}/finalize`, { action, providerType, reason })
 }
 
+// Who performed each verification stage (from the audit trail).
+export interface StageApprover { by: string; at: string }
+export interface VerificationHistory {
+  stage1: StageApprover | null                                            // Admin submitted to coordinator
+  stage2: StageApprover | null                                            // Coordinator validated
+  stage3: (StageApprover & { decision: 'approved' | 'rejected' }) | null  // RM finalized
+}
+export function getVerificationHistory(providerId: string, providerType: 'driver' | 'artisan') {
+  return api.get<VerificationHistory>(`/admin/verifications/${providerId}/history?providerType=${providerType}`)
+}
+
 // Lifts an auto-suspension (rating-engine or cancellation-engine triggered).
 // Backend flips driver/artisan.verificationStatus back to 'approved' and updates
 // the matching ProviderSuspension row with reinstatedAt/reinstatedBy.
