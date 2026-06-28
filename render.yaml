@@ -27,9 +27,9 @@ services:
         value: STAGING
       # ── Backend API (must include the /v1 prefix; WS has no prefix) ──
       - key: NEXT_PUBLIC_API_URL
-        value: https://staging-api.myshop.com.gh/v1
+        value: https://myshop-api-test.onrender.com/v1
       - key: NEXT_PUBLIC_WS_URL
-        value: wss://staging-api.myshop.com.gh
+        value: wss://myshop-api-test.onrender.com
       # ── Feature flags ──
       - key: NEXT_PUBLIC_FEATURE_HIGH_BID_REVIEW
         value: 'false'
