@@ -71,11 +71,18 @@ export interface RevenueDataPoint {
   commissionGhs: number
   payoutsGhs: number
   tipsGhs: number
+  // Refunds returned to clients and dispute-clawbacks recovered from providers
+  // in this period. netRevenueGhs = commission − refunds + clawbacks (the
+  // platform's true take; can be negative in a refund-heavy period).
+  refundsGhs: number
+  clawbacksGhs: number
+  netRevenueGhs: number
   totalPayments: number
   successfulPayments: number
   paymentSuccessRatePct: number | null
   momoCount: number
   cardCount: number
+  cashCount: number
 }
 
 export interface RevenueReport {
@@ -101,11 +108,15 @@ export async function getRevenueReport(params?: { from?: string; to?: string; gr
     commissionGhs:        p.commissionGhs         ?? p.commission_ghs     ?? 0,
     payoutsGhs:           p.payoutsGhs            ?? p.payouts_ghs        ?? 0,
     tipsGhs:              p.tipsGhs               ?? p.tips_ghs           ?? 0,
+    refundsGhs:           p.refundsGhs            ?? p.refunds_ghs        ?? 0,
+    clawbacksGhs:         p.clawbacksGhs          ?? p.clawbacks_ghs      ?? 0,
+    netRevenueGhs:        p.netRevenueGhs         ?? p.net_revenue_ghs    ?? ((p.commissionGhs ?? 0) - (p.refundsGhs ?? 0) + (p.clawbacksGhs ?? 0)),
     totalPayments:        p.totalPayments         ?? p.total_payments     ?? 0,
     successfulPayments:   p.successfulPayments    ?? p.successful_payments ?? 0,
     paymentSuccessRatePct: p.paymentSuccessRatePct ?? p.payment_success_rate_pct ?? null,
     momoCount:            p.momoCount             ?? p.momo_count         ?? 0,
     cardCount:            p.cardCount             ?? p.card_count         ?? 0,
+    cashCount:            p.cashCount             ?? p.cash_count         ?? 0,
   }))
   return { from: raw.from ?? '', to: raw.to ?? '', groupBy: raw.groupBy ?? 'day', periods }
 }
@@ -2017,7 +2028,7 @@ export function resolveWelfareCheck(
 
 // ── Transactions ─────────────────────────────────────────────────────────────
 
-export type TransactionType = 'collection' | 'payout' | 'refund' | 'clawback' | 'tip'
+export type TransactionType = 'collection' | 'payout' | 'refund' | 'clawback' | 'tip' | 'remittance'
 
 export interface AdminTransaction {
   id: string
