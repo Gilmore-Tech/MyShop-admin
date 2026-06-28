@@ -3,7 +3,7 @@
  * All endpoints map directly to the NestJS backend (v1 prefix).
  */
 import { api, apiFetch, AdminUser, setTokens, setAdminUser, clearTokens } from './api-client'
-import type { Permission } from './roles'
+import type { Permission, Role, CategoryScope } from './roles'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -308,10 +308,20 @@ export interface ProviderDocument {
   isCurrent: boolean
 }
 
+// Pipeline stage of a provider in the verification queue.
+export type VerificationStage =
+  | 'pending_documents'      // awaiting admin per-document authenticity checks
+  | 'docs_verified'          // admin done; awaiting coordinator validation
+  | 'coordinator_validated'  // coordinator done; awaiting RM final decision
+  | 'online'                 // RM approved + sent online (leaves the queue)
+
 export interface VerificationItem {
   provider_type: string
   provider_id: string
   provider_name: string | null
+  verification_stage: VerificationStage | null
+  region_id: string | null
+  region_name: string | null
   docs_pending: number
   docs_approved: number
   docs_rejected: number
@@ -357,6 +367,9 @@ function normaliseItem(v: any): VerificationItem {
   return {
     provider_type:  v.provider_type  ?? v.providerType  ?? '',
     provider_id:    v.provider_id    ?? v.providerId    ?? '',
+    verification_stage: (v.verification_stage ?? v.verificationStage ?? null) as VerificationStage | null,
+    region_id:      v.region_id      ?? v.regionId      ?? null,
+    region_name:    v.region_name    ?? v.regionName    ?? null,
     provider_name:  v.provider_name  ?? v.providerName  ?? null,
     docs_pending:   Number(v.docs_pending   ?? v.docsPending   ?? 0),
     docs_approved:  Number(v.docs_approved  ?? v.docsApproved  ?? 0),
@@ -367,8 +380,11 @@ function normaliseItem(v: any): VerificationItem {
   }
 }
 
-export async function getVerificationQueue(): Promise<VerificationItem[]> {
-  const raw = await api.get<any>('/admin/verifications')
+export async function getVerificationQueue(
+  opts?: { stage?: VerificationStage },
+): Promise<VerificationItem[]> {
+  const qs = opts?.stage ? `?stage=${encodeURIComponent(opts.stage)}` : ''
+  const raw = await api.get<any>(`/admin/verifications${qs}`)
   const arr: any[] = Array.isArray(raw) ? raw : (raw as any)?.items ?? []
   return arr.map(normaliseItem)
 }
@@ -384,17 +400,34 @@ export async function getVerificationItem(
   return queue.find(v => v.provider_id === providerId && v.provider_type === providerType) ?? null
 }
 
-// PATCH /admin/verifications/:providerId
-// Backend expects { action: 'approve' | 'reject', providerType: 'driver' | 'artisan', reason }.
-// (docs/admin-auth-flow.md §4.4 says `decision: 'approved'|'rejected'` but that's stale —
-// the deployed validator rejects it with VALIDATION_ERROR.)
-export function reviewVerification(
+// ── 3-stage verification pipeline (Admin → Coordinator → RM) ──────────────────
+
+// Stage 1→2 (Admin). After every current document has been approved/rejected,
+// submit the provider to the category coordinator. POST /admin/verifications/:id/submit
+export function submitVerification(providerId: string, providerType: 'driver' | 'artisan') {
+  return api.post(`/admin/verifications/${providerId}/submit`, { providerType })
+}
+
+// Stage 2→3 (Coordinator). Validate the admin-approved set for your category, or
+// bounce it back. PATCH /admin/verifications/:id/validate
+export function validateVerification(
   providerId: string,
-  providerType: string,
+  providerType: 'driver' | 'artisan',
   action: 'approve' | 'reject',
   reason: string,
 ) {
-  return api.patch(`/admin/verifications/${providerId}`, { action, providerType, reason })
+  return api.patch(`/admin/verifications/${providerId}/validate`, { action, providerType, reason })
+}
+
+// Stage 3 (Regional Manager). Final decision — the only step that sends a
+// provider online. PATCH /admin/verifications/:id/finalize
+export function finalizeVerification(
+  providerId: string,
+  providerType: 'driver' | 'artisan',
+  action: 'approve' | 'reject',
+  reason: string,
+) {
+  return api.patch(`/admin/verifications/${providerId}/finalize`, { action, providerType, reason })
 }
 
 // Lifts an auto-suspension (rating-engine or cancellation-engine triggered).
@@ -985,15 +1018,30 @@ export async function getAuditLogs(params?: AuditLogParams): Promise<AuditLogRes
 
 // ── Admin Account Management ──────────────────────────────────────────────────
 
+export interface Region {
+  id: string
+  name: string
+  code: string
+}
+
 export interface AdminAccount {
   id: string
   email: string
   fullName: string
+  role: Role | null
   permissions: Permission[]
+  regionId: string | null
+  categoryScope: CategoryScope | null
+  region: Region | null
   regionScope: string | null
   isActive: boolean
   lastLoginAt: string | null
   createdAt: string
+}
+
+// GET /admin/regions — active operational regions for the account picker.
+export function listRegions() {
+  return api.get<Region[]>('/admin/regions')
 }
 
 export function listAdmins() {
@@ -1004,20 +1052,28 @@ export function getAdmin(adminId: string) {
   return api.get<AdminAccount>(`/admin/admins/${adminId}`)
 }
 
+// Role-first create. Supply `role` (+ `regionId` for region-scoped roles); the
+// backend derives permissions + category scope. `permissions` is an optional
+// advanced override.
 export function createAdmin(data: {
   email: string
   fullName: string
-  permissions: Permission[]
   password: string
-  regionScope?: string
+  role?: Role
+  regionId?: string
+  permissions?: Permission[]
 }) {
   return api.post<AdminAccount>('/admin/admins', data)
 }
 
-// Replace an admin's full permission set. Backend rejects editing your own
-// permissions and removing manage_admins from the last holder.
-export function updateAdminPermissions(adminId: string, permissions: Permission[]) {
-  return api.patch<AdminAccount>(`/admin/admins/${adminId}/permissions`, { permissions })
+// Update an admin's role/scope (re-derives permissions) or replace permissions
+// directly. Backend rejects editing your own permissions and removing
+// manage_admins from the last holder.
+export function updateAdminPermissions(
+  adminId: string,
+  data: { role?: Role; regionId?: string; permissions?: Permission[] },
+) {
+  return api.patch<AdminAccount>(`/admin/admins/${adminId}/permissions`, data)
 }
 
 export function deactivateAdmin(adminId: string) {

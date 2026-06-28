@@ -11,11 +11,11 @@
 export type Permission =
   | 'view_dashboard'
   | 'view_analytics'
-  | 'view_rides_analytics'
-  | 'view_artisans_analytics'
   | 'view_live_map'
   | 'view_verifications'
-  | 'review_verification'
+  | 'verify_documents'
+  | 'validate_verification'
+  | 'finalize_verification'
   | 'lift_verification_suspension'
   | 'view_disputes'
   | 'resolve_dispute'
@@ -84,9 +84,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     group: 'Dashboard & Analytics',
     permissions: [
       { key: 'view_dashboard', label: 'View dashboard', description: 'Access the dashboard overview and KPIs' },
-      { key: 'view_analytics', label: 'View analytics', description: 'Analytics page access + cross-platform overview charts' },
-      { key: 'view_rides_analytics', label: 'View rides analytics', description: 'Ride status breakdown and top-driver leaderboard' },
-      { key: 'view_artisans_analytics', label: 'View artisans analytics', description: 'Job category mix and top-artisan leaderboard' },
+      { key: 'view_analytics', label: 'View analytics', description: 'Analytics page access + cross-platform overview charts (filtered by category scope)' },
       { key: 'view_activity', label: 'View activity feed', description: 'Platform-wide recent activity stream' },
     ],
   },
@@ -112,7 +110,9 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     group: 'Verification',
     permissions: [
       { key: 'view_verifications', label: 'View verification queue', description: 'Provider documents and client KYC queue' },
-      { key: 'review_verification', label: 'Review verification', description: 'Approve or reject provider documents' },
+      { key: 'verify_documents', label: 'Verify documents', description: 'Stage 1 — check each document for authenticity, then submit to the coordinator' },
+      { key: 'validate_verification', label: 'Validate verification', description: 'Stage 2 — coordinator validates the approved set before the RM' },
+      { key: 'finalize_verification', label: 'Finalize verification', description: 'Stage 3 — RM final decision that sends the provider online' },
       { key: 'lift_verification_suspension', label: 'Lift verification suspension', description: 'Reinstate an auto-suspended provider' },
     ],
   },
@@ -215,4 +215,149 @@ export function can(
 ): boolean {
   if (!permissions) return false
   return permissions.includes(permission)
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Named roles + data scope
+//
+// Mirrors apps/api/src/common/permissions/permission.catalogue.ts (ADMIN_ROLES /
+// ADMIN_ROLE_DEFINITIONS) — keep the two in sync. A role is a fixed permission
+// bundle plus a data scope (region + category). The backend is authoritative
+// (it derives `permissions` from the role); these definitions drive the admin
+// account picker and let the UI reason about a role offline.
+// ════════════════════════════════════════════════════════════════════════════
+
+export type Role =
+  | 'product_owner'
+  | 'director'
+  | 'accountant'
+  | 'regional_manager'
+  | 'coordinator_rides'
+  | 'coordinator_artisan'
+  | 'back_officer'
+  | 'admin'
+
+export type CategoryScope = 'rides' | 'artisan'
+
+export interface RoleDef {
+  role: Role
+  level: number | null
+  label: string
+  description: string
+  requiresRegion: boolean
+  requiresCategory: boolean
+  category: CategoryScope | null
+  global: boolean
+  permissions: Permission[]
+}
+
+const ADMIN_BASE: Permission[] = [
+  'view_dashboard', 'view_activity', 'view_verifications', 'verify_documents',
+  'view_users', 'view_jobs', 'view_rides', 'view_help_articles', 'edit_help_articles',
+]
+
+const BACK_OFFICER_EXTRA: Permission[] = [
+  'suspend_user', 'force_logout_user', 'unlock_payout_method', 'view_session_recovery',
+  'resolve_session_recovery', 'view_emergency', 'resolve_welfare_check', 'view_disputes',
+]
+
+const COORDINATOR_SHARED: Permission[] = [
+  'view_dashboard', 'view_activity', 'view_live_map', 'view_analytics', 'view_reports',
+  'view_revenue_report', 'view_pilot_report', 'view_verifications', 'validate_verification',
+  'view_users', 'suspend_user', 'ban_user', 'force_logout_user', 'unlock_payout_method',
+  'view_session_recovery', 'resolve_session_recovery', 'view_disputes', 'resolve_dispute',
+  'view_emergency', 'resolve_welfare_check', 'view_payments', 'send_announcement',
+  'view_promotions', 'manage_promotions', 'view_referrals',
+]
+
+const COORDINATOR_RIDES_OPS: Permission[] = [
+  'view_rides', 'intervene_ride', 'view_ride_categories', 'edit_ride_categories', 'view_rides_report',
+]
+
+const COORDINATOR_ARTISAN_OPS: Permission[] = [
+  'view_jobs', 'assign_job', 'delete_job', 'review_bid', 'view_categories', 'edit_categories', 'view_artisans_report',
+]
+
+const dedupe = (perms: Permission[]): Permission[] => [...new Set(perms)]
+
+const REGIONAL_MANAGER_PERMS = dedupe([
+  ...COORDINATOR_SHARED, ...COORDINATOR_RIDES_OPS, ...COORDINATOR_ARTISAN_OPS,
+  'finalize_verification', 'lift_verification_suspension', 'delete_user', 'delete_category',
+  'run_batch_payouts', 'escalate_clawback', 'write_off_clawback', 'view_ussd', 'manage_referrals', 'view_audit_logs',
+])
+
+const DIRECTOR_PERMS = dedupe(ALL_PERMISSIONS.filter(p => p !== 'manage_admins' && p !== 'view_config'))
+
+const ACCOUNTANT_PERMS: Permission[] = dedupe([
+  'view_dashboard', 'view_analytics', 'view_activity', 'view_reports', 'view_rides_report',
+  'view_artisans_report', 'view_revenue_report', 'view_pilot_report', 'view_payments',
+  'view_users', 'view_jobs', 'view_rides', 'view_disputes', 'view_audit_logs',
+])
+
+export const ROLE_DEFINITIONS: Record<Role, RoleDef> = {
+  product_owner: {
+    role: 'product_owner', level: 1, label: 'Product Owner',
+    description: 'Full platform access including account and configuration management.',
+    requiresRegion: false, requiresCategory: false, category: null, global: true,
+    permissions: [...ALL_PERMISSIONS],
+  },
+  director: {
+    role: 'director', level: 2, label: 'Director of Business Operations',
+    description: 'Views everything nationwide + operational actions. No account or config management.',
+    requiresRegion: false, requiresCategory: false, category: null, global: true,
+    permissions: DIRECTOR_PERMS,
+  },
+  accountant: {
+    role: 'accountant', level: null, label: 'Accountant',
+    description: 'Global read-only finance plus all reports and analytics. No money-moving actions.',
+    requiresRegion: false, requiresCategory: false, category: null, global: true,
+    permissions: ACCOUNTANT_PERMS,
+  },
+  regional_manager: {
+    role: 'regional_manager', level: 3, label: 'Regional Manager',
+    description: 'Everything within one region, both categories. Performs the final verification that sends providers online.',
+    requiresRegion: true, requiresCategory: false, category: null, global: false,
+    permissions: REGIONAL_MANAGER_PERMS,
+  },
+  coordinator_rides: {
+    role: 'coordinator_rides', level: 4, label: 'Coordinator — Rides',
+    description: 'Rides vertical within one region. Validates verified documents before the RM finalizes.',
+    requiresRegion: true, requiresCategory: true, category: 'rides', global: false,
+    permissions: dedupe([...COORDINATOR_SHARED, ...COORDINATOR_RIDES_OPS]),
+  },
+  coordinator_artisan: {
+    role: 'coordinator_artisan', level: 4, label: 'Coordinator — Artisan',
+    description: 'Artisan vertical within one region. Validates verified documents before the RM finalizes.',
+    requiresRegion: true, requiresCategory: true, category: 'artisan', global: false,
+    permissions: dedupe([...COORDINATOR_SHARED, ...COORDINATOR_ARTISAN_OPS]),
+  },
+  back_officer: {
+    role: 'back_officer', level: 5, label: 'Back Officer',
+    description: 'Supervises admin office work within one region. All admin permissions plus escalation handling.',
+    requiresRegion: true, requiresCategory: false, category: null, global: false,
+    permissions: dedupe([...ADMIN_BASE, ...BACK_OFFICER_EXTRA]),
+  },
+  admin: {
+    role: 'admin', level: 6, label: 'Admin',
+    description: 'Office work within one region. Checks each document for authenticity and integrity.',
+    requiresRegion: true, requiresCategory: false, category: null, global: false,
+    permissions: dedupe(ADMIN_BASE),
+  },
+}
+
+/** All roles in hierarchy order (Accountant last as a specialist). */
+export const ROLE_ORDER: Role[] = [
+  'product_owner', 'director', 'regional_manager', 'coordinator_rides',
+  'coordinator_artisan', 'back_officer', 'admin', 'accountant',
+]
+
+/** The authoritative permission bundle for a named role. */
+export function permissionsForRole(role: Role): Permission[] {
+  return [...ROLE_DEFINITIONS[role].permissions]
+}
+
+/** Human label for a role value (falls back to the raw value). */
+export function roleLabel(role: string | null | undefined): string {
+  if (!role) return 'Custom'
+  return (ROLE_DEFINITIONS as Record<string, RoleDef>)[role]?.label ?? role
 }

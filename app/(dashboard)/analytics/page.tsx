@@ -300,8 +300,8 @@ export default function AnalyticsPage() {
  // to reach this page at all. Only tabs the admin holds are shown.
  const allTabs: { id: AnalyticsTab; label: string; icon: React.ElementType; permission: Permission }[] = [
  { id:'overview', label:'Overview',         icon: TrendingUp, permission:'view_analytics' },
- { id:'rides',    label:'Rides',            icon: Car,        permission:'view_rides_analytics' },
- { id:'artisans', label:'Artisan Services', icon: Wrench,     permission:'view_artisans_analytics' },
+ { id:'rides',    label:'Rides',            icon: Car,        permission:'view_analytics' },
+ { id:'artisans', label:'Artisan Services', icon: Wrench,     permission:'view_analytics' },
  ]
  const tabs = allTabs.filter(t => can(t.permission))
 

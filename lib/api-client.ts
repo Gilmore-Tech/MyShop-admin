@@ -3,7 +3,7 @@
  * Base URL: https://myshop-api-2hy2.onrender.com/v1
  * Auth: Bearer JWT (admin-jwt strategy)
  */
-import type { Permission } from './roles'
+import type { Permission, Role, CategoryScope } from './roles'
 
 // In the browser during local dev, route through the Next.js rewrite proxy to avoid CORS.
 // In production (or when NEXT_PUBLIC_API_URL is set), hit the API directly.
@@ -82,12 +82,14 @@ export interface AdminUser {
   email: string
   fullName: string
   permissions: Permission[]
+  // Named role + data scope (mirrors the backend). `role` null = legacy/custom
+  // admin; `regionId`/`categoryScope` null = global (owner/director/accountant).
+  role: Role | null
+  regionId: string | null
+  regionName: string | null
+  categoryScope: CategoryScope | null
+  // Legacy free-text region marker, superseded by regionId.
   regionScope: string | null
-  // The single immutable root admin. Only this account may create admins and
-  // assign permissions; the backend enforces it server-side and carries the flag
-  // in the JWT. Optional so the UI degrades to the legacy `manage_admins` check
-  // until the backend ships the field (see docs/backend-requests.md §8).
-  isSuperAdmin?: boolean
 }
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
