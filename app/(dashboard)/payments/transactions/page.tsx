@@ -26,7 +26,13 @@ const txTypeColors: Record<string, string> = {
   refund: 'bg-gray-100 text-gray-600',
   clawback: 'bg-gray-100 text-gray-600',
   tip: 'bg-gray-100 text-gray-600',
+  remittance: 'bg-gray-100 text-gray-600',
 }
+
+// Selectable transaction sources for the type filter. Mirrors the backend
+// TransactionType union (collections, payouts, refunds, clawbacks, tips,
+// cash-commission remittances).
+const TYPE_OPTIONS = ['collection', 'payout', 'refund', 'clawback', 'tip', 'remittance'] as const
 
 function formatDateTime(iso: string) {
   return new Date(iso).toLocaleString('en-GB', {
@@ -35,7 +41,9 @@ function formatDateTime(iso: string) {
   })
 }
 
-const STATUS_OPTIONS = ['pending', 'escrowed', 'completed', 'failed', 'refunded', 'disputed'] as const
+// Canonical status vocabulary the backend translates per source (a 'completed'
+// filter matches escrowed/completed payments, completed payouts, etc.).
+const STATUS_OPTIONS = ['pending', 'completed', 'failed', 'refunded'] as const
 const SEARCH_DEBOUNCE_MS = 300
 const POLL_INTERVAL_MS = 30_000
 
@@ -162,6 +170,15 @@ export default function TransactionsPage() {
             onChange={e => setSearchInput(e.target.value)}
           />
         </div>
+        <Select value={typeFilter} onValueChange={v => setParams({ type: v })}>
+          <SelectTrigger className="w-36 bg-white"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            {TYPE_OPTIONS.map(t => (
+              <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={statusFilter} onValueChange={v => setParams({ status: v })}>
           <SelectTrigger className="w-36 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
@@ -198,6 +215,7 @@ export default function TransactionsPage() {
             <TableRow className="bg-gray-50">
               <TableHead>Date / Time</TableHead>
               <TableHead>Transaction ID</TableHead>
+              <TableHead>Type</TableHead>
               <TableHead>Amount</TableHead>
               <TableHead>Method</TableHead>
               <TableHead>Status</TableHead>
@@ -207,14 +225,14 @@ export default function TransactionsPage() {
             {loading ? (
               [...Array(8)].map((_, i) => (
                 <TableRow key={i}>
-                  {[...Array(5)].map((_, j) => (
+                  {[...Array(6)].map((_, j) => (
                     <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : transactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-12 text-gray-400 text-sm">
+                <TableCell colSpan={6} className="text-center py-12 text-gray-400 text-sm">
                   {error ? 'No transactions to display while the endpoint is unavailable.' : 'No transactions found'}
                 </TableCell>
               </TableRow>
@@ -227,6 +245,11 @@ export default function TransactionsPage() {
                 >
                   <TableCell className="text-sm text-gray-500 whitespace-nowrap">{formatDateTime(tx.createdAt)}</TableCell>
                   <TableCell className="font-mono text-sm font-medium text-gray-900">{tx.id.slice(-10).toUpperCase()}</TableCell>
+                  <TableCell>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${txTypeColors[tx.type] ?? 'bg-gray-100 text-gray-600'}`}>
+                      {tx.type}
+                    </span>
+                  </TableCell>
                   <TableCell className={`text-sm font-semibold tabular-nums ${tx.type === 'refund' || tx.type === 'clawback' || tx.type === 'payout' ? 'text-red-600' : 'text-gray-900'}`}>
                     {formatTransactionAmount(tx.amountPesewas, tx.type)}
                   </TableCell>
