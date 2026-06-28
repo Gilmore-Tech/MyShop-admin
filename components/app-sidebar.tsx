@@ -13,9 +13,9 @@ import { getOverviewReport, getEmergencyAlerts, getClientKycQueue, getUnassigned
 import { FEATURES } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
-import { type Permission } from '@/lib/roles'
+import { type Permission, type CategoryScope, roleLabel } from '@/lib/roles'
 
-type ChildItem = { title: string; href: string; permission?: Permission; badge?: number; badgeVariant?: 'red' | 'amber' }
+type ChildItem = { title: string; href: string; permission?: Permission; badge?: number; badgeVariant?: 'red' | 'amber'; category?: CategoryScope }
 
 type NavItem = {
   title: string
@@ -23,6 +23,8 @@ type NavItem = {
   icon: React.ElementType
   badge?: number
   permission?: Permission
+  // Constrain to one vertical — hidden from a coordinator scoped to the other.
+  category?: CategoryScope
   // Visible only to the single root admin (is_super_admin). Used for the Admin
   // Accounts entry so account/permission management is root-only.
   superAdmin?: boolean
@@ -41,7 +43,15 @@ function Badge({ count, variant = 'red' }: { count: number; variant?: 'red' | 'a
   )
 }
 
-function NavLink({ item, can }: { item: NavItem; can: (p: Permission) => boolean }) {
+// A child is visible when the user holds its permission (if any) and it isn't
+// constrained to the *other* category than the user's scope.
+function childAllowed(c: ChildItem, can: (p: Permission) => boolean, userCategory: CategoryScope | null): boolean {
+  if (c.permission && !can(c.permission)) return false
+  if (c.category && userCategory && c.category !== userCategory) return false
+  return true
+}
+
+function NavLink({ item, can, userCategory }: { item: NavItem; can: (p: Permission) => boolean; userCategory: CategoryScope | null }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(() =>
     item.children?.some(c => pathname.startsWith(c.href)) ?? false
@@ -50,7 +60,7 @@ function NavLink({ item, can }: { item: NavItem; can: (p: Permission) => boolean
     || (item.href === '/users/clients' && pathname.startsWith('/users'))
 
   if (item.children) {
-    const visibleChildren = item.children.filter(c => !c.permission || can(c.permission))
+    const visibleChildren = item.children.filter(c => childAllowed(c, can, userCategory))
     // Hide the whole group if permissions filter out every child
     if (visibleChildren.length === 0) return null
 
@@ -120,7 +130,7 @@ function NavLink({ item, can }: { item: NavItem; can: (p: Permission) => boolean
 }
 
 export default function AppSidebar() {
-  const { can, isSuperAdmin } = useRole()
+  const { can, isSuperAdmin, role, region, category } = useRole()
   const [pendingVerifications, setPendingVerifications] = useState<number | null>(null)
   const [openDisputes, setOpenDisputes] = useState<number | null>(null)
   const [unacknowledgedEmergencies, setUnacknowledgedEmergencies] = useState<number | null>(null)
@@ -188,25 +198,27 @@ export default function AppSidebar() {
       label: 'Marketplace',
       items: [
         {
-          title: 'Trips & Services', href: '/rides', icon: Car, permission: 'view_rides',
+          // No parent-level permission — each child is gated and category-scoped
+          // so a rides coordinator sees only ride surfaces and vice-versa.
+          title: 'Trips & Services', href: '/rides', icon: Car,
           children: [
-            { title: 'All Rides',          href: '/rides' },
-            { title: 'Artisan Jobs',       href: '/artisan-jobs' },
-            { title: 'Manual Assignment',  href: '/artisan-jobs/manual-assignment', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
+            { title: 'All Rides',          href: '/rides',         permission: 'view_rides', category: 'rides' },
+            { title: 'Ride Tiers',         href: '/ride-categories', permission: 'view_ride_categories', category: 'rides' },
+            { title: 'Artisan Jobs',       href: '/artisan-jobs',  permission: 'view_jobs', category: 'artisan' },
+            { title: 'Manual Assignment',  href: '/artisan-jobs/manual-assignment', permission: 'assign_job', category: 'artisan', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
             ...(FEATURES.highBidReview
-              ? [{ title: 'High Bid Review', href: '/artisan-jobs/high-bid-review', permission: 'review_bid' as const, badge: highBidCount ?? undefined }]
+              ? [{ title: 'High Bid Review', href: '/artisan-jobs/high-bid-review', permission: 'review_bid' as const, category: 'artisan' as const, badge: highBidCount ?? undefined }]
               : []),
-            { title: 'Service Categories', href: '/categories', permission: 'view_categories' },
-            { title: 'Ride Tiers',         href: '/ride-categories', permission: 'view_ride_categories' },
+            { title: 'Service Categories', href: '/categories',    permission: 'view_categories', category: 'artisan' },
           ],
         },
         {
-          title: 'Payments', href: '/payments', icon: CreditCard, permission: 'view_payments',
+          title: 'Payments', href: '/payments', icon: CreditCard,
           children: [
-            { title: 'Transactions',  href: '/payments/transactions' },
-            { title: 'Revenue',       href: '/payments/revenue' },
-            { title: 'Batch Payouts', href: '/payments/batch-payouts' },
-            { title: 'Clawbacks',     href: '/payments/clawbacks' },
+            { title: 'Transactions',  href: '/payments/transactions', permission: 'view_payments' },
+            { title: 'Revenue',       href: '/payments/revenue',      permission: 'view_payments' },
+            { title: 'Batch Payouts', href: '/payments/batch-payouts', permission: 'run_batch_payouts' },
+            { title: 'Clawbacks',     href: '/payments/clawbacks',    permission: 'view_payments' },
           ],
         },
       ],
@@ -258,11 +270,13 @@ export default function AppSidebar() {
     },
   ]
 
-  // A section is visible if at least one of its items survives permission filtering.
+  // A section is visible if at least one of its items survives permission +
+  // category filtering.
   function itemVisible(item: NavItem): boolean {
     if (item.superAdmin) return isSuperAdmin
+    if (item.category && category && item.category !== category) return false
     if (item.children) {
-      return item.children.some(c => !c.permission || can(c.permission))
+      return item.children.some(c => childAllowed(c, can, category))
     }
     return !item.permission || can(item.permission)
   }
@@ -291,13 +305,22 @@ export default function AppSidebar() {
             <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-widest px-3 mb-1.5">
               {section.label}
             </p>
-            {section.items.map(item => <NavLink key={item.href} item={item} can={can} />)}
+            {section.items.map(item => <NavLink key={item.href} item={item} can={can} userCategory={category} />)}
           </div>
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="px-3 py-3">
+      {/* Scope indicator + footer */}
+      <div className="px-3 py-3 space-y-2">
+        {role && (
+          <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{roleLabel(role)}</p>
+            <p className="text-[11px] text-gray-600 mt-0.5">
+              {region.name ?? 'All regions'}
+              {category ? ` · ${category === 'rides' ? 'Rides' : 'Artisan'}` : ''}
+            </p>
+          </div>
+        )}
         <p className="text-center text-[10px] text-gray-300">MyShop Admin v1.0</p>
       </div>
     </aside>

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
-import { updateUser, reinstateUser, suspendUser, banUser, deleteUser, forceLogoutUser, getProviderDocuments, reviewVerification, reviewClientKyc, getUser, unlockPayoutMethod, liftVerificationSuspension, type PlatformUser, type ProviderSuspension, type UserProviderDocument, type UserProviderGroup } from '@/lib/api'
+import { updateUser, reinstateUser, suspendUser, banUser, deleteUser, forceLogoutUser, getProviderDocuments, finalizeVerification, reviewClientKyc, getUser, unlockPayoutMethod, liftVerificationSuspension, type PlatformUser, type ProviderSuspension, type UserProviderDocument, type UserProviderGroup } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { VerifyClientKycDialog, clientKycBadge } from './verify-client-kyc-dialog'
@@ -552,7 +552,8 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
   const canForceLogout = can('force_logout_user')
   const canLiftVerification = can('lift_verification_suspension')
   const canViewVerifications = can('view_verifications')
-  const canReviewVerification = can('review_verification')
+  // The profile-sheet inline review maps to the RM final decision.
+  const canReviewVerification = can('finalize_verification')
 
   function startEdit() {
     if (!u) return
@@ -643,7 +644,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
     setVerifyLoading(true)
     setVerifyError('')
     try {
-      await reviewVerification(verifyDialog.providerId, verifyDialog.providerType, verifyAction, verifyReason.trim())
+      await finalizeVerification(verifyDialog.providerId, verifyDialog.providerType, verifyAction, verifyReason.trim())
       setVerifyDialog(null)
       if (u) {
         const updated: PlatformUser = {

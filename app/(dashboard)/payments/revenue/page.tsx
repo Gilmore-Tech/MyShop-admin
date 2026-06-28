@@ -79,6 +79,10 @@ export default function RevenuePage() {
   const totalCommission  = periods.reduce((s, d) => s + d.commissionGhs, 0)
   const totalPayouts     = periods.reduce((s, d) => s + d.payoutsGhs, 0)
   const totalTips        = periods.reduce((s, d) => s + d.tipsGhs, 0)
+  const totalRefunds     = periods.reduce((s, d) => s + (d.refundsGhs ?? 0), 0)
+  const totalClawbacks   = periods.reduce((s, d) => s + (d.clawbacksGhs ?? 0), 0)
+  // Platform net take: commission earned, less refunds funded, plus recoveries.
+  const totalNetRevenue  = periods.reduce((s, d) => s + (d.netRevenueGhs ?? 0), 0)
   const totalPayments    = periods.reduce((s, d) => s + d.totalPayments, 0)
   const totalSuccessful  = periods.reduce((s, d) => s + d.successfulPayments, 0)
   const totalMomo        = periods.reduce((s, d) => s + d.momoCount, 0)
@@ -181,26 +185,40 @@ export default function RevenuePage() {
         )
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             <Card>
               <CardContent className="p-5">
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Total Collections</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{formatGhs(totalCollections)}</p>
-                <p className="text-xs text-gray-500 mt-1">All inbound payments</p>
+                <p className="text-xs text-gray-500 mt-1">Money received (excl. failed)</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Commission Earned</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{formatGhs(totalCommission)}</p>
+                <p className="text-xs text-gray-500 mt-1">Gross, before refunds</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Net Revenue</p>
+                <p className={`text-2xl font-bold mt-1 ${totalNetRevenue < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatGhs(totalNetRevenue)}</p>
+                <p className="text-xs text-emerald-600 mt-1">Commission − refunds + clawbacks</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-5">
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Net Payouts</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{formatGhs(totalPayouts)}</p>
-                <p className="text-xs text-gray-500 mt-1">Sent to providers</p>
+                <p className="text-xs text-gray-500 mt-1">Actually disbursed to providers</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-5">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Commission Earned</p>
-                <p className="text-2xl font-bold text-emerald-600 mt-1">{formatGhs(totalCommission)}</p>
-                <p className="text-xs text-emerald-600 mt-1">Platform 20%</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Refunds</p>
+                <p className="text-2xl font-bold text-red-600 mt-1">{formatGhs(totalRefunds)}</p>
+                <p className="text-xs text-gray-500 mt-1">Returned to clients{totalClawbacks > 0 ? ` · ${formatGhs(totalClawbacks)} reclaimed` : ''}</p>
               </CardContent>
             </Card>
             <Card>

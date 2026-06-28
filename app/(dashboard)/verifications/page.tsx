@@ -17,12 +17,23 @@ import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
 import {
-  getVerificationQueue, getVerificationItem, reviewDocument, reviewVerification,
-  type VerificationItem, type ProviderDocument,
+  getVerificationQueue, getVerificationItem, reviewDocument,
+  submitVerification, validateVerification, finalizeVerification,
+  type VerificationItem, type ProviderDocument, type VerificationStage,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { DriverRideCategoriesSection } from '@/components/users/driver-ride-categories-section'
+
+// Which pipeline step the viewer acts on, derived from their permissions. The
+// queue is filtered to that stage; the drawer renders the matching action.
+type PipelineRole = 'admin' | 'coordinator' | 'rm' | 'viewer'
+const STAGE_FOR_ROLE: Record<PipelineRole, VerificationStage | undefined> = {
+  admin: 'pending_documents',
+  coordinator: 'docs_verified',
+  rm: 'coordinator_validated',
+  viewer: undefined,
+}
 
 function initials(name: string | null) {
   if (!name) return '?'
@@ -193,6 +204,8 @@ function DocumentStep({
   saving,
   saveError,
   refreshNote,
+  readOnly = false,
+  finishLabel = 'Finish',
 }: {
   doc: ProviderDocument
   index: number
@@ -206,6 +219,10 @@ function DocumentStep({
   saving: boolean
   saveError: string | null
   refreshNote: string | null
+  // When true the per-document approve/reject controls are hidden — used by the
+  // coordinator/RM who view (not re-decide) the admin's document verdicts.
+  readOnly?: boolean
+  finishLabel?: string
 }) {
   const defaultAction: 'approve' | 'reject' = doc.status === 'rejected' ? 'reject' : 'approve'
   const [action, setAction] = useState<'approve' | 'reject'>(existingReview?.action ?? defaultAction)
@@ -283,6 +300,7 @@ function DocumentStep({
       <DocViewer doc={doc} />
 
       {/* Review controls */}
+      {!readOnly && (<>
       <div className="flex gap-2">
         {(['approve', 'reject'] as const).map(a => (
           <button
@@ -326,6 +344,7 @@ function DocumentStep({
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />{error}
         </p>
       )}
+      </>)}
 
       {saveError && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
@@ -352,19 +371,21 @@ function DocumentStep({
         <Button variant="outline" size="sm" onClick={onPrev} disabled={index === 0} className="gap-1">
           <ChevronLeft className="h-4 w-4" /> Back
         </Button>
-        <Button
-          size="sm"
-          onClick={handleSave}
-          disabled={saving}
-          className="flex-1 gap-1.5 text-white"
-          style={{ backgroundColor: action === 'approve' ? '#059669' : '#DC2626' }}
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : action === 'approve' ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-          {saving ? 'Saving…' : action === 'approve' ? 'Approve' : 'Reject'}
-        </Button>
+        {!readOnly && (
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 gap-1.5 text-white"
+            style={{ backgroundColor: action === 'approve' ? '#059669' : '#DC2626' }}
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : action === 'approve' ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+            {saving ? 'Saving…' : action === 'approve' ? 'Approve' : 'Reject'}
+          </Button>
+        )}
         {isLast ? (
-          <Button size="sm" variant="outline" onClick={onFinish} className="gap-1">
-            Finish <ChevronRight className="h-4 w-4" />
+          <Button size="sm" variant={readOnly ? 'default' : 'outline'} onClick={onFinish} className={readOnly ? 'flex-1 gap-1 text-white' : 'gap-1'} style={readOnly ? { backgroundColor: '#F5A623' } : undefined}>
+            {finishLabel} <ChevronRight className="h-4 w-4" />
           </Button>
         ) : (
           <Button size="sm" variant="outline" onClick={onNext} className="gap-1">
@@ -385,6 +406,10 @@ function FinalDecisionStep({
   onSubmit,
   submitting,
   canReviewTiers,
+  approveLabel = 'Approve Provider',
+  rejectLabel = 'Reject Provider',
+  heading = 'Overall Provider Decision',
+  showTiers = true,
 }: {
   item: VerificationItem
   documents: ProviderDocument[]
@@ -393,6 +418,10 @@ function FinalDecisionStep({
   onSubmit: (action: 'approve' | 'reject', reason: string) => Promise<void>
   submitting: boolean
   canReviewTiers: boolean
+  approveLabel?: string
+  rejectLabel?: string
+  heading?: string
+  showTiers?: boolean
 }) {
   const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded'
   const resolved = documents.map(d => ({
@@ -418,8 +447,8 @@ function FinalDecisionStep({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Final Step</p>
-        <p className="text-base font-semibold text-gray-900 mt-0.5">Overall Provider Decision</p>
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Decision</p>
+        <p className="text-base font-semibold text-gray-900 mt-0.5">{heading}</p>
       </div>
 
       {/* Doc summary */}
@@ -438,7 +467,7 @@ function FinalDecisionStep({
       {/* Ride-tier verification — drivers pick tiers at signup; an admin must
           confirm the vehicle qualifies for each before the driver is matched.
           Reuses the same surface as the driver profile sheet. */}
-      {item.provider_type === 'driver' && (
+      {showTiers && item.provider_type === 'driver' && (
         <div className="border border-gray-100 rounded-xl p-3">
           <DriverRideCategoriesSection driverId={item.provider_id} canReview={canReviewTiers} />
         </div>
@@ -475,8 +504,8 @@ function FinalDecisionStep({
             }`}
           >
             {a === 'approve'
-              ? <><CheckCircle className="h-4 w-4" /> Approve Provider</>
-              : <><XCircle className="h-4 w-4" /> Reject Provider</>
+              ? <><CheckCircle className="h-4 w-4" /> {approveLabel}</>
+              : <><XCircle className="h-4 w-4" /> {rejectLabel}</>
             }
           </button>
         ))}
@@ -520,6 +549,87 @@ function FinalDecisionStep({
   )
 }
 
+// ── Admin submit-to-coordinator step ──────────────────────────────────────────
+function AdminSubmitStep({
+  documents,
+  reviews,
+  onBack,
+  onSubmit,
+  submitting,
+}: {
+  documents: ProviderDocument[]
+  reviews: Map<string, DocReview>
+  onBack: () => void
+  onSubmit: () => Promise<void>
+  submitting: boolean
+}) {
+  const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded'
+  const resolved = documents.map(d => ({
+    doc: d,
+    review: reviews.get(d.id) ?? (!needsReview(d.status)
+      ? { action: (d.status === 'approved' || d.status === 'confirmed') ? 'approve' : 'reject' as 'approve' | 'reject', reason: d.rejection_reason ?? '' }
+      : null),
+  }))
+  const allDecided = resolved.every(r => r.review != null)
+  const [error, setError] = useState('')
+
+  async function handleSubmit() {
+    if (!allDecided) { setError('Review every document (approve or reject) before submitting.'); return }
+    setError('')
+    await onSubmit()
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Stage 1 of 3 — Admin</p>
+        <p className="text-base font-semibold text-gray-900 mt-0.5">Submit to Coordinator</p>
+        <p className="text-xs text-gray-400 mt-0.5">Confirm each document is authentic, then hand off to the category coordinator.</p>
+      </div>
+
+      <div className="bg-gray-50 rounded-xl p-3 space-y-2 max-h-56 overflow-y-auto">
+        {resolved.map(({ doc, review }) => (
+          <div key={doc.id} className="flex items-center justify-between gap-2">
+            <p className="text-sm text-gray-700 truncate">{doc.label || doc.type}</p>
+            {review
+              ? <DocStatusBadge status={review.action === 'approve' ? 'approved' : 'rejected'} />
+              : <span className="text-xs text-gray-400 italic">Not reviewed</span>
+            }
+          </div>
+        ))}
+      </div>
+
+      {!allDecided && (
+        <div className="flex items-start gap-2 bg-amber-50 text-amber-700 text-xs rounded-lg px-3 py-2">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          Every document must be approved or rejected before submitting.
+        </div>
+      )}
+      {error && (
+        <p className="flex items-center gap-1.5 text-xs text-red-600">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />{error}
+        </p>
+      )}
+
+      <div className="flex gap-2 pt-2 border-t border-gray-100">
+        <Button variant="outline" size="sm" onClick={onBack} className="gap-1">
+          <ChevronLeft className="h-4 w-4" /> Back to Docs
+        </Button>
+        <Button
+          size="sm"
+          onClick={handleSubmit}
+          disabled={submitting || !allDecided}
+          className="flex-1 text-white"
+          style={{ backgroundColor: '#F5A623' }}
+        >
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {submitting ? 'Submitting…' : 'Submit to Coordinator'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 // Sort: pending_review → uploaded → approved/rejected. Historical versions
 // (isCurrent === false) are dropped — only the current version is reviewable.
 const docStatusRank = (s: string) => s === 'pending_review' ? 0 : s === 'uploaded' ? 1 : 2
@@ -532,15 +642,21 @@ function sortReviewDocs(docs: ProviderDocument[]): ProviderDocument[] {
 // ── Review drawer ─────────────────────────────────────────────────────────────
 function ReviewDrawer({
   item,
+  pipelineRole,
   onClose,
   onDone,
 }: {
   item: VerificationItem
+  pipelineRole: PipelineRole
   onClose: () => void
   onDone: () => void
 }) {
   const { can } = useRole()
-  const canReviewVerification = can('review_verification')
+  // Only the RM finalize step gates the ride-tier controls.
+  const canReviewTiers = can('finalize_verification')
+  // Admin is the only role that edits per-document verdicts; everyone downstream
+  // views them read-only.
+  const docsReadOnly = pipelineRole !== 'admin'
 
   const [documents, setDocuments] = useState<ProviderDocument[]>(() => sortReviewDocs(item.documents ?? []))
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -604,14 +720,33 @@ function ReviewDrawer({
     }
   }
 
-  async function handleFinalSubmit(action: 'approve' | 'reject', reason: string) {
+  const providerType = item.provider_type as 'driver' | 'artisan'
+
+  // Coordinator (validate) / RM (finalize) decision.
+  async function handleDecisionSubmit(action: 'approve' | 'reject', reason: string) {
     setSubmitting(true)
     try {
-      await reviewVerification(item.provider_id, item.provider_type, action, reason)
+      if (pipelineRole === 'rm') {
+        await finalizeVerification(item.provider_id, providerType, action, reason)
+      } else {
+        await validateVerification(item.provider_id, providerType, action, reason)
+      }
       onDone()
     } catch {
       setSubmitting(false)
-      throw new Error('Failed to submit provider decision.')
+      throw new Error('Failed to submit decision.')
+    }
+  }
+
+  // Admin submit-to-coordinator.
+  async function handleAdminSubmit() {
+    setSubmitting(true)
+    try {
+      await submitVerification(item.provider_id, providerType)
+      onDone()
+    } catch {
+      setSubmitting(false)
+      throw new Error('Failed to submit to coordinator.')
     }
   }
 
@@ -691,17 +826,33 @@ function ReviewDrawer({
               saving={saving}
               saveError={saveError}
               refreshNote={refreshNote}
+              readOnly={docsReadOnly}
+              finishLabel={pipelineRole === 'admin' ? 'Finish' : 'Continue'}
             />
           ) : step === 'final' ? (
-            <FinalDecisionStep
-              item={item}
-              documents={documents}
-              reviews={reviews}
-              onBack={() => setStep('docs')}
-              onSubmit={handleFinalSubmit}
-              submitting={submitting}
-              canReviewTiers={canReviewVerification}
-            />
+            pipelineRole === 'admin' ? (
+              <AdminSubmitStep
+                documents={documents}
+                reviews={reviews}
+                onBack={() => setStep('docs')}
+                onSubmit={handleAdminSubmit}
+                submitting={submitting}
+              />
+            ) : (
+              <FinalDecisionStep
+                item={item}
+                documents={documents}
+                reviews={reviews}
+                onBack={() => setStep('docs')}
+                onSubmit={handleDecisionSubmit}
+                submitting={submitting}
+                canReviewTiers={canReviewTiers}
+                showTiers={pipelineRole === 'rm'}
+                heading={pipelineRole === 'rm' ? 'Final Verification' : 'Validate Documents'}
+                approveLabel={pipelineRole === 'rm' ? 'Approve & Send Online' : 'Send to RM'}
+                rejectLabel={pipelineRole === 'rm' ? 'Reject Provider' : 'Bounce to Admin'}
+              />
+            )
           ) : null}
         </div>
       </div>
@@ -718,6 +869,16 @@ function ReviewDrawer({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function VerificationsPage() {
+  const { can } = useRole()
+  // The viewer's pipeline role drives which stage the queue shows and how the
+  // drawer behaves. Order matters: a higher role outranks lower stage perms.
+  const pipelineRole: PipelineRole =
+    can('finalize_verification') ? 'rm'
+    : can('validate_verification') ? 'coordinator'
+    : can('verify_documents') ? 'admin'
+    : 'viewer'
+  const stage = STAGE_FOR_ROLE[pipelineRole]
+
   const [items, setItems] = useState<VerificationItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -729,7 +890,7 @@ export default function VerificationsPage() {
     setLoading(true)
     setError('')
     try {
-      const data = await getVerificationQueue()
+      const data = await getVerificationQueue(stage ? { stage } : undefined)
       if (Array.isArray(data)) {
         setItems(data)
       } else if (data && typeof data === 'object' && Array.isArray((data as any).items)) {
@@ -742,7 +903,7 @@ export default function VerificationsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [stage])
 
   useEffect(() => { load() }, [load])
   useAutoRefresh(load)
@@ -761,7 +922,12 @@ export default function VerificationsPage() {
     <div>
       <PageHeader
         title="Provider Verification Queue"
-        subtitle="Review and approve provider identity and document submissions"
+        subtitle={
+          pipelineRole === 'admin' ? 'Stage 1 — check each document for authenticity, then submit to the coordinator'
+          : pipelineRole === 'coordinator' ? 'Stage 2 — validate the admin-approved documents for your category'
+          : pipelineRole === 'rm' ? 'Stage 3 — final verification that sends the provider online'
+          : 'Provider identity and document submissions'
+        }
         actions={
           <div className="flex items-center gap-3">
             <div className="text-sm text-gray-500 bg-white rounded-lg px-3 py-1.5 flex items-center gap-3">
@@ -881,6 +1047,7 @@ export default function VerificationsPage() {
       {reviewing && (
         <ReviewDrawer
           item={reviewing}
+          pipelineRole={pipelineRole}
           onClose={() => { setReviewing(null); load() }}
           onDone={() => { setReviewing(null); load() }}
         />

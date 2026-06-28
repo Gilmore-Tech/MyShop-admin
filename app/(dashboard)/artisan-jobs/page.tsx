@@ -70,8 +70,9 @@ const CANCELLABLE_JOB_STATUSES = ['queued', 'pending_admin', 'open_for_bids', 'b
 export default function ArtisanJobsPage() {
   const router = useRouter()
   const adminUser = getAdminUser()
-  // An admin scoped to a region only sees/acts on that region's jobs.
-  const lockedRegion = adminUser?.regionScope ?? null
+  // An admin scoped to a region only sees/acts on that region's jobs. Prefer the
+  // new region name; fall back to the legacy free-text regionScope.
+  const lockedRegion = adminUser?.regionName ?? adminUser?.regionScope ?? null
 
   const [jobs, setJobs] = useState<AdminJob[]>([])
   const [total, setTotal] = useState(0)

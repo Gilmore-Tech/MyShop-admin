@@ -592,6 +592,64 @@ root cause.
 
 ---
 
+## Roles, Regional Scoping & 3-Stage Verification (2026-06-27)
+
+Large change implemented across **both repos** (admin frontend + NestJS backend
+`myshop`). The backend changes below are committed in the `myshop` repo on the
+same branch; this section is the shared contract + the deploy checklist.
+
+### What shipped in the backend (`myshop`)
+- **Prisma** (`packages/database/prisma/schema.prisma` + migration
+  `20260627000000_admin_roles_regions_verification_stages`):
+  - New `regions` table (seeded with **Ashanti / ASH**).
+  - `drivers`/`artisans`: `region_id` FK + `verification_stage` (default
+    `pending_documents`); existing rows backfilled to Ashanti, approved providers
+    set to `online`.
+  - `admin_users`: `role`, `region_id` FK, `category_scope`; the `manage_admins`
+    holder is backfilled to `product_owner`.
+- **Permission catalogue** (`common/permissions/permission.catalogue.ts`): added
+  `verify_documents` / `validate_verification` / `finalize_verification`;
+  `review_verification` is **deprecated** (kept for legacy validation, no endpoint
+  requires it). Added `ADMIN_ROLES`, `ADMIN_ROLE_DEFINITIONS`,
+  `permissionsForAdminRole` — the **authoritative** role→permission bundles
+  mirrored in the frontend `lib/roles.ts`.
+- **Admin JWT principal** now carries `role`, `regionId`, `categoryScope`.
+- **Admin accounts**: `POST /admin/admins` + `PATCH /admin/admins/:id/permissions`
+  are **role-first** — supply `role` (+ `regionId` for region-scoped roles) and the
+  server derives `permissions` + `categoryScope`. `permissions[]` remains an
+  optional advanced override. New `GET /admin/regions`.
+- **3-stage verification pipeline** on `/admin/verifications`:
+  - `GET /admin/verifications?stage=` — stage-filtered + auto-scoped to the caller
+    (region + category). Returns `verification_stage`, `region_id`, `region_name`.
+  - `POST /admin/verifications/:id/submit` (`verify_documents`) — admin → coordinator.
+  - `PATCH /admin/verifications/:id/validate` (`validate_verification`) — coordinator → RM / bounce.
+  - `PATCH /admin/verifications/:id/finalize` (`finalize_verification`) — RM final;
+    the **only** step that flips `verification_status='approved'` + stage `online`.
+  - Per-document review + client KYC now require `verify_documents`; driver
+    ride-tier review requires `finalize_verification`.
+  - All four enforce region/category scope server-side (403 `OUT_OF_SCOPE`).
+
+### Deploy checklist
+1. `cd packages/database && pnpm db:migrate` (applies the new migration + seed).
+2. `pnpm db:generate` then rebuild the API.
+3. Verify `GET /admin/regions` returns Ashanti; create one admin per role.
+
+### ⛔ Remaining backend follow-up (broader scope enforcement)
+Server-side region/category scoping is currently enforced on the **verification
+flow only**. The same scoping must be extended to the other admin list/report
+endpoints so a scoped admin cannot read another region/category by calling the
+API directly. Apply the `AuthenticatedAdmin.regionId/categoryScope` filter (and
+ignore client-supplied `region`/`provider_type` when scoped) to:
+`GET /admin/users`, `GET /admin/jobs`, `GET /admin/rides`, `GET /admin/disputes`,
+`GET /admin/payments/*`, `GET /admin/reports/*`, `GET /admin/analytics/*`,
+`GET /admin/providers/suspensions`. Providers carry `region_id`; jobs/rides still
+derive region from address text until they gain their own `region_id`.
+
+Frontend already reflects scope (locked filters + category-gated nav); these are
+defence-in-depth on the server.
+
+---
+
 ## Done
 - Ride detail `GET /v1/admin/rides/:id` — deployed.
 - Batch payouts `GET /v1/admin/payouts/batches` + `POST .../force` — deployed.
