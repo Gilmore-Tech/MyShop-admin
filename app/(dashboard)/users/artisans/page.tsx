@@ -6,7 +6,7 @@ import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, MoreHorizontal, Loader2, UserPlus, RotateCcw, RefreshCw } from 'lucide-react'
+import { Search, MoreHorizontal, Loader2, RotateCcw, RefreshCw } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -20,7 +20,6 @@ import { listUsers, suspendUser, banUser, reinstateUser, triggerReverification, 
 import { ApiError } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { UserProfileSheet } from '@/components/users/user-profile-sheet'
-import { CreateUserDialog } from '@/components/users/create-user-dialog'
 
 function initials(name: string) {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -44,7 +43,6 @@ export default function ArtisansPage() {
   const [loading, setLoading] = useState(true)
 
   const [profileUser, setProfileUser] = useState<PlatformUser | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
   const [reverifyingId, setReverifyingId] = useState<string | null>(null)
 
   const [actionUser, setActionUser] = useState<PlatformUser | null>(null)
@@ -129,11 +127,6 @@ export default function ArtisansPage() {
       <PageHeader
         title="User Management"
         subtitle="Manage all platform users"
-        actions={
-          <Button size="sm" className="gap-2 text-white" style={{ backgroundColor: '#F5A623' }} onClick={() => setCreateOpen(true)}>
-            <UserPlus className="h-4 w-4" /> Add Artisan
-          </Button>
-        }
       />
 
       <Tabs defaultValue="artisans" className="mb-6">
@@ -316,13 +309,6 @@ export default function ArtisansPage() {
         user={profileUser}
         onClose={() => setProfileUser(null)}
         onUpdate={handleProfileUpdate}
-      />
-
-      <CreateUserDialog
-        open={createOpen}
-        defaultRole="artisan"
-        onClose={() => setCreateOpen(false)}
-        onCreated={user => { setUsers(prev => [user, ...prev]); setTotal(t => t + 1) }}
       />
     </div>
     </PageGuard>

@@ -5,7 +5,7 @@ import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
-import { Search, MoreHorizontal, UserX, Shield, RefreshCw, Users, UserPlus, RotateCcw, IdCard, CheckCircle2, CircleDashed } from 'lucide-react'
+import { Search, MoreHorizontal, UserX, Shield, RefreshCw, Users, RotateCcw, IdCard, CheckCircle2, CircleDashed } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -20,7 +20,6 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { listUsers, suspendUser, banUser, reinstateUser, type PlatformUser } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { UserProfileSheet } from '@/components/users/user-profile-sheet'
-import { CreateUserDialog } from '@/components/users/create-user-dialog'
 
 function initials(name: string) {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -88,7 +87,6 @@ export default function UsersPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [profileUser, setProfileUser] = useState<PlatformUser | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
 
   const load = useCallback(async (pg = page) => {
     setLoading(true)
@@ -149,16 +147,11 @@ export default function UsersPage() {
         title="User Management"
         subtitle="Manage all platform users"
         actions={
-          <div className="flex items-center gap-2">
-            <Link href="/users/clients/kyc-queue">
-              <Button size="sm" variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50">
-                <IdCard className="h-4 w-4" /> Client KYC Queue
-              </Button>
-            </Link>
-            <Button size="sm" className="gap-2 text-white" style={{ backgroundColor: '#F5A623' }} onClick={() => setCreateOpen(true)}>
-              <UserPlus className="h-4 w-4" /> Add User
+          <Link href="/users/clients/kyc-queue">
+            <Button size="sm" variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50">
+              <IdCard className="h-4 w-4" /> Client KYC Queue
             </Button>
-          </div>
+          </Link>
         }
       />
 
@@ -383,12 +376,6 @@ export default function UsersPage() {
         user={profileUser}
         onClose={() => setProfileUser(null)}
         onUpdate={handleProfileUpdate}
-      />
-
-      <CreateUserDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={user => { setUsers(prev => [user, ...prev]); setTotal(t => t + 1) }}
       />
     </div>
     </PageGuard>
