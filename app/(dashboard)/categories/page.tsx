@@ -806,6 +806,7 @@ export default function CategoriesPage() {
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                         </RoleGate>
+                        <RoleGate permission="edit_categories">
                         <Button
                           variant="ghost"
                           size="icon"
@@ -821,6 +822,7 @@ export default function CategoriesPage() {
                             : <ToggleLeft className="h-4 w-4" />
                           }
                         </Button>
+                        </RoleGate>
                         <RoleGate permission="delete_category">
                           <Button
                             variant="ghost"

@@ -83,6 +83,19 @@ export interface RevenueDataPoint {
   momoCount: number
   cardCount: number
   cashCount: number
+  // Per-vertical split (rides vs artisan services). Used to show revenue by
+  // category — coordinators see only their vertical; RM/global can filter.
+  byVertical?: {
+    rides: VerticalRevenue
+    artisans: VerticalRevenue
+  }
+}
+
+export interface VerticalRevenue {
+  collectionsGhs: number
+  commissionGhs: number
+  payoutsGhs: number
+  totalPayments: number
 }
 
 export interface RevenueReport {
@@ -117,6 +130,7 @@ export async function getRevenueReport(params?: { from?: string; to?: string; gr
     momoCount:            p.momoCount             ?? p.momo_count         ?? 0,
     cardCount:            p.cardCount             ?? p.card_count         ?? 0,
     cashCount:            p.cashCount             ?? p.cash_count         ?? 0,
+    byVertical:           p.byVertical,
   }))
   return { from: raw.from ?? '', to: raw.to ?? '', groupBy: raw.groupBy ?? 'day', periods }
 }
@@ -1108,6 +1122,11 @@ export function reactivateAdmin(adminId: string) {
 
 export function resetAdminPassword(adminId: string, newPassword: string) {
   return api.patch(`/admin/admins/${adminId}/reset-password`, { newPassword })
+}
+
+// An admin changes their OWN password (verifies the current one server-side).
+export function changeOwnPassword(currentPassword: string, newPassword: string) {
+  return api.patch('/admin/me/password', { currentPassword, newPassword })
 }
 
 export function deleteAdmin(adminId: string) {

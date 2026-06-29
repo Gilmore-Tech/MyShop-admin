@@ -261,21 +261,24 @@ const BACK_OFFICER_EXTRA: Permission[] = [
   'resolve_session_recovery', 'view_emergency', 'resolve_welfare_check', 'view_disputes',
 ]
 
+// Coordinators are view-mostly within their vertical: no Payments module, no
+// catalogue editing, and (artisan) no manual job assignment — see the rules in
+// the role spec. Everything is locked to their one category.
 const COORDINATOR_SHARED: Permission[] = [
   'view_dashboard', 'view_activity', 'view_live_map', 'view_analytics', 'view_reports',
   'view_revenue_report', 'view_pilot_report', 'view_verifications', 'validate_verification',
   'view_users', 'suspend_user', 'ban_user', 'force_logout_user', 'unlock_payout_method',
   'view_session_recovery', 'resolve_session_recovery', 'view_disputes', 'resolve_dispute',
-  'view_emergency', 'resolve_welfare_check', 'view_payments', 'send_announcement',
+  'view_emergency', 'resolve_welfare_check', 'send_announcement',
   'view_promotions', 'manage_promotions', 'view_referrals',
 ]
 
 const COORDINATOR_RIDES_OPS: Permission[] = [
-  'view_rides', 'intervene_ride', 'view_ride_categories', 'edit_ride_categories', 'view_rides_report',
+  'view_rides', 'intervene_ride', 'view_ride_categories', 'view_rides_report',
 ]
 
 const COORDINATOR_ARTISAN_OPS: Permission[] = [
-  'view_jobs', 'assign_job', 'delete_job', 'review_bid', 'view_categories', 'edit_categories', 'view_artisans_report',
+  'view_jobs', 'delete_job', 'review_bid', 'view_categories', 'view_artisans_report',
 ]
 
 const dedupe = (perms: Permission[]): Permission[] => [...new Set(perms)]
@@ -333,9 +336,9 @@ export const ROLE_DEFINITIONS: Record<Role, RoleDef> = {
   },
   back_officer: {
     role: 'back_officer', level: 5, label: 'Back Officer',
-    description: 'Supervises admin office work within one region. All admin permissions plus escalation handling.',
+    description: 'Supervises admin office work within one region (both categories): all admin permissions plus escalation handling, manual job assignment and announcements.',
     requiresRegion: true, requiresCategory: false, category: null, global: false,
-    permissions: dedupe([...ADMIN_BASE, ...BACK_OFFICER_EXTRA]),
+    permissions: dedupe([...ADMIN_BASE, ...BACK_OFFICER_EXTRA, 'assign_job', 'send_announcement']),
   },
   admin: {
     role: 'admin', level: 6, label: 'Admin',
