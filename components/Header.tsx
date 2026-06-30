@@ -1,6 +1,6 @@
 'use client'
 
-import { Bell, Search, LogOut, AlertTriangle, ShieldAlert, Flag, BadgeAlert, ServerCrash, HeartPulse, Info, CheckCheck, X, Clock, ChevronRight } from 'lucide-react'
+import { Bell, Search, LogOut, AlertTriangle, ShieldAlert, Flag, BadgeAlert, ServerCrash, HeartPulse, Info, CheckCheck, X, Clock, ChevronRight, UserCog } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -288,6 +288,14 @@ export default function Header() {
                 <DropdownMenuSeparator />
               </>
             )}
+            <DropdownMenuItem
+              onSelect={() => router.push('/account')}
+              className="cursor-pointer"
+            >
+              <UserCog className="mr-2 h-4 w-4" />
+              Account settings
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
               onSelect={handleLogout}

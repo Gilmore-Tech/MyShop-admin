@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
+import { useRole } from '@/hooks/use-role'
+import { verticalsForCategory, userLandingPath } from '@/lib/user-scope'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
@@ -34,6 +36,14 @@ type ActionType = 'suspend' | 'ban' | 'reinstate'
 export default function ArtisansPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  // Category scope decides which user verticals this admin may browse. A rides
+  // coordinator has no business on the artisans list — bounce them.
+  const { category, permissions } = useRole()
+  const allowed = verticalsForCategory(category, permissions)
+  const blocked = permissions !== null && !allowed.includes('artisans')
+  useEffect(() => {
+    if (blocked) router.replace(userLandingPath(category, permissions))
+  }, [blocked, category, permissions, router])
   const [users, setUsers] = useState<PlatformUser[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -121,6 +131,9 @@ export default function ArtisansPage() {
     setProfileUser(updated)
   }
 
+  // While redirecting a category-scoped admin away, render nothing.
+  if (blocked) return null
+
   return (
     <PageGuard permission="view_users">
     <div>
@@ -131,9 +144,9 @@ export default function ArtisansPage() {
 
       <Tabs defaultValue="artisans" className="mb-6">
         <TabsList className="bg-white">
-          <TabsTrigger value="clients" asChild><Link href="/users/clients">Clients</Link></TabsTrigger>
-          <TabsTrigger value="drivers" asChild><Link href="/users/drivers">Drivers</Link></TabsTrigger>
-          <TabsTrigger value="artisans" asChild><Link href="/users/artisans">Artisans</Link></TabsTrigger>
+          {allowed.includes('clients') && <TabsTrigger value="clients" asChild><Link href="/users/clients">Clients</Link></TabsTrigger>}
+          {allowed.includes('drivers') && <TabsTrigger value="drivers" asChild><Link href="/users/drivers">Drivers</Link></TabsTrigger>}
+          {allowed.includes('artisans') && <TabsTrigger value="artisans" asChild><Link href="/users/artisans">Artisans</Link></TabsTrigger>}
         </TabsList>
       </Tabs>
 

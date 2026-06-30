@@ -14,6 +14,7 @@ import { FEATURES } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
 import { type Permission, type CategoryScope, roleLabel } from '@/lib/roles'
+import { userLandingPath } from '@/lib/user-scope'
 
 type ChildItem = { title: string; href: string; permission?: Permission; badge?: number; badgeVariant?: 'red' | 'amber'; category?: CategoryScope }
 
@@ -57,7 +58,7 @@ function NavLink({ item, can, userCategory }: { item: NavItem; can: (p: Permissi
     item.children?.some(c => pathname.startsWith(c.href)) ?? false
   )
   const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
-    || (item.href === '/users/clients' && pathname.startsWith('/users'))
+    || (item.href.startsWith('/users/') && pathname.startsWith('/users'))
 
   if (item.children) {
     const visibleChildren = item.children.filter(c => childAllowed(c, can, userCategory))
@@ -130,7 +131,7 @@ function NavLink({ item, can, userCategory }: { item: NavItem; can: (p: Permissi
 }
 
 export default function AppSidebar() {
-  const { can, isSuperAdmin, role, region, category } = useRole()
+  const { can, isSuperAdmin, role, region, category, permissions } = useRole()
   const [pendingVerifications, setPendingVerifications] = useState<number | null>(null)
   const [openDisputes, setOpenDisputes] = useState<number | null>(null)
   const [unacknowledgedEmergencies, setUnacknowledgedEmergencies] = useState<number | null>(null)
@@ -236,7 +237,7 @@ export default function AppSidebar() {
           ],
         },
         { title: 'Disputes & Incidents', href: '/disputes', icon: Scale, permission: 'view_disputes', badge: openDisputes ?? undefined },
-        { title: 'User Management',      href: '/users/clients', icon: Users, permission: 'view_users' },
+        { title: 'User Management',      href: userLandingPath(category, permissions), icon: Users, permission: 'view_users' },
       ],
     },
     {

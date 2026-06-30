@@ -353,8 +353,11 @@ export default function ManualAssignmentPage() {
     }
 
     try {
-      // No agreedPricePesewas — artisan submits a bid for the client to confirm
-      await assignJob(selectedJob.id, { artisanId })
+      // Directed quote: park the job in `admin_assigned` and ask the artisan to
+      // submit a quote for the client to confirm. No agreedPricePesewas — the
+      // backend would otherwise default to `confirm` mode and instant-confirm at
+      // the category minimum, which this page does NOT want.
+      await assignJob(selectedJob.id, { artisanId, mode: 'request_quote' })
       setAssignedJobId(selectedJob.id)
       setAllJobs(prev => prev.filter(j => j.id !== selectedJob.id))
       // selectedJobId clears via the auto-select effect once `jobs` updates.
