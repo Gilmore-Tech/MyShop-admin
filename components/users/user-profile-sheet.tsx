@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Mail, Phone, Calendar, Star, Pencil, Check, X, Loader2, RotateCcw, ShieldOff, ShieldCheck, UserX, FileText, ExternalLink, CheckCircle, XCircle, ChevronDown, ChevronUp, Car, Tag, TrendingUp, XOctagon, IdCard, Lock, Unlock, LogOut, Trash2 } from 'lucide-react'
+import { Mail, Phone, Calendar, Star, Pencil, Check, X, Loader2, RotateCcw, ShieldOff, ShieldCheck, UserX, FileText, ExternalLink, CheckCircle, XCircle, ChevronDown, ChevronUp, Car, Tag, TrendingUp, XOctagon, IdCard, Lock, Unlock, LogOut, Trash2, Upload, AlertTriangle } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -9,9 +9,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
-import { updateUser, reinstateUser, suspendUser, banUser, deleteUser, forceLogoutUser, getProviderDocuments, finalizeVerification, reviewClientKyc, getUser, unlockPayoutMethod, liftVerificationSuspension, type PlatformUser, type ProviderSuspension, type UserProviderDocument, type UserProviderGroup } from '@/lib/api'
+import { updateUser, reinstateUser, suspendUser, banUser, deleteUser, forceLogoutUser, getProviderDocuments, finalizeVerification, reviewClientKyc, getUser, unlockPayoutMethod, liftVerificationSuspension, uploadProviderDocument, ADMIN_UPLOADABLE_DOC_TYPES, type PlatformUser, type ProviderSuspension, type UserProviderDocument, type UserProviderGroup } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { RoleGate } from '@/components/common/role-gate'
 import { VerifyClientKycDialog, clientKycBadge } from './verify-client-kyc-dialog'
 import { DriverRideCategoriesSection } from './driver-ride-categories-section'
 import { EditProviderProfileDialog } from './edit-provider-profile-dialog'
@@ -224,12 +226,146 @@ function ProviderDocumentGroup({ group }: { group: UserProviderGroup }) {
   )
 }
 
-function DocumentsSection({ userId }: { userId: string }) {
+// ── Upload replacement document (Regional Manager) ──────────────────────────────
+// Lets an RM upload a new document on a provider's behalf when self-service
+// re-upload is closed (e.g. an expired licence). This supersedes the current
+// version, returns the provider to the verification queue and takes them offline
+// until the pipeline re-approves the new document.
+function UploadDocumentDialog({
+  open, userId, providerType, providerName, onClose, onUploaded,
+}: {
+  open: boolean
+  userId: string
+  providerType: 'driver' | 'artisan'
+  providerName: string
+  onClose: () => void
+  onUploaded: () => void
+}) {
+  const options = ADMIN_UPLOADABLE_DOC_TYPES.filter(
+    t => t.appliesTo === null || t.appliesTo === providerType,
+  )
+  const [documentType, setDocumentType] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const [expiresAt, setExpiresAt] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  // Reset the form whenever the dialog (re)opens or switches provider role.
+  useEffect(() => {
+    if (open) {
+      setDocumentType('')
+      setFile(null)
+      setExpiresAt('')
+      setError('')
+      setSaving(false)
+    }
+  }, [open, providerType])
+
+  const selected = options.find(o => o.value === documentType) ?? null
+  const expiryRequired = selected?.expiryRequired ?? false
+
+  async function submit() {
+    setError('')
+    if (!documentType) { setError('Select a document type.'); return }
+    if (!file) { setError('Choose a file to upload.'); return }
+    if (expiryRequired && !expiresAt) { setError('This document requires an expiry date.'); return }
+
+    setSaving(true)
+    try {
+      await uploadProviderDocument(userId, {
+        providerType,
+        documentType,
+        file,
+        expiresAt: expiresAt || undefined,
+      })
+      onUploaded()
+      onClose()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Upload failed. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o && !saving) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-base font-semibold text-gray-900">
+            Upload {providerType} document
+          </DialogTitle>
+          <DialogDescription className="text-xs text-gray-400">
+            Replacement document for {providerName}. Uploading supersedes the current version.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          {/* What this does — the provider is re-queued and taken offline. */}
+          <div className="flex gap-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
+            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-amber-700 leading-relaxed">
+              This returns the provider to the verification queue and takes them <strong>offline</strong> until
+              the new document is re-approved (Admin → Coordinator → Regional Manager).
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Document type</Label>
+            <Select value={documentType} onValueChange={setDocumentType}>
+              <SelectTrigger className="h-10">
+                <SelectValue placeholder="Select a document type" />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map(o => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">File (JPG, PNG or PDF — max 10 MB)</Label>
+            <Input
+              type="file"
+              accept="image/jpeg,image/png,application/pdf"
+              onChange={e => setFile(e.target.files?.[0] ?? null)}
+              className="h-10 file:mr-3 file:text-xs file:text-gray-600"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">
+              Expiry date{expiryRequired ? ' (required)' : ' (optional)'}
+            </Label>
+            <Input
+              type="date"
+              value={expiresAt}
+              onChange={e => setExpiresAt(e.target.value)}
+              className="h-10"
+            />
+          </div>
+
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={submit} disabled={saving} style={{ backgroundColor: '#F5A623' }}>
+            {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</> : <><Upload className="h-4 w-4" /> Upload document</>}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DocumentsSection({ userId, userName }: { userId: string; userName: string }) {
   const [groups, setGroups] = useState<UserProviderGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [uploadFor, setUploadFor] = useState<'driver' | 'artisan' | null>(null)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true)
     setError('')
     getProviderDocuments(userId)
@@ -237,6 +373,8 @@ function DocumentsSection({ userId }: { userId: string }) {
       .catch(err => setError(err instanceof ApiError ? err.message : 'Failed to load documents.'))
       .finally(() => setLoading(false))
   }, [userId])
+
+  useEffect(() => { load() }, [load])
 
   if (loading) {
     return (
@@ -265,14 +403,35 @@ function DocumentsSection({ userId }: { userId: string }) {
     <div className="space-y-4">
       {groups.map(group => (
         <div key={group.providerId}>
-          {groups.length > 1 && (
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2 capitalize">
-              {group.providerType} Documents
-            </p>
-          )}
+          <div className="flex items-center justify-between mb-2">
+            {groups.length > 1 ? (
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest capitalize">
+                {group.providerType} Documents
+              </p>
+            ) : <span />}
+            <RoleGate permission="upload_provider_document">
+              <button
+                onClick={() => setUploadFor(group.providerType)}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-orange-500 hover:text-orange-700"
+              >
+                <Upload className="h-3 w-3" /> Upload replacement
+              </button>
+            </RoleGate>
+          </div>
           <ProviderDocumentGroup group={group} />
         </div>
       ))}
+
+      {uploadFor && (
+        <UploadDocumentDialog
+          open={uploadFor !== null}
+          userId={userId}
+          providerType={uploadFor}
+          providerName={userName}
+          onClose={() => setUploadFor(null)}
+          onUploaded={load}
+        />
+      )}
     </div>
   )
 }
@@ -1136,7 +1295,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
               {!editing && (u.driver || u.artisan) && (
                 <div>
                   <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Documents</p>
-                  <DocumentsSection userId={u.id} />
+                  <DocumentsSection userId={u.id} userName={u.fullName} />
                 </div>
               )}
 

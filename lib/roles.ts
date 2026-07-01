@@ -17,6 +17,7 @@ export type Permission =
   | 'validate_verification'
   | 'finalize_verification'
   | 'lift_verification_suspension'
+  | 'upload_provider_document'
   | 'view_disputes'
   | 'resolve_dispute'
   | 'view_users'
@@ -115,6 +116,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'validate_verification', label: 'Validate verification', description: 'Stage 2 — coordinator validates the approved set before the RM' },
       { key: 'finalize_verification', label: 'Finalize verification', description: 'Stage 3 — RM final decision that sends the provider online' },
       { key: 'lift_verification_suspension', label: 'Lift verification suspension', description: 'Reinstate an auto-suspended provider' },
+      { key: 'upload_provider_document', label: 'Upload provider document', description: 'Upload a replacement document on a provider\'s behalf (e.g. expired licence); returns them to the verification queue' },
     ],
   },
   {
@@ -287,7 +289,7 @@ const dedupe = (perms: Permission[]): Permission[] => [...new Set(perms)]
 
 const REGIONAL_MANAGER_PERMS = dedupe([
   ...COORDINATOR_SHARED, ...COORDINATOR_RIDES_OPS, ...COORDINATOR_ARTISAN_OPS,
-  'finalize_verification', 'lift_verification_suspension', 'delete_user', 'edit_provider_profile', 'delete_category',
+  'finalize_verification', 'lift_verification_suspension', 'upload_provider_document', 'delete_user', 'edit_provider_profile', 'delete_category',
   'run_batch_payouts', 'escalate_clawback', 'write_off_clawback', 'view_ussd', 'manage_referrals', 'view_audit_logs',
 ])
 
