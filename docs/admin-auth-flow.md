@@ -21,6 +21,8 @@ Admin auth is **separate** from the regular user (client/driver/artisan) auth sy
 
 ### Guard execution order (every request)
 
+
+
 ```
 1. JwtAuthGuard (global)
    ├─ @Public() route?  → pass through
