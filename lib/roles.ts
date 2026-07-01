@@ -24,6 +24,7 @@ export type Permission =
   | 'ban_user'
   | 'delete_user'
   | 'force_logout_user'
+  | 'edit_provider_profile'
   | 'view_categories'
   | 'edit_categories'
   | 'delete_category'
@@ -133,6 +134,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'ban_user', label: 'Ban users', description: 'Permanently ban a user account' },
       { key: 'delete_user', label: 'Delete users', description: 'Soft-delete a user (housekeeping / requests)' },
       { key: 'force_logout_user', label: 'Force logout', description: 'Revoke all sessions for a user' },
+      { key: 'edit_provider_profile', label: 'Edit provider profile', description: "Edit a driver's or artisan's profile details (excludes payout fields)" },
       { key: 'unlock_payout_method', label: 'Unlock payout method', description: 'Clear a locked payout method' },
     ],
   },
@@ -253,7 +255,7 @@ export interface RoleDef {
 
 const ADMIN_BASE: Permission[] = [
   'view_dashboard', 'view_activity', 'view_verifications', 'verify_documents',
-  'view_users', 'view_jobs', 'view_rides', 'view_help_articles', 'edit_help_articles',
+  'view_users', 'edit_provider_profile', 'view_jobs', 'view_rides', 'view_help_articles', 'edit_help_articles',
 ]
 
 const BACK_OFFICER_EXTRA: Permission[] = [
@@ -261,28 +263,31 @@ const BACK_OFFICER_EXTRA: Permission[] = [
   'resolve_session_recovery', 'view_emergency', 'resolve_welfare_check', 'view_disputes',
 ]
 
+// Coordinators are view-mostly within their vertical: no Payments module, no
+// catalogue editing, and (artisan) no manual job assignment — see the rules in
+// the role spec. Everything is locked to their one category.
 const COORDINATOR_SHARED: Permission[] = [
   'view_dashboard', 'view_activity', 'view_live_map', 'view_analytics', 'view_reports',
   'view_revenue_report', 'view_pilot_report', 'view_verifications', 'validate_verification',
   'view_users', 'suspend_user', 'ban_user', 'force_logout_user', 'unlock_payout_method',
   'view_session_recovery', 'resolve_session_recovery', 'view_disputes', 'resolve_dispute',
-  'view_emergency', 'resolve_welfare_check', 'view_payments', 'send_announcement',
+  'view_emergency', 'resolve_welfare_check', 'send_announcement',
   'view_promotions', 'manage_promotions', 'view_referrals',
 ]
 
 const COORDINATOR_RIDES_OPS: Permission[] = [
-  'view_rides', 'intervene_ride', 'view_ride_categories', 'edit_ride_categories', 'view_rides_report',
+  'view_rides', 'intervene_ride', 'view_ride_categories', 'view_rides_report',
 ]
 
 const COORDINATOR_ARTISAN_OPS: Permission[] = [
-  'view_jobs', 'assign_job', 'delete_job', 'review_bid', 'view_categories', 'edit_categories', 'view_artisans_report',
+  'view_jobs', 'delete_job', 'review_bid', 'view_categories', 'view_artisans_report',
 ]
 
 const dedupe = (perms: Permission[]): Permission[] => [...new Set(perms)]
 
 const REGIONAL_MANAGER_PERMS = dedupe([
   ...COORDINATOR_SHARED, ...COORDINATOR_RIDES_OPS, ...COORDINATOR_ARTISAN_OPS,
-  'finalize_verification', 'lift_verification_suspension', 'delete_user', 'delete_category',
+  'finalize_verification', 'lift_verification_suspension', 'delete_user', 'edit_provider_profile', 'delete_category',
   'run_batch_payouts', 'escalate_clawback', 'write_off_clawback', 'view_ussd', 'manage_referrals', 'view_audit_logs',
 ])
 
@@ -333,9 +338,9 @@ export const ROLE_DEFINITIONS: Record<Role, RoleDef> = {
   },
   back_officer: {
     role: 'back_officer', level: 5, label: 'Back Officer',
-    description: 'Supervises admin office work within one region. All admin permissions plus escalation handling.',
+    description: 'Supervises admin office work within one region (both categories): all admin permissions plus escalation handling, manual job assignment and announcements.',
     requiresRegion: true, requiresCategory: false, category: null, global: false,
-    permissions: dedupe([...ADMIN_BASE, ...BACK_OFFICER_EXTRA]),
+    permissions: dedupe([...ADMIN_BASE, ...BACK_OFFICER_EXTRA, 'assign_job', 'send_announcement']),
   },
   admin: {
     role: 'admin', level: 6, label: 'Admin',

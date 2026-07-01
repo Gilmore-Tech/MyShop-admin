@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
+import { useRole } from '@/hooks/use-role'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
 import {
@@ -84,12 +85,13 @@ function StatusPill({ status }: { status: string }) {
 // ── Artisan card ──────────────────────────────────────────────────────────────
 
 function ArtisanCard({
-  artisan, onAssign, busy, showDistance,
+  artisan, onAssign, busy, showDistance, canAssign,
 }: {
   artisan: ArtisanSearchResult
   onAssign: (id: string) => void
   busy: boolean
   showDistance: boolean
+  canAssign: boolean
 }) {
   const online = artisan.onlineStatus === 'online'
   const stale = isStaleLocation(artisan.lastLocationAt)
@@ -143,15 +145,17 @@ function ArtisanCard({
         </div>
       </div>
 
-      <Button
-        size="sm"
-        disabled={busy}
-        onClick={() => onAssign(artisan.id)}
-        className="shrink-0 text-white text-xs px-3"
-        style={{ backgroundColor: '#F5A623' }}
-      >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Assign'}
-      </Button>
+      {canAssign && (
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={() => onAssign(artisan.id)}
+          className="shrink-0 text-white text-xs px-3"
+          style={{ backgroundColor: '#F5A623' }}
+        >
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Assign'}
+        </Button>
+      )}
     </div>
   )
 }
@@ -159,6 +163,9 @@ function ArtisanCard({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ManualAssignmentPage() {
+  // Anyone with view_jobs can browse the queue (e.g. the artisan coordinator);
+  // only assign_job holders see the Assign button and can act.
+  const canAssign = useRole().can('assign_job')
   // `allJobs` holds the server's eligible queue (status + 0 bids + no lock).
   // `jobs` (derived below) further filters out anything still inside its 5-minute
   // bid window — those aren't ready for manual assignment yet.
@@ -353,8 +360,11 @@ export default function ManualAssignmentPage() {
     }
 
     try {
-      // No agreedPricePesewas — artisan submits a bid for the client to confirm
-      await assignJob(selectedJob.id, { artisanId })
+      // Directed quote: park the job in `admin_assigned` and ask the artisan to
+      // submit a quote for the client to confirm. No agreedPricePesewas — the
+      // backend would otherwise default to `confirm` mode and instant-confirm at
+      // the category minimum, which this page does NOT want.
+      await assignJob(selectedJob.id, { artisanId, mode: 'request_quote' })
       setAssignedJobId(selectedJob.id)
       setAllJobs(prev => prev.filter(j => j.id !== selectedJob.id))
       // selectedJobId clears via the auto-select effect once `jobs` updates.
@@ -404,7 +414,7 @@ export default function ManualAssignmentPage() {
   }
 
   return (
-    <PageGuard permission="assign_job">
+    <PageGuard permission="view_jobs">
       <div className="space-y-4">
         <PageHeader
           title="Manual Assignment"
@@ -649,6 +659,7 @@ export default function ManualAssignmentPage() {
                                 busy={assigning === a.id}
                                 onAssign={handleAssign}
                                 showDistance={hasJobCoords}
+                                canAssign={canAssign}
                               />
                             ))}
                           </div>

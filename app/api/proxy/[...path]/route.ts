@@ -13,7 +13,10 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
   if (authHeader) headers.set('authorization', authHeader)
   headers.set('content-type', req.headers.get('content-type') ?? 'application/json')
 
-  const body = req.method !== 'GET' && req.method !== 'HEAD' ? await req.text() : undefined
+  // Forward the body as raw bytes, not text — reading multipart/form-data via
+  // req.text() decodes as UTF-8 and corrupts binary uploads (e.g. profile photos).
+  // An ArrayBuffer round-trips both JSON and binary payloads unchanged.
+  const body = req.method !== 'GET' && req.method !== 'HEAD' ? await req.arrayBuffer() : undefined
 
   let res: Response
   try {

@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
+import { useRole } from '@/hooks/use-role'
+import { verticalsForCategory, userLandingPath } from '@/lib/user-scope'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
-import Link from 'next/link'
+import { UserTabs } from '@/components/users/user-tabs'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, MoreHorizontal, Loader2, UserPlus, RotateCcw, ShieldCheck } from 'lucide-react'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -20,7 +21,6 @@ import { listUsers, suspendUser, banUser, reinstateUser, liftVerificationSuspens
 import { ApiError } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { UserProfileSheet } from '@/components/users/user-profile-sheet'
-import { CreateUserDialog } from '@/components/users/create-user-dialog'
 
 function initials(name: string) {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -35,6 +35,14 @@ type ActionType = 'suspend' | 'ban' | 'reinstate' | 'lift_verification'
 export default function DriversPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  // Category scope decides which user verticals this admin may browse. An
+  // artisan coordinator has no business on the drivers list — bounce them.
+  const { category, permissions } = useRole()
+  const allowed = verticalsForCategory(category, permissions)
+  const blocked = permissions !== null && !allowed.includes('drivers')
+  useEffect(() => {
+    if (blocked) router.replace(userLandingPath(category, permissions))
+  }, [blocked, category, permissions, router])
   const [users, setUsers] = useState<PlatformUser[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -44,7 +52,6 @@ export default function DriversPage() {
   const [loading, setLoading] = useState(true)
 
   const [profileUser, setProfileUser] = useState<PlatformUser | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
 
   const [actionUser, setActionUser] = useState<PlatformUser | null>(null)
   const [actionType, setActionType] = useState<ActionType | null>(null)
@@ -115,26 +122,18 @@ export default function DriversPage() {
     setProfileUser(updated)
   }
 
+  // While redirecting a category-scoped admin away, render nothing.
+  if (blocked) return null
+
   return (
     <PageGuard permission="view_users">
     <div>
       <PageHeader
         title="User Management"
         subtitle="Manage all platform users"
-        actions={
-          <Button size="sm" className="gap-2 text-white" style={{ backgroundColor: '#F5A623' }} onClick={() => setCreateOpen(true)}>
-            <UserPlus className="h-4 w-4" /> Add Driver
-          </Button>
-        }
       />
 
-      <Tabs defaultValue="drivers" className="mb-6">
-        <TabsList className="bg-white">
-          <TabsTrigger value="clients" asChild><Link href="/users/clients">Clients</Link></TabsTrigger>
-          <TabsTrigger value="drivers" asChild><Link href="/users/drivers">Drivers</Link></TabsTrigger>
-          <TabsTrigger value="artisans" asChild><Link href="/users/artisans">Artisans</Link></TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <UserTabs active="drivers" />
 
       <div className="flex items-center gap-3 mb-4">
         <div className="relative flex-1 max-w-sm">
@@ -324,13 +323,6 @@ export default function DriversPage() {
         user={profileUser}
         onClose={() => setProfileUser(null)}
         onUpdate={handleProfileUpdate}
-      />
-
-      <CreateUserDialog
-        open={createOpen}
-        defaultRole="driver"
-        onClose={() => setCreateOpen(false)}
-        onCreated={user => { setUsers(prev => [user, ...prev]); setTotal(t => t + 1) }}
       />
     </div>
     </PageGuard>

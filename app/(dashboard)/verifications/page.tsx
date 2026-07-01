@@ -18,8 +18,8 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
 import {
   getVerificationQueue, getVerificationItem, reviewDocument,
-  submitVerification, validateVerification, finalizeVerification,
-  type VerificationItem, type ProviderDocument, type VerificationStage,
+  submitVerification, validateVerification, finalizeVerification, getVerificationHistory,
+  type VerificationItem, type ProviderDocument, type VerificationStage, type VerificationHistory,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
@@ -683,6 +683,39 @@ function InspectStep({
   )
 }
 
+// ── Approval chain (who did each stage) — gated to coordinator/RM/global ───────
+function ApprovalChain({ history, showStages }: { history: VerificationHistory; showStages: VerificationStage[] }) {
+  const rows: { key: VerificationStage; label: string; who: { by: string; at: string } | null; decision?: string }[] = [
+    { key: 'pending_documents' as VerificationStage, label: 'Document check · Admin', who: history.stage1 },
+    { key: 'docs_verified' as VerificationStage, label: 'Validation · Coordinator', who: history.stage2 },
+    { key: 'coordinator_validated' as VerificationStage, label: 'Final · Regional Manager', who: history.stage3, decision: history.stage3?.decision },
+  ].filter(r => showStages.includes(r.key))
+  if (rows.length === 0) return null
+  return (
+    <div className="rounded-xl border border-gray-100 p-3 mb-4">
+      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Approval chain</p>
+      <div className="space-y-1.5">
+        {rows.map(r => (
+          <div key={r.key} className="flex items-center justify-between gap-2 text-sm">
+            <span className="text-gray-500">{r.label}</span>
+            {r.who ? (
+              <span className="text-gray-800 font-medium">
+                {r.decision === 'rejected' && <span className="text-red-600 mr-1">Rejected by</span>}
+                {r.who.by}
+                <span className="text-gray-400 font-normal ml-1.5">
+                  {new Date(r.who.at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </span>
+              </span>
+            ) : (
+              <span className="text-gray-300 text-xs italic">Awaiting</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Sort: pending_review → uploaded → approved/rejected. Historical versions
 // (isCurrent === false) are dropped — only the current version is reviewable.
 const docStatusRank = (s: string) => s === 'pending_review' ? 0 : s === 'uploaded' ? 1 : 2
@@ -702,12 +735,27 @@ function ReviewDrawer({
   onClose: () => void
   onDone: () => void
 }) {
-  const { can } = useRole()
+  const { can, role } = useRole()
   // The available action is decided by the item's current stage + the viewer's
   // permission — not the viewer's "home" role. This prevents, e.g., an RM
   // opening a pending_documents item from being offered "Approve & Send Online".
   const action = effectiveAction(item.verification_stage, can)
   const canReviewTiers = can('finalize_verification')
+  // The approval chain (who did each stage) is restricted: admins (entry level)
+  // don't see it; coordinators see Stages 1–2; RM/global see all stages.
+  const isGlobal = role ? (ROLE_DEFINITIONS[role]?.global ?? false) : false
+  const chainStages: VerificationStage[] =
+    isGlobal || can('finalize_verification') ? ['pending_documents', 'docs_verified', 'coordinator_validated']
+    : can('validate_verification') ? ['pending_documents', 'docs_verified']
+    : []
+  const [history, setHistory] = useState<VerificationHistory | null>(null)
+  useEffect(() => {
+    if (chainStages.length === 0) return
+    getVerificationHistory(item.provider_id, item.provider_type as 'driver' | 'artisan')
+      .then(setHistory)
+      .catch(() => setHistory(null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.provider_id, item.provider_type])
   // Only the admin document-check step edits per-document verdicts; every other
   // action (and the read-only inspect) views them.
   const docsReadOnly = action !== 'admin'
@@ -847,6 +895,9 @@ function ReviewDrawer({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
+          {history && chainStages.length > 0 && (
+            <ApprovalChain history={history} showStages={chainStages} />
+          )}
           {documents.length === 0 ? (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col items-center justify-center h-32 gap-2 text-center">
@@ -926,17 +977,22 @@ function ReviewDrawer({
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function VerificationsPage() {
   const { can, role } = useRole()
-  // Global oversight roles (owner/director/accountant) are not pinned to a single
-  // pipeline stage — they see the whole queue and can drill into a stage on
-  // demand. Scoped action roles default to the stage they act on.
+  // The stages a viewer may see, mirroring the server-side boundary: admin →
+  // Stage 1 only; coordinator → Stages 1–2; RM and any global role → all three.
   const isGlobal = role ? (ROLE_DEFINITIONS[role]?.global ?? false) : false
   const homeRole: PipelineRole =
     can('finalize_verification') ? 'rm'
     : can('validate_verification') ? 'coordinator'
     : can('verify_documents') ? 'admin'
     : 'viewer'
+  const allowedStages: VerificationStage[] =
+    isGlobal || can('finalize_verification') ? ['pending_documents', 'docs_verified', 'coordinator_validated']
+    : can('validate_verification') ? ['pending_documents', 'docs_verified']
+    : can('verify_documents') ? ['pending_documents']
+    : ['pending_documents', 'docs_verified', 'coordinator_validated']
+  // A single allowed stage (admin) needs no filter — lock to it and hide the UI.
   const defaultStage: VerificationStage | 'all' =
-    isGlobal ? 'all' : (STAGE_FOR_ROLE[homeRole] ?? 'all')
+    allowedStages.length === 1 ? allowedStages[0] : 'all'
 
   const [items, setItems] = useState<VerificationItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -1021,15 +1077,17 @@ export default function VerificationsPage() {
             <SelectItem value="artisan">Artisans</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={stageFilter} onValueChange={v => setStageFilter(v as VerificationStage | 'all')}>
-          <SelectTrigger className="w-52 bg-white"><SelectValue placeholder="Stage" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Stages</SelectItem>
-            <SelectItem value="pending_documents">Stage 1 — Document check</SelectItem>
-            <SelectItem value="docs_verified">Stage 2 — Coordinator</SelectItem>
-            <SelectItem value="coordinator_validated">Stage 3 — RM final</SelectItem>
-          </SelectContent>
-        </Select>
+        {allowedStages.length > 1 && (
+          <Select value={stageFilter} onValueChange={v => setStageFilter(v as VerificationStage | 'all')}>
+            <SelectTrigger className="w-52 bg-white"><SelectValue placeholder="Stage" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Stages</SelectItem>
+              {allowedStages.map(s => (
+                <SelectItem key={s} value={s}>{STAGE_LABEL[s] ?? s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <div className="ml-auto text-sm text-gray-400">{filtered.length} in queue</div>
       </div>
 

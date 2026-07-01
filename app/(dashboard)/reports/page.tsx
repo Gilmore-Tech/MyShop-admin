@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import { useRole } from '@/hooks/use-role'
-import type { Permission } from '@/lib/roles'
+import type { Permission, CategoryScope } from '@/lib/roles'
 import { Download, FileText, Calendar, Loader2, TrendingUp, Car, Wrench, Star, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/common/page-header'
 import {
   getOverviewReport, getRevenueReport, getProviderReport, getPilotReport, listUsers,
-  type OverviewReport, type RevenueReport, type ProviderReport, type PilotMetric,
+  type OverviewReport, type RevenueReport, type RevenueDataPoint, type ProviderReport, type PilotMetric,
 } from '@/lib/api'
 import {
   exportOverviewCsv, exportRevenueCsv, exportRidesCsv, exportArtisansCsv, exportPilotCsv,
@@ -86,11 +86,21 @@ function OverviewPanel({ data, userTotal }: { data: OverviewReport; userTotal: n
 
 const REVENUE_PAGE_SIZE = 12
 
-function RevenuePanel({ data }: { data: RevenueReport }) {
-  const totalCollections = data.periods.reduce((s, d) => s + d.collectionsGhs, 0)
-  const totalCommission  = data.periods.reduce((s, d) => s + d.commissionGhs, 0)
-  const totalPayouts     = data.periods.reduce((s, d) => s + d.payoutsGhs, 0)
-  const totalPayments    = data.periods.reduce((s, d) => s + d.totalPayments, 0)
+function RevenuePanel({ data, lockedCategory }: { data: RevenueReport; lockedCategory: CategoryScope | null }) {
+  // Revenue by category: coordinators are locked to their vertical; RM/global
+  // can toggle All / Rides / Artisan.
+  const [view, setView] = useState<'all' | 'rides' | 'artisan'>(lockedCategory ?? 'all')
+  const effective = lockedCategory ?? view
+  const pick = (d: RevenueDataPoint) => {
+    if (effective === 'all' || !d.byVertical)
+      return { collectionsGhs: d.collectionsGhs, commissionGhs: d.commissionGhs, payoutsGhs: d.payoutsGhs, totalPayments: d.totalPayments }
+    return effective === 'rides' ? d.byVertical.rides : d.byVertical.artisans
+  }
+
+  const totalCollections = data.periods.reduce((s, d) => s + pick(d).collectionsGhs, 0)
+  const totalCommission  = data.periods.reduce((s, d) => s + pick(d).commissionGhs, 0)
+  const totalPayouts     = data.periods.reduce((s, d) => s + pick(d).payoutsGhs, 0)
+  const totalPayments    = data.periods.reduce((s, d) => s + pick(d).totalPayments, 0)
 
   // Most recent first, paginated.
   const rows = [...data.periods].sort((a, b) => b.period.localeCompare(a.period))
@@ -101,6 +111,21 @@ function RevenuePanel({ data }: { data: RevenueReport }) {
   const pageRows = rows.slice(start, start + REVENUE_PAGE_SIZE)
   return (
     <div className="space-y-3">
+      {!lockedCategory && (
+        <div className="flex items-center gap-1.5">
+          {(['all', 'rides', 'artisan'] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                view === v ? 'bg-orange-50 text-orange-600 border-orange-200 font-medium' : 'text-gray-500 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {v === 'all' ? 'All' : v === 'rides' ? 'Rides' : 'Artisan'}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'Total Collections', value: fmt(totalCollections) },
@@ -126,14 +151,17 @@ function RevenuePanel({ data }: { data: RevenueReport }) {
               </tr>
             </thead>
             <tbody>
-              {pageRows.map(row => (
+              {pageRows.map(row => {
+                const v = pick(row)
+                return (
                 <tr key={row.period} className="border-b border-gray-50">
                   <td className="py-1.5 pr-4 text-gray-700">{formatDate(row.period)}</td>
-                  <td className="py-1.5 pr-4 text-right text-gray-900 font-medium">{fmt(row.collectionsGhs)}</td>
-                  <td className="py-1.5 pr-4 text-right text-gray-600">{fmt(row.commissionGhs)}</td>
-                  <td className="py-1.5 text-right text-gray-600">{row.totalPayments}</td>
+                  <td className="py-1.5 pr-4 text-right text-gray-900 font-medium">{fmt(v.collectionsGhs)}</td>
+                  <td className="py-1.5 pr-4 text-right text-gray-600">{fmt(v.commissionGhs)}</td>
+                  <td className="py-1.5 text-right text-gray-600">{v.totalPayments}</td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
           <Pager page={current} pageSize={REVENUE_PAGE_SIZE} total={rows.length} onPage={setPage} />
@@ -290,7 +318,7 @@ function PilotPanel({ metrics }: { metrics: PilotMetric[] }) {
 type ReportTab = 'overview' | 'rides' | 'artisans' | 'revenue' | 'pilot'
 
 export default function ReportsPage() {
-  const { can } = useRole()
+  const { can, category } = useRole()
   const [tab, setTab] = useState<ReportTab>('overview')
   const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month'>('day')
 
@@ -349,9 +377,22 @@ export default function ReportsPage() {
     { id: 'revenue',    label: 'Revenue',          icon: Download,   permission: 'view_revenue_report' },
     { id: 'pilot',      label: 'Pilot Targets',    icon: Star,       permission: 'view_pilot_report' },
   ]
-  // Overview is always present here (its `view_reports` is required for page
-  // access via PageGuard), so the default tab is always visible.
-  const tabs = allTabs.filter(t => can(t.permission))
+  // A category-scoped coordinator sees their vertical's report + Revenue (locked
+  // to their category) + Pilot; the cross-platform Overview and the other
+  // vertical are hidden. RM/global see everything and can filter.
+  const tabs = allTabs.filter(t => {
+    if (!can(t.permission)) return false
+    if (!category) return true
+    if (t.id === 'overview') return false
+    if (t.id === 'rides') return category === 'rides'
+    if (t.id === 'artisans') return category === 'artisan'
+    return true
+  })
+  // Keep the active tab valid when filtered out (coordinator default).
+  useEffect(() => {
+    if (tabs.length && !tabs.some(t => t.id === tab)) setTab(tabs[0].id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category])
 
   return (
     <PageGuard permission="view_reports">
@@ -430,7 +471,7 @@ export default function ReportsPage() {
             {!loading && !error && tab === 'overview' && overview  && <OverviewPanel data={overview} userTotal={userTotal} />}
             {!loading && !error && tab === 'rides'    && providers && <RidesPanel    data={providers} overview={overview} />}
             {!loading && !error && tab === 'artisans' && providers && <ArtisansPanel data={providers} overview={overview} />}
-            {!loading && !error && tab === 'revenue'  && revenue   && <RevenuePanel  data={revenue} />}
+            {!loading && !error && tab === 'revenue'  && revenue   && <RevenuePanel  data={revenue} lockedCategory={category} />}
             {!loading && !error && tab === 'pilot'    && pilot     && <PilotPanel    metrics={pilot} />}
           </CardContent>
         </Card>

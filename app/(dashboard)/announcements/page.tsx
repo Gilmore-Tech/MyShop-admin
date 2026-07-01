@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { PageHeader } from '@/components/common/page-header'
 import { sendAnnouncement, getAnnouncementHistory, sendSms, type AnnouncementTopic, type AnnouncementHistoryItem, type SmsAudience } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { useRole } from '@/hooks/use-role'
 
 const AUDIENCE: { value: AnnouncementTopic; label: string; sub: string; icon: React.ElementType; colors: string; active: string }[] = [
   { value: 'all_users', label: 'All Users', sub: 'Clients - Drivers - Artisans', icon: Users, colors: ' text-gray-600 hover: hover:bg-gray-50', active: ' bg-gray-100 text-gray-700 ring-1 ring-gray-200' },
@@ -36,7 +37,13 @@ function formatDateTime(iso: string) {
 }
 
 export default function AnnouncementsPage() {
-  const [topic, setTopic] = useState<AnnouncementTopic>('all_users')
+  const { category } = useRole()
+  // A category-scoped coordinator can only broadcast to their vertical's
+  // providers — the audience is locked to that one option.
+  const lockedTopic: AnnouncementTopic | null =
+    category === 'rides' ? 'drivers' : category === 'artisan' ? 'artisans' : null
+  const audienceOptions = lockedTopic ? AUDIENCE.filter(a => a.value === lockedTopic) : AUDIENCE
+  const [topic, setTopic] = useState<AnnouncementTopic>(lockedTopic ?? 'all_users')
   const [channel, setChannel] = useState('push')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -127,7 +134,7 @@ export default function AnnouncementsPage() {
             <div>
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 block">Target Audience</Label>
               <div className="grid grid-cols-2 gap-2">
-                {AUDIENCE.map(a => {
+                {audienceOptions.map(a => {
                   const Icon = a.icon
                   const isActive = topic === a.value
                   return (
