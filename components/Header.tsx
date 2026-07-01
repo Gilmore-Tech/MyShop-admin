@@ -296,6 +296,14 @@ export default function Header() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
+              onSelect={() => router.push('/account')}
+              className="cursor-pointer"
+            >
+              <UserCog className="mr-2 h-4 w-4" />
+              Account settings
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
               variant="destructive"
               onSelect={handleLogout}
               className="cursor-pointer"

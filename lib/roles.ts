@@ -24,6 +24,7 @@ export type Permission =
   | 'ban_user'
   | 'delete_user'
   | 'force_logout_user'
+  | 'edit_provider_profile'
   | 'view_categories'
   | 'edit_categories'
   | 'delete_category'
@@ -133,6 +134,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'ban_user', label: 'Ban users', description: 'Permanently ban a user account' },
       { key: 'delete_user', label: 'Delete users', description: 'Soft-delete a user (housekeeping / requests)' },
       { key: 'force_logout_user', label: 'Force logout', description: 'Revoke all sessions for a user' },
+      { key: 'edit_provider_profile', label: 'Edit provider profile', description: "Edit a driver's or artisan's profile details (excludes payout fields)" },
       { key: 'unlock_payout_method', label: 'Unlock payout method', description: 'Clear a locked payout method' },
     ],
   },
@@ -253,7 +255,7 @@ export interface RoleDef {
 
 const ADMIN_BASE: Permission[] = [
   'view_dashboard', 'view_activity', 'view_verifications', 'verify_documents',
-  'view_users', 'view_jobs', 'view_rides', 'view_help_articles', 'edit_help_articles',
+  'view_users', 'edit_provider_profile', 'view_jobs', 'view_rides', 'view_help_articles', 'edit_help_articles',
 ]
 
 const BACK_OFFICER_EXTRA: Permission[] = [
@@ -285,7 +287,7 @@ const dedupe = (perms: Permission[]): Permission[] => [...new Set(perms)]
 
 const REGIONAL_MANAGER_PERMS = dedupe([
   ...COORDINATOR_SHARED, ...COORDINATOR_RIDES_OPS, ...COORDINATOR_ARTISAN_OPS,
-  'finalize_verification', 'lift_verification_suspension', 'delete_user', 'delete_category',
+  'finalize_verification', 'lift_verification_suspension', 'delete_user', 'edit_provider_profile', 'delete_category',
   'run_batch_payouts', 'escalate_clawback', 'write_off_clawback', 'view_ussd', 'manage_referrals', 'view_audit_logs',
 ])
 

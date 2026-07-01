@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Mail, Phone, Calendar, Star, Pencil, Check, X, Loader2, RotateCcw, ShieldOff, ShieldCheck, UserX, FileText, ExternalLink, CheckCircle, XCircle, ChevronDown, ChevronUp, Car, Tag, TrendingUp, XOctagon, IdCard, Lock, Unlock, LogOut, Trash2 } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,6 +14,7 @@ import { ApiError } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { VerifyClientKycDialog, clientKycBadge } from './verify-client-kyc-dialog'
 import { DriverRideCategoriesSection } from './driver-ride-categories-section'
+import { EditProviderProfileDialog } from './edit-provider-profile-dialog'
 import { useRole } from '@/hooks/use-role'
 
 function initials(name: string | null | undefined) {
@@ -544,8 +545,11 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
   const [unlockLoading, setUnlockLoading] = useState(false)
   const [unlockError, setUnlockError] = useState('')
 
+  const [editProvider, setEditProvider] = useState<'driver' | 'artisan' | null>(null)
+
   const { can } = useRole()
   const canUnlockPayout = can('unlock_payout_method')
+  const canEditProviderProfile = can('edit_provider_profile')
   const canSuspend = can('suspend_user')
   const canBan = can('ban_user')
   const canDelete = can('delete_user')
@@ -746,6 +750,13 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
               {/* Hero */}
               <div className="flex items-start gap-4 pt-2">
                 <Avatar className="h-14 w-14">
+                  {(u.driver?.profilePhotoUrl ?? u.artisan?.profilePhotoUrl) && (
+                    <AvatarImage
+                      src={(u.driver?.profilePhotoUrl ?? u.artisan?.profilePhotoUrl) as string}
+                      alt={u.fullName}
+                      className="object-cover"
+                    />
+                  )}
                   <AvatarFallback className={`${roleColor} text-base font-bold`}>
                     {initials(u.fullName)}
                   </AvatarFallback>
@@ -858,7 +869,17 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
 
               {!editing && u.driver && (
                 <div>
-                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Driver Details</p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Driver Details</p>
+                    {canEditProviderProfile && (
+                      <button
+                        onClick={() => setEditProvider('driver')}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-orange-500 hover:text-orange-700"
+                      >
+                        <Pencil className="h-3 w-3" /> Edit
+                      </button>
+                    )}
+                  </div>
                   <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2.5">
                     {/* Status */}
                     <div className="flex items-center justify-between text-sm">
@@ -986,7 +1007,17 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
 
               {!editing && u.artisan && (
                 <div>
-                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Artisan Details</p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Artisan Details</p>
+                    {canEditProviderProfile && (
+                      <button
+                        onClick={() => setEditProvider('artisan')}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-orange-500 hover:text-orange-700"
+                      >
+                        <Pencil className="h-3 w-3" /> Edit
+                      </button>
+                    )}
+                  </div>
                   <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-2.5">
                     {/* Status */}
                     <div className="flex items-center justify-between text-sm">
@@ -1312,6 +1343,17 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit provider profile dialog */}
+      {editProvider && u && (
+        <EditProviderProfileDialog
+          open={!!editProvider}
+          providerType={editProvider}
+          user={u}
+          onClose={() => setEditProvider(null)}
+          onSaved={updated => { setRichUser(updated); onUpdate?.(updated) }}
+        />
+      )}
 
       {/* Verify client Ghana Card dialog */}
       <VerifyClientKycDialog

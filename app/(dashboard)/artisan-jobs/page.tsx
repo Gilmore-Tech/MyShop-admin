@@ -65,7 +65,7 @@ function staleHoursOf(job: AdminJob): number {
 // queued / pending_admin) returns 400 JOB_NOT_DELETABLE — those are cancelled.
 const DELETABLE_JOB_STATUSES = ['completed', 'cancelled', 'expired', 'refunded']
 // States the backend allows an admin to cancel (the remedy for stuck jobs).
-const CANCELLABLE_JOB_STATUSES = ['queued', 'pending_admin', 'open_for_bids', 'bids_received', 'confirmed']
+const CANCELLABLE_JOB_STATUSES = ['queued', 'pending_admin', 'admin_assigned', 'open_for_bids', 'bids_received', 'confirmed']
 
 export default function ArtisanJobsPage() {
   const router = useRouter()
@@ -228,6 +228,7 @@ export default function ArtisanJobsPage() {
               <SelectItem value="all">All Statuses</SelectItem>
               <SelectItem value="queued">Queued</SelectItem>
               <SelectItem value="pending_admin">Pending Admin</SelectItem>
+              <SelectItem value="admin_assigned">Awaiting Quote</SelectItem>
               <SelectItem value="open_for_bids">Open for Bids</SelectItem>
               <SelectItem value="bids_received">Bids Received</SelectItem>
               <SelectItem value="confirmed">Confirmed</SelectItem>

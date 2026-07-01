@@ -2,7 +2,7 @@
  * Typed API methods for MyShop Admin Panel
  * All endpoints map directly to the NestJS backend (v1 prefix).
  */
-import { api, apiFetch, AdminUser, setTokens, setAdminUser, clearTokens } from './api-client'
+import { api, apiFetch, AdminUser, setTokens, setAdminUser, clearTokens, API_BASE, getToken, ApiError } from './api-client'
 import type { Permission, Role, CategoryScope } from './roles'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -313,6 +313,13 @@ function resolveCloudinaryUrl(fileUrl: string, mimeType: string | null): string 
   const lk = fileUrl.toLowerCase()
   const resourceType = (mimeType === 'application/pdf' || lk.endsWith('.pdf')) ? 'raw' : 'image'
   return `https://res.cloudinary.com/${cloudName}/${resourceType}/upload/${fileUrl}`
+}
+
+// A provider profile photo is always an image; resolve a bare Cloudinary storage
+// key to a delivery URL, pass through full URLs, and normalise empty/missing to null.
+function resolveProfilePhoto(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.trim() === '') return null
+  return resolveCloudinaryUrl(raw, 'image/jpeg')
 }
 
 export interface ProviderDocument {
@@ -766,6 +773,10 @@ export interface PlatformUser {
     id: string
     verificationStatus: string
     onlineStatus: string
+    legalName: string | null
+    email: string | null
+    displayName: string | null
+    profilePhotoUrl: string | null
     vehicleMake: string | null
     vehicleModel: string | null
     vehicleYear: number | null
@@ -773,6 +784,7 @@ export interface PlatformUser {
     vehicleColor: string | null
     licenceNumber: string | null
     licenceExpiry: string | null
+    serviceRadius: number | null
     payoutPreference: string | null
     payoutMethod: string | null
     payoutLocked: boolean
@@ -786,9 +798,16 @@ export interface PlatformUser {
     id: string
     verificationStatus: string
     onlineStatus: string
+    legalName: string | null
+    email: string | null
     displayName: string | null
+    profilePhotoUrl: string | null
     businessName: string | null
+    businessAddress: string | null
+    businessPhone: string | null
     categories: string[]
+    serviceLatitude: number | null
+    serviceLongitude: number | null
     serviceRadius: number | null
     shopCapacity: string | null
     maxConcurrentJobs: number | null
@@ -846,6 +865,10 @@ function normalisePlatformUser(raw: any): PlatformUser {
       id:                  d.id,
       verificationStatus:  d.verificationStatus ?? d.verification_status ?? 'unverified',
       onlineStatus:        d.onlineStatus ?? d.online_status ?? 'offline',
+      legalName:           d.legalName ?? d.legal_name ?? null,
+      email:               d.email ?? null,
+      displayName:         d.displayName ?? d.display_name ?? null,
+      profilePhotoUrl:     resolveProfilePhoto(d.profilePhotoUrl ?? d.profile_photo_url),
       vehicleMake:         d.vehicleMake ?? d.vehicle?.make ?? null,
       vehicleModel:        d.vehicleModel ?? d.vehicle?.model ?? null,
       vehicleYear:         d.vehicleYear ?? d.vehicle_year ?? d.vehicle?.year ?? null,
@@ -853,6 +876,7 @@ function normalisePlatformUser(raw: any): PlatformUser {
       vehicleColor:        d.vehicleColor ?? d.vehicle?.color ?? null,
       licenceNumber:       d.licenceNumber ?? d.licence_number ?? null,
       licenceExpiry:       d.licenceExpiry ?? d.licence_expiry ?? null,
+      serviceRadius:       d.serviceRadiusKm != null ? Number(d.serviceRadiusKm) : d.service_radius_km != null ? Number(d.service_radius_km) : null,
       payoutPreference:    d.payoutPreference ?? d.payout_preference ?? null,
       payoutMethod:        d.payoutMethod ?? d.payout_method ?? null,
       payoutLocked:        Boolean(d.payoutLocked ?? d.payout_locked ?? false),
@@ -866,9 +890,16 @@ function normalisePlatformUser(raw: any): PlatformUser {
       id:                  a.id,
       verificationStatus:  a.verificationStatus ?? a.verification_status ?? 'unverified',
       onlineStatus:        a.onlineStatus ?? a.online_status ?? 'offline',
+      legalName:           a.legalName ?? a.legal_name ?? null,
+      email:               a.email ?? null,
       displayName:         a.displayName ?? a.display_name ?? null,
+      profilePhotoUrl:     resolveProfilePhoto(a.profilePhotoUrl ?? a.profile_photo_url),
       businessName:        a.businessName ?? a.business_name ?? null,
+      businessAddress:     a.businessAddress ?? a.business_address ?? null,
+      businessPhone:       a.businessPhone ?? a.business_phone ?? null,
       categories:          Array.isArray(a.categories) ? a.categories.map((c: any) => typeof c === 'string' ? c : (c.name ?? '')) : [],
+      serviceLatitude:     a.serviceLatitude != null ? Number(a.serviceLatitude) : a.service_latitude != null ? Number(a.service_latitude) : null,
+      serviceLongitude:    a.serviceLongitude != null ? Number(a.serviceLongitude) : a.service_longitude != null ? Number(a.service_longitude) : null,
       serviceRadius:       a.serviceRadius != null ? Number(a.serviceRadius) : a.service_radius_km != null ? Number(a.service_radius_km) : null,
       shopCapacity:        a.shopCapacity ?? a.shop_capacity ?? null,
       maxConcurrentJobs:   a.maxConcurrentJobs != null ? Number(a.maxConcurrentJobs) : a.max_concurrent_jobs != null ? Number(a.max_concurrent_jobs) : null,
@@ -935,6 +966,108 @@ export function triggerReverification(userId: string) {
 
 export function unlockPayoutMethod(userId: string, reason?: string) {
   return api.post(`/admin/users/${userId}/unlock-payout-method`, reason ? { reason } : {})
+}
+
+// ── Provider profile editing ──────────────────────────────────────────────────
+// Providers can no longer self-edit their profile on mobile; the dashboard is the
+// only place this data is changed. Payout fields (payoutMethod / payoutAccountNumber
+// / payoutPreference) are deliberately excluded — those stay on the provider's own
+// OTP-gated self-service flow; reset a locked one via unlockPayoutMethod() instead.
+// Permission: edit_provider_profile. The API also enforces region/category scope.
+
+// All fields optional — send ONLY what changed so the backend doesn't reject the
+// request with NO_UPDATE_FIELDS and unchanged values aren't accidentally overwritten.
+export interface EditDriverProfileInput {
+  legalName?: string
+  email?: string
+  displayName?: string
+  profilePhotoUrl?: string    // Cloudinary URL from uploadProviderPhoto()
+  vehicleMake?: string
+  vehicleModel?: string
+  vehicleYear?: number       // 1990–2100
+  vehiclePlate?: string
+  vehicleColor?: string
+  licenceNumber?: string
+  licenceExpiry?: string     // ISO date, e.g. "2027-12-31"
+  serviceRadiusKm?: number   // 1–100
+  reason?: string            // ≤1000 chars — recorded in the audit log
+}
+
+export interface EditArtisanProfileInput {
+  legalName?: string
+  displayName?: string
+  businessName?: string
+  email?: string
+  profilePhotoUrl?: string    // Cloudinary URL from uploadProviderPhoto()
+  businessAddress?: string   // ≤500 chars
+  businessPhone?: string     // ≤32 chars
+  shopCapacity?: 'solo' | 'multi'
+  maxConcurrentJobs?: number // 1–3
+  serviceLatitude?: number   // −90…90
+  serviceLongitude?: number  // −180…180
+  serviceRadiusKm?: number   // 1–100
+  reason?: string            // ≤1000 chars
+}
+
+export interface EditProviderProfileResult {
+  updated: boolean
+  userId: string
+  providerType: 'driver' | 'artisan'
+  driver?: unknown
+  artisan?: unknown
+}
+
+// Uploads a profile image to the backend (multipart/form-data, field `file`),
+// which stores it server-side and returns the delivery URL. The caller then
+// sends that URL as profilePhotoUrl on the driver/artisan profile PATCH, so the
+// actual assignment + audit happens through the normal edit flow.
+//
+// Can't go through the typed `api` helper: that wrapper forces
+// Content-Type: application/json and JSON-stringifies the body. For multipart we
+// must NOT set Content-Type (the browser adds the boundary), so we call fetch
+// directly while reusing the same base URL + bearer token. Permission and scope
+// (edit_provider_profile / OUT_OF_SCOPE) are enforced by the backend.
+//
+// Backend contract: POST /admin/users/:id/profile-photo → { url } (or
+// { profilePhotoUrl }). The dev proxy forwards the raw request body, so binary
+// uploads pass through intact.
+export async function uploadProviderPhoto(userId: string, file: File): Promise<string> {
+  const body = new FormData()
+  body.append('file', file)
+
+  const headers = new Headers()
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  // Intentionally no Content-Type — the browser sets the multipart boundary.
+
+  const res = await fetch(`${API_BASE}/admin/users/${userId}/profile-photo`, {
+    method: 'POST',
+    headers,
+    body,
+  })
+
+  let json: any = null
+  try { json = await res.json() } catch { /* non-JSON response */ }
+
+  if (!res.ok) {
+    const code = json?.error?.code ?? json?.error ?? json?.message ?? String(res.status)
+    const msg = json?.error?.message ?? json?.message ?? 'Photo upload failed.'
+    throw new ApiError(res.status, code, msg)
+  }
+
+  // NestJS TransformInterceptor wraps successful bodies in { success, data }.
+  const payload = json?.data ?? json
+  const url = payload?.url ?? payload?.profilePhotoUrl ?? payload?.secure_url
+  if (typeof url !== 'string') throw new Error('Photo upload returned no URL.')
+  return url
+}
+
+export function editDriverProfile(userId: string, data: EditDriverProfileInput) {
+  return api.patch<EditProviderProfileResult>(`/admin/users/${userId}/driver-profile`, data)
+}
+
+export function editArtisanProfile(userId: string, data: EditArtisanProfileInput) {
+  return api.patch<EditProviderProfileResult>(`/admin/users/${userId}/artisan-profile`, data)
 }
 
 export interface UserProviderDocument {
@@ -1990,11 +2123,18 @@ export function lockJob(jobId: string) {
   return api.post<{ locked: boolean; expiresAt: string }>(`/admin/jobs/${jobId}/lock`, {})
 }
 
-export function assignJob(jobId: string, data: { artisanId: string; agreedPricePesewas?: number }) {
-  return api.post<{ assigned: boolean; artisanId: string; agreedPricePesewas: number; assignedAt: string }>(
-    `/admin/jobs/${jobId}/assign`,
-    data,
-  )
+export function assignJob(
+  jobId: string,
+  data: { artisanId: string; mode?: 'confirm' | 'request_quote'; agreedPricePesewas?: number },
+) {
+  return api.post<{
+    assigned: boolean
+    mode: 'confirm' | 'request_quote'
+    status: 'admin_assigned' | 'confirmed'
+    artisanId: string
+    agreedPricePesewas: number | null
+    assignedAt: string
+  }>(`/admin/jobs/${jobId}/assign`, data)
 }
 
 export function forceCompleteJob(jobId: string, reason: string) {

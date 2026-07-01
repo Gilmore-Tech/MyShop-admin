@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
+import { useRole } from '@/hooks/use-role'
+import { verticalsForCategory, userLandingPath } from '@/lib/user-scope'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
@@ -20,7 +23,6 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { listUsers, suspendUser, banUser, reinstateUser, type PlatformUser } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { UserProfileSheet } from '@/components/users/user-profile-sheet'
-import { CreateUserDialog } from '@/components/users/create-user-dialog'
 
 function initials(name: string) {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -75,6 +77,17 @@ function RegistrationCell({ user }: { user: PlatformUser }) {
 type ActionType = 'suspend' | 'ban' | 'reinstate'
 
 export default function UsersPage() {
+  const router = useRouter()
+  // Category scope decides which user verticals this admin may browse. The
+  // "All Users" list is a global surface — category-scoped coordinators are
+  // bounced to their own vertical (drivers or artisans).
+  const { category, permissions } = useRole()
+  const allowed = verticalsForCategory(category, permissions)
+  const blocked = permissions !== null && !allowed.includes('clients')
+  useEffect(() => {
+    if (blocked) router.replace(userLandingPath(category, permissions))
+  }, [blocked, category, permissions, router])
+
   const [users, setUsers] = useState<PlatformUser[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -88,7 +101,6 @@ export default function UsersPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [profileUser, setProfileUser] = useState<PlatformUser | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
 
   const load = useCallback(async (pg = page) => {
     setLoading(true)
@@ -142,6 +154,9 @@ export default function UsersPage() {
     setProfileUser(updated)
   }
 
+  // While redirecting a category-scoped admin away, render nothing.
+  if (blocked) return null
+
   return (
     <PageGuard permission="view_users">
     <div>
@@ -149,16 +164,11 @@ export default function UsersPage() {
         title="User Management"
         subtitle="Manage all platform users"
         actions={
-          <div className="flex items-center gap-2">
-            <Link href="/users/clients/kyc-queue">
-              <Button size="sm" variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50">
-                <IdCard className="h-4 w-4" /> Client KYC Queue
-              </Button>
-            </Link>
-            <Button size="sm" className="gap-2 text-white" style={{ backgroundColor: '#F5A623' }} onClick={() => setCreateOpen(true)}>
-              <UserPlus className="h-4 w-4" /> Add User
+          <Link href="/users/clients/kyc-queue">
+            <Button size="sm" variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50">
+              <IdCard className="h-4 w-4" /> Client KYC Queue
             </Button>
-          </div>
+          </Link>
         }
       />
 
@@ -377,12 +387,6 @@ export default function UsersPage() {
         user={profileUser}
         onClose={() => setProfileUser(null)}
         onUpdate={handleProfileUpdate}
-      />
-
-      <CreateUserDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={user => { setUsers(prev => [user, ...prev]); setTotal(t => t + 1) }}
       />
     </div>
     </PageGuard>
