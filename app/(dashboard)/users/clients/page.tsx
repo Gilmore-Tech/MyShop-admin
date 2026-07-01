@@ -8,8 +8,8 @@ import { verticalsForCategory, userLandingPath } from '@/lib/user-scope'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
-import { Search, MoreHorizontal, UserX, Shield, RefreshCw, Users, RotateCcw, IdCard, CheckCircle2, CircleDashed } from 'lucide-react'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Search, MoreHorizontal, UserX, Shield, RefreshCw, Users, UserPlus, RotateCcw, IdCard, CheckCircle2, CircleDashed } from 'lucide-react'
+import { UserTabs } from '@/components/users/user-tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -172,13 +172,7 @@ export default function UsersPage() {
         }
       />
 
-      <Tabs value="all" className="mb-6">
-        <TabsList className="bg-white">
-          {allowed.includes('clients') && <TabsTrigger value="all" asChild><Link href="/users/clients">All Users</Link></TabsTrigger>}
-          {allowed.includes('drivers') && <TabsTrigger value="drivers" asChild><Link href="/users/drivers">Drivers</Link></TabsTrigger>}
-          {allowed.includes('artisans') && <TabsTrigger value="artisans" asChild><Link href="/users/artisans">Artisans</Link></TabsTrigger>}
-        </TabsList>
-      </Tabs>
+      <UserTabs active="all" />
 
       {/* Toolbar */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">

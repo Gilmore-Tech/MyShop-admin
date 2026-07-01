@@ -83,6 +83,19 @@ export interface RevenueDataPoint {
   momoCount: number
   cardCount: number
   cashCount: number
+  // Per-vertical split (rides vs artisan services). Used to show revenue by
+  // category — coordinators see only their vertical; RM/global can filter.
+  byVertical?: {
+    rides: VerticalRevenue
+    artisans: VerticalRevenue
+  }
+}
+
+export interface VerticalRevenue {
+  collectionsGhs: number
+  commissionGhs: number
+  payoutsGhs: number
+  totalPayments: number
 }
 
 export interface RevenueReport {
@@ -117,6 +130,7 @@ export async function getRevenueReport(params?: { from?: string; to?: string; gr
     momoCount:            p.momoCount             ?? p.momo_count         ?? 0,
     cardCount:            p.cardCount             ?? p.card_count         ?? 0,
     cashCount:            p.cashCount             ?? p.cash_count         ?? 0,
+    byVertical:           p.byVertical,
   }))
   return { from: raw.from ?? '', to: raw.to ?? '', groupBy: raw.groupBy ?? 'day', periods }
 }
@@ -446,6 +460,17 @@ export function finalizeVerification(
   reason: string,
 ) {
   return api.patch(`/admin/verifications/${providerId}/finalize`, { action, providerType, reason })
+}
+
+// Who performed each verification stage (from the audit trail).
+export interface StageApprover { by: string; at: string }
+export interface VerificationHistory {
+  stage1: StageApprover | null                                            // Admin submitted to coordinator
+  stage2: StageApprover | null                                            // Coordinator validated
+  stage3: (StageApprover & { decision: 'approved' | 'rejected' }) | null  // RM finalized
+}
+export function getVerificationHistory(providerId: string, providerType: 'driver' | 'artisan') {
+  return api.get<VerificationHistory>(`/admin/verifications/${providerId}/history?providerType=${providerType}`)
 }
 
 // Lifts an auto-suspension (rating-engine or cancellation-engine triggered).
@@ -1232,12 +1257,9 @@ export function resetAdminPassword(adminId: string, newPassword: string) {
   return api.patch(`/admin/admins/${adminId}/reset-password`, { newPassword })
 }
 
-// Self-service: the authenticated admin changes their own password. Acts on the
-// account in the JWT (no adminId, no manage_admins permission required) and
-// requires the current password for verification. Distinct from the privileged
-// resetAdminPassword above.
-export function changeMyPassword(currentPassword: string, newPassword: string) {
-  return api.patch('/auth/admin/change-password', { currentPassword, newPassword })
+// An admin changes their OWN password (verifies the current one server-side).
+export function changeOwnPassword(currentPassword: string, newPassword: string) {
+  return api.patch('/admin/me/password', { currentPassword, newPassword })
 }
 
 export function deleteAdmin(adminId: string) {

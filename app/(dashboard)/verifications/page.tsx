@@ -18,11 +18,12 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
 import {
   getVerificationQueue, getVerificationItem, reviewDocument,
-  submitVerification, validateVerification, finalizeVerification,
-  type VerificationItem, type ProviderDocument, type VerificationStage,
+  submitVerification, validateVerification, finalizeVerification, getVerificationHistory,
+  type VerificationItem, type ProviderDocument, type VerificationStage, type VerificationHistory,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
+import { ROLE_DEFINITIONS, type Permission } from '@/lib/roles'
 import { DriverRideCategoriesSection } from '@/components/users/driver-ride-categories-section'
 
 // Which pipeline step the viewer acts on, derived from their permissions. The
@@ -33,6 +34,24 @@ const STAGE_FOR_ROLE: Record<PipelineRole, VerificationStage | undefined> = {
   coordinator: 'docs_verified',
   rm: 'coordinator_validated',
   viewer: undefined,
+}
+
+const STAGE_LABEL: Record<string, string> = {
+  pending_documents: 'Stage 1 — Document check',
+  docs_verified: 'Stage 2 — Coordinator',
+  coordinator_validated: 'Stage 3 — RM final',
+  online: 'Online',
+}
+
+// The single action available on an item is decided by the item's CURRENT stage
+// (not the viewer's role) intersected with the viewer's permission. A viewer who
+// can see an item but holds no permission for its stage gets a read-only inspect.
+type DrawerAction = 'admin' | 'coordinator' | 'rm' | 'none'
+function effectiveAction(stage: VerificationStage | null, can: (p: Permission) => boolean): DrawerAction {
+  if (stage === 'pending_documents' && can('verify_documents')) return 'admin'
+  if (stage === 'docs_verified' && can('validate_verification')) return 'coordinator'
+  if (stage === 'coordinator_validated' && can('finalize_verification')) return 'rm'
+  return 'none'
 }
 
 function initials(name: string | null) {
@@ -630,6 +649,73 @@ function AdminSubmitStep({
   )
 }
 
+// ── Read-only inspect (viewer has no action at this item's stage) ──────────────
+function InspectStep({
+  stage,
+  onBack,
+  onClose,
+}: {
+  stage: VerificationStage | null
+  onBack: () => void
+  onClose: () => void
+}) {
+  const label = stage ? (STAGE_LABEL[stage] ?? stage) : 'Unknown stage'
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Inspect</p>
+        <p className="text-base font-semibold text-gray-900 mt-0.5">No action at this stage</p>
+      </div>
+      <div className="flex items-start gap-2 bg-gray-50 border border-gray-100 rounded-lg px-3 py-3">
+        <AlertCircle className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+        <p className="text-sm text-gray-600">
+          This provider is at <strong>{label}</strong>. You can review the documents above, but the next
+          action belongs to a different level of the pipeline — there is nothing for you to submit here.
+        </p>
+      </div>
+      <div className="flex gap-2 pt-2 border-t border-gray-100">
+        <Button variant="outline" size="sm" onClick={onBack} className="gap-1">
+          <ChevronLeft className="h-4 w-4" /> Back to Docs
+        </Button>
+        <Button size="sm" variant="outline" className="flex-1" onClick={onClose}>Close</Button>
+      </div>
+    </div>
+  )
+}
+
+// ── Approval chain (who did each stage) — gated to coordinator/RM/global ───────
+function ApprovalChain({ history, showStages }: { history: VerificationHistory; showStages: VerificationStage[] }) {
+  const rows: { key: VerificationStage; label: string; who: { by: string; at: string } | null; decision?: string }[] = [
+    { key: 'pending_documents' as VerificationStage, label: 'Document check · Admin', who: history.stage1 },
+    { key: 'docs_verified' as VerificationStage, label: 'Validation · Coordinator', who: history.stage2 },
+    { key: 'coordinator_validated' as VerificationStage, label: 'Final · Regional Manager', who: history.stage3, decision: history.stage3?.decision },
+  ].filter(r => showStages.includes(r.key))
+  if (rows.length === 0) return null
+  return (
+    <div className="rounded-xl border border-gray-100 p-3 mb-4">
+      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Approval chain</p>
+      <div className="space-y-1.5">
+        {rows.map(r => (
+          <div key={r.key} className="flex items-center justify-between gap-2 text-sm">
+            <span className="text-gray-500">{r.label}</span>
+            {r.who ? (
+              <span className="text-gray-800 font-medium">
+                {r.decision === 'rejected' && <span className="text-red-600 mr-1">Rejected by</span>}
+                {r.who.by}
+                <span className="text-gray-400 font-normal ml-1.5">
+                  {new Date(r.who.at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </span>
+              </span>
+            ) : (
+              <span className="text-gray-300 text-xs italic">Awaiting</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Sort: pending_review → uploaded → approved/rejected. Historical versions
 // (isCurrent === false) are dropped — only the current version is reviewable.
 const docStatusRank = (s: string) => s === 'pending_review' ? 0 : s === 'uploaded' ? 1 : 2
@@ -642,21 +728,37 @@ function sortReviewDocs(docs: ProviderDocument[]): ProviderDocument[] {
 // ── Review drawer ─────────────────────────────────────────────────────────────
 function ReviewDrawer({
   item,
-  pipelineRole,
   onClose,
   onDone,
 }: {
   item: VerificationItem
-  pipelineRole: PipelineRole
   onClose: () => void
   onDone: () => void
 }) {
-  const { can } = useRole()
-  // Only the RM finalize step gates the ride-tier controls.
+  const { can, role } = useRole()
+  // The available action is decided by the item's current stage + the viewer's
+  // permission — not the viewer's "home" role. This prevents, e.g., an RM
+  // opening a pending_documents item from being offered "Approve & Send Online".
+  const action = effectiveAction(item.verification_stage, can)
   const canReviewTiers = can('finalize_verification')
-  // Admin is the only role that edits per-document verdicts; everyone downstream
-  // views them read-only.
-  const docsReadOnly = pipelineRole !== 'admin'
+  // The approval chain (who did each stage) is restricted: admins (entry level)
+  // don't see it; coordinators see Stages 1–2; RM/global see all stages.
+  const isGlobal = role ? (ROLE_DEFINITIONS[role]?.global ?? false) : false
+  const chainStages: VerificationStage[] =
+    isGlobal || can('finalize_verification') ? ['pending_documents', 'docs_verified', 'coordinator_validated']
+    : can('validate_verification') ? ['pending_documents', 'docs_verified']
+    : []
+  const [history, setHistory] = useState<VerificationHistory | null>(null)
+  useEffect(() => {
+    if (chainStages.length === 0) return
+    getVerificationHistory(item.provider_id, item.provider_type as 'driver' | 'artisan')
+      .then(setHistory)
+      .catch(() => setHistory(null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.provider_id, item.provider_type])
+  // Only the admin document-check step edits per-document verdicts; every other
+  // action (and the read-only inspect) views them.
+  const docsReadOnly = action !== 'admin'
 
   const [documents, setDocuments] = useState<ProviderDocument[]>(() => sortReviewDocs(item.documents ?? []))
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -722,14 +824,14 @@ function ReviewDrawer({
 
   const providerType = item.provider_type as 'driver' | 'artisan'
 
-  // Coordinator (validate) / RM (finalize) decision.
-  async function handleDecisionSubmit(action: 'approve' | 'reject', reason: string) {
+  // Coordinator (validate) / RM (finalize) decision — chosen by the item's stage.
+  async function handleDecisionSubmit(decision: 'approve' | 'reject', reason: string) {
     setSubmitting(true)
     try {
-      if (pipelineRole === 'rm') {
-        await finalizeVerification(item.provider_id, providerType, action, reason)
+      if (action === 'rm') {
+        await finalizeVerification(item.provider_id, providerType, decision, reason)
       } else {
-        await validateVerification(item.provider_id, providerType, action, reason)
+        await validateVerification(item.provider_id, providerType, decision, reason)
       }
       onDone()
     } catch {
@@ -793,6 +895,9 @@ function ReviewDrawer({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
+          {history && chainStages.length > 0 && (
+            <ApprovalChain history={history} showStages={chainStages} />
+          )}
           {documents.length === 0 ? (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col items-center justify-center h-32 gap-2 text-center">
@@ -827,10 +932,12 @@ function ReviewDrawer({
               saveError={saveError}
               refreshNote={refreshNote}
               readOnly={docsReadOnly}
-              finishLabel={pipelineRole === 'admin' ? 'Finish' : 'Continue'}
+              finishLabel={action === 'admin' ? 'Finish' : action === 'none' ? 'Done' : 'Continue'}
             />
           ) : step === 'final' ? (
-            pipelineRole === 'admin' ? (
+            action === 'none' ? (
+              <InspectStep stage={item.verification_stage} onBack={() => setStep('docs')} onClose={onClose} />
+            ) : action === 'admin' ? (
               <AdminSubmitStep
                 documents={documents}
                 reviews={reviews}
@@ -847,10 +954,10 @@ function ReviewDrawer({
                 onSubmit={handleDecisionSubmit}
                 submitting={submitting}
                 canReviewTiers={canReviewTiers}
-                showTiers={pipelineRole === 'rm'}
-                heading={pipelineRole === 'rm' ? 'Final Verification' : 'Validate Documents'}
-                approveLabel={pipelineRole === 'rm' ? 'Approve & Send Online' : 'Send to RM'}
-                rejectLabel={pipelineRole === 'rm' ? 'Reject Provider' : 'Bounce to Admin'}
+                showTiers={action === 'rm'}
+                heading={action === 'rm' ? 'Final Verification' : 'Validate Documents'}
+                approveLabel={action === 'rm' ? 'Approve & Send Online' : 'Send to RM'}
+                rejectLabel={action === 'rm' ? 'Reject Provider' : 'Bounce to Admin'}
               />
             )
           ) : null}
@@ -869,28 +976,37 @@ function ReviewDrawer({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function VerificationsPage() {
-  const { can } = useRole()
-  // The viewer's pipeline role drives which stage the queue shows and how the
-  // drawer behaves. Order matters: a higher role outranks lower stage perms.
-  const pipelineRole: PipelineRole =
+  const { can, role } = useRole()
+  // The stages a viewer may see, mirroring the server-side boundary: admin →
+  // Stage 1 only; coordinator → Stages 1–2; RM and any global role → all three.
+  const isGlobal = role ? (ROLE_DEFINITIONS[role]?.global ?? false) : false
+  const homeRole: PipelineRole =
     can('finalize_verification') ? 'rm'
     : can('validate_verification') ? 'coordinator'
     : can('verify_documents') ? 'admin'
     : 'viewer'
-  const stage = STAGE_FOR_ROLE[pipelineRole]
+  const allowedStages: VerificationStage[] =
+    isGlobal || can('finalize_verification') ? ['pending_documents', 'docs_verified', 'coordinator_validated']
+    : can('validate_verification') ? ['pending_documents', 'docs_verified']
+    : can('verify_documents') ? ['pending_documents']
+    : ['pending_documents', 'docs_verified', 'coordinator_validated']
+  // A single allowed stage (admin) needs no filter — lock to it and hide the UI.
+  const defaultStage: VerificationStage | 'all' =
+    allowedStages.length === 1 ? allowedStages[0] : 'all'
 
   const [items, setItems] = useState<VerificationItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
+  const [stageFilter, setStageFilter] = useState<VerificationStage | 'all'>(defaultStage)
   const [reviewing, setReviewing] = useState<VerificationItem | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const data = await getVerificationQueue(stage ? { stage } : undefined)
+      const data = await getVerificationQueue(stageFilter === 'all' ? undefined : { stage: stageFilter })
       if (Array.isArray(data)) {
         setItems(data)
       } else if (data && typeof data === 'object' && Array.isArray((data as any).items)) {
@@ -903,7 +1019,7 @@ export default function VerificationsPage() {
     } finally {
       setLoading(false)
     }
-  }, [stage])
+  }, [stageFilter])
 
   useEffect(() => { load() }, [load])
   useAutoRefresh(load)
@@ -923,9 +1039,10 @@ export default function VerificationsPage() {
       <PageHeader
         title="Provider Verification Queue"
         subtitle={
-          pipelineRole === 'admin' ? 'Stage 1 — check each document for authenticity, then submit to the coordinator'
-          : pipelineRole === 'coordinator' ? 'Stage 2 — validate the admin-approved documents for your category'
-          : pipelineRole === 'rm' ? 'Stage 3 — final verification that sends the provider online'
+          isGlobal ? 'All providers across the verification pipeline'
+          : homeRole === 'admin' ? 'Stage 1 — check each document for authenticity, then submit to the coordinator'
+          : homeRole === 'coordinator' ? 'Stage 2 — validate the admin-approved documents for your category'
+          : homeRole === 'rm' ? 'Stage 3 — final verification that sends the provider online'
           : 'Provider identity and document submissions'
         }
         actions={
@@ -960,6 +1077,17 @@ export default function VerificationsPage() {
             <SelectItem value="artisan">Artisans</SelectItem>
           </SelectContent>
         </Select>
+        {allowedStages.length > 1 && (
+          <Select value={stageFilter} onValueChange={v => setStageFilter(v as VerificationStage | 'all')}>
+            <SelectTrigger className="w-52 bg-white"><SelectValue placeholder="Stage" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Stages</SelectItem>
+              {allowedStages.map(s => (
+                <SelectItem key={s} value={s}>{STAGE_LABEL[s] ?? s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <div className="ml-auto text-sm text-gray-400">{filtered.length} in queue</div>
       </div>
 
@@ -973,6 +1101,7 @@ export default function VerificationsPage() {
             <TableRow className="bg-gray-50">
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Provider</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</TableHead>
+              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Stage</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Documents</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">First Upload</TableHead>
               <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Actions</TableHead>
@@ -982,14 +1111,14 @@ export default function VerificationsPage() {
             {loading ? (
               Array.from({ length: 6 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 5 }).map((_, j) => (
+                  {Array.from({ length: 6 }).map((_, j) => (
                     <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-12 text-gray-400">
+                <TableCell colSpan={6} className="text-center py-12 text-gray-400">
                   <FileText className="h-8 w-8 mx-auto mb-2 text-gray-200" />
                   {search || typeFilter !== 'all' ? 'No results match your filters.' : 'Verification queue is empty.'}
                 </TableCell>
@@ -1011,6 +1140,9 @@ export default function VerificationsPage() {
                     </div>
                   </TableCell>
                   <TableCell><StatusBadge status={v.provider_type} /></TableCell>
+                  <TableCell className="text-xs text-gray-500">
+                    {v.verification_stage ? (STAGE_LABEL[v.verification_stage] ?? v.verification_stage) : '—'}
+                  </TableCell>
                   <TableCell>
                     <DocsProgress
                       pending={Number(v.docs_pending)}
@@ -1047,7 +1179,6 @@ export default function VerificationsPage() {
       {reviewing && (
         <ReviewDrawer
           item={reviewing}
-          pipelineRole={pipelineRole}
           onClose={() => { setReviewing(null); load() }}
           onDone={() => { setReviewing(null); load() }}
         />

@@ -206,7 +206,7 @@ export default function AppSidebar() {
             { title: 'All Rides',          href: '/rides',         permission: 'view_rides', category: 'rides' },
             { title: 'Ride Tiers',         href: '/ride-categories', permission: 'view_ride_categories', category: 'rides' },
             { title: 'Artisan Jobs',       href: '/artisan-jobs',  permission: 'view_jobs', category: 'artisan' },
-            { title: 'Manual Assignment',  href: '/artisan-jobs/manual-assignment', permission: 'assign_job', category: 'artisan', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
+            { title: 'Manual Assignment',  href: '/artisan-jobs/manual-assignment', permission: 'view_jobs', category: 'artisan', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
             ...(FEATURES.highBidReview
               ? [{ title: 'High Bid Review', href: '/artisan-jobs/high-bid-review', permission: 'review_bid' as const, category: 'artisan' as const, badge: highBidCount ?? undefined }]
               : []),
