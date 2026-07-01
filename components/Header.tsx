@@ -17,6 +17,7 @@ import {
   type AdminNotification, type AdminNotificationType,
 } from '@/lib/api'
 import { useSessionExpiry, formatSessionRemaining } from '@/hooks/use-session-expiry'
+import { ProfileDialog } from '@/components/admin/profile-dialog'
 
 // ─── Notification helpers ─────────────────────────────────────────────────────
 
@@ -172,6 +173,7 @@ export default function Header() {
   const [notifications, setNotifications] = useState<AdminNotification[] | null>(null)
   const [loadingNotifs, setLoadingNotifs] = useState(true)
   const [panelOpen, setPanelOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
   const { secondsRemaining, warn: sessionWarn } = useSessionExpiry()
 
@@ -288,6 +290,11 @@ export default function Header() {
                 <DropdownMenuSeparator />
               </>
             )}
+            <DropdownMenuItem onSelect={() => setProfileOpen(true)} className="cursor-pointer">
+              <UserCog className="mr-2 h-4 w-4" />
+              My Profile
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={() => router.push('/account')}
               className="cursor-pointer"
@@ -308,6 +315,8 @@ export default function Header() {
         </DropdownMenu>
       </div>
       </div>
+
+      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </header>
   )
 }

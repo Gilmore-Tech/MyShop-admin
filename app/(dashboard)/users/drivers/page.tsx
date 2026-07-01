@@ -6,10 +6,9 @@ import { useRole } from '@/hooks/use-role'
 import { verticalsForCategory, userLandingPath } from '@/lib/user-scope'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
-import Link from 'next/link'
+import { UserTabs } from '@/components/users/user-tabs'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, MoreHorizontal, Loader2, RotateCcw, ShieldCheck } from 'lucide-react'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Search, MoreHorizontal, Loader2, UserPlus, RotateCcw, ShieldCheck } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -134,13 +133,7 @@ export default function DriversPage() {
         subtitle="Manage all platform users"
       />
 
-      <Tabs defaultValue="drivers" className="mb-6">
-        <TabsList className="bg-white">
-          {allowed.includes('clients') && <TabsTrigger value="clients" asChild><Link href="/users/clients">Clients</Link></TabsTrigger>}
-          {allowed.includes('drivers') && <TabsTrigger value="drivers" asChild><Link href="/users/drivers">Drivers</Link></TabsTrigger>}
-          {allowed.includes('artisans') && <TabsTrigger value="artisans" asChild><Link href="/users/artisans">Artisans</Link></TabsTrigger>}
-        </TabsList>
-      </Tabs>
+      <UserTabs active="drivers" />
 
       <div className="flex items-center gap-3 mb-4">
         <div className="relative flex-1 max-w-sm">

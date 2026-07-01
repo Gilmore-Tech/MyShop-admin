@@ -107,7 +107,7 @@ type AnalyticsTab = 'overview' | 'rides' | 'artisans'
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AnalyticsPage() {
- const { can } = useRole()
+ const { can, category } = useRole()
  const [tab, setTab] = useState<AnalyticsTab>('overview')
  const [range, setRange] = useState('30 days')
  const [revenueData, setRevenue] = useState<RevenueDataPoint[]>([])
@@ -298,12 +298,23 @@ export default function AnalyticsPage() {
  // Rides/artisans analytics are each gated by their own permission; Overview
  // (cross-platform charts) rides along with `view_analytics`, which is required
  // to reach this page at all. Only tabs the admin holds are shown.
- const allTabs: { id: AnalyticsTab; label: string; icon: React.ElementType; permission: Permission }[] = [
+ const allTabs: { id: AnalyticsTab; label: string; icon: React.ElementType; permission: Permission; vertical?: 'rides' | 'artisan' }[] = [
  { id:'overview', label:'Overview',         icon: TrendingUp, permission:'view_analytics' },
- { id:'rides',    label:'Rides',            icon: Car,        permission:'view_analytics' },
- { id:'artisans', label:'Artisan Services', icon: Wrench,     permission:'view_analytics' },
+ { id:'rides',    label:'Rides',            icon: Car,        permission:'view_analytics', vertical: 'rides' },
+ { id:'artisans', label:'Artisan Services', icon: Wrench,     permission:'view_analytics', vertical: 'artisan' },
  ]
- const tabs = allTabs.filter(t => can(t.permission))
+ // A category-scoped coordinator sees ONLY their vertical's analytics (no
+ // overview, no other vertical). RM/global (category null) see everything.
+ const tabs = allTabs.filter(t => {
+ if (!can(t.permission)) return false
+ if (!category) return true
+ return t.vertical === category
+ })
+ // Keep the active tab valid when it's filtered out (coordinator default).
+ useEffect(() => {
+ if (tabs.length && !tabs.some(t => t.id === tab)) setTab(tabs[0].id)
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [category])
 
  return (
  <PageGuard permission="view_analytics">
