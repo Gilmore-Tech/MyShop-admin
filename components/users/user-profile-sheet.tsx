@@ -9,8 +9,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
-import { updateUser, reinstateUser, suspendUser, banUser, deleteUser, forceLogoutUser, getProviderDocuments, finalizeVerification, reviewClientKyc, getUser, unlockPayoutMethod, liftVerificationSuspension, uploadProviderDocument, ADMIN_UPLOADABLE_DOC_TYPES, type PlatformUser, type ProviderSuspension, type UserProviderDocument, type UserProviderGroup } from '@/lib/api'
+import { updateUser, reinstateUser, suspendUser, banUser, deleteUser, forceLogoutUser, getProviderDocuments, finalizeVerification, reviewClientKyc, getUser, unlockPayoutMethod, liftVerificationSuspension, uploadProviderDocument, ADMIN_UPLOADABLE_DOC_TYPES, documentTypeTracksExpiry, type PlatformUser, type ProviderSuspension, type UserProviderDocument, type UserProviderGroup } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { DocumentExpiryControl } from '@/components/common/document-expiry-control'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RoleGate } from '@/components/common/role-gate'
@@ -105,7 +106,7 @@ function docStatusBadge(status: string) {
   return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Awaiting Upload</span>
 }
 
-function DocumentCard({ doc }: { doc: UserProviderDocument }) {
+function DocumentCard({ doc, onStale, expiryEditable = true }: { doc: UserProviderDocument; onStale?: () => void; expiryEditable?: boolean }) {
   const lower = doc.fileUrl.toLowerCase()
   const isPdf = doc.mimeType === 'application/pdf'
     || lower.includes('.pdf') || lower.includes('/raw/upload/')
@@ -141,11 +142,19 @@ function DocumentCard({ doc }: { doc: UserProviderDocument }) {
         </div>
 
         <div className="flex items-center justify-between gap-2 ml-5">
-          <div className="text-[11px] text-gray-400 space-y-0.5">
+          <div className="text-[11px] text-gray-400 space-y-1">
             <p>Uploaded {new Date(doc.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-            {doc.expiresAt && (
+            {documentTypeTracksExpiry(doc.documentType) ? (
+              <DocumentExpiryControl
+                documentId={doc.id}
+                documentType={doc.documentType}
+                expiresAt={doc.expiresAt}
+                onStale={onStale}
+                editable={expiryEditable}
+              />
+            ) : doc.expiresAt ? (
               <p>Expires {new Date(doc.expiresAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-            )}
+            ) : null}
           </div>
           {hasFile && (
             <div className="flex items-center gap-2 shrink-0">
@@ -198,14 +207,14 @@ function DocumentCard({ doc }: { doc: UserProviderDocument }) {
   )
 }
 
-function ProviderDocumentGroup({ group }: { group: UserProviderGroup }) {
+function ProviderDocumentGroup({ group, onStale }: { group: UserProviderGroup; onStale?: () => void }) {
   const [showHistory, setShowHistory] = useState(false)
   const current = group.documents.filter(d => d.isCurrent)
   const history = group.documents.filter(d => !d.isCurrent)
 
   return (
     <div className="space-y-2">
-      {current.map(doc => <DocumentCard key={doc.id} doc={doc} />)}
+      {current.map(doc => <DocumentCard key={doc.id} doc={doc} onStale={onStale} />)}
       {history.length > 0 && (
         <div>
           <button
@@ -217,7 +226,7 @@ function ProviderDocumentGroup({ group }: { group: UserProviderGroup }) {
           </button>
           {showHistory && (
             <div className="mt-2 space-y-2 pl-3 border-l-2 border-gray-100">
-              {history.map(doc => <DocumentCard key={doc.id} doc={doc} />)}
+              {history.map(doc => <DocumentCard key={doc.id} doc={doc} expiryEditable={false} />)}
             </div>
           )}
         </div>
@@ -418,7 +427,7 @@ function DocumentsSection({ userId, userName }: { userId: string; userName: stri
               </button>
             </RoleGate>
           </div>
-          <ProviderDocumentGroup group={group} />
+          <ProviderDocumentGroup group={group} onStale={load} />
         </div>
       ))}
 
@@ -458,7 +467,7 @@ function VerifyProviderDialog({
   const [docs, setDocs] = useState<UserProviderDocument[]>([])
   const [docsLoading, setDocsLoading] = useState(false)
 
-  useEffect(() => {
+  const loadDocs = useCallback(() => {
     if (!open || !user) return
     setDocsLoading(true)
     getProviderDocuments(user.id)
@@ -469,6 +478,8 @@ function VerifyProviderDialog({
       .catch(() => setDocs([]))
       .finally(() => setDocsLoading(false))
   }, [open, user, providerType])
+
+  useEffect(() => { loadDocs() }, [loadDocs])
 
   const driver = providerType === 'driver' ? user?.driver : null
   const artisan = providerType === 'artisan' ? user?.artisan : null
@@ -590,7 +601,7 @@ function VerifyProviderDialog({
               </div>
             ) : (
               <div className="space-y-2">
-                {docs.map(doc => <DocumentCard key={doc.id} doc={doc} />)}
+                {docs.map(doc => <DocumentCard key={doc.id} doc={doc} onStale={loadDocs} />)}
               </div>
             )}
           </div>

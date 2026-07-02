@@ -623,6 +623,21 @@ export function reviewDocument(
   return api.patch(`/admin/verifications/documents/${documentId}`, { action, providerType, reason })
 }
 
+// PATCH /admin/verifications/documents/:id/expiry — backfills the expiry date on a
+// provider document. Writes ONLY expiresAt (and updatedBy); never changes the
+// document's review status. Requires the `verify_documents` permission (same gate
+// as approve/reject). `expiresAt` is an ISO date string (YYYY-MM-DD); a PAST date
+// is allowed and intentionally flags the document as already-expired so the
+// provider is prompted to re-upload. Only the current version of a confirmed
+// document can be patched — a stale/superseded id returns 404 DOCUMENT_NOT_FOUND.
+export interface SetDocumentExpiryResult {
+  documentId: string
+  expiresAt: string  // ISO datetime the backend persisted, e.g. "2028-12-31T00:00:00.000Z"
+}
+export function setDocumentExpiry(documentId: string, expiresAt: string): Promise<SetDocumentExpiryResult> {
+  return api.patch<SetDocumentExpiryResult>(`/admin/verifications/documents/${documentId}/expiry`, { expiresAt })
+}
+
 // ── Disputes ──────────────────────────────────────────────────────────────────
 
 export interface Dispute {
@@ -1073,6 +1088,24 @@ export interface UploadableDocType {
   /** Which provider role this document applies to (null = both). */
   appliesTo: 'driver' | 'artisan' | null
   expiryRequired: boolean
+}
+
+// Document types that carry a real-world expiry an admin can backfill on a
+// provider's behalf (legacy docs uploaded before expiry capture existed). These
+// are the canonical BACKEND document_type values (British spellings) and mirror
+// the mobile app's `DocumentType.requiresExpiry` set. NOTE: this is deliberately
+// distinct from `UploadableDocType.expiryRequired` above — that gates whether an
+// expiry is *required at admin upload time*, whereas this set decides which
+// documents show the expiry-backfill control on the review surface.
+export const EXPIRY_TRACKED_DOC_TYPES = [
+  'drivers_licence',
+  'roadworthiness_certificate',
+  'ghana_card',
+  'business_registration',
+] as const
+
+export function documentTypeTracksExpiry(type: string): boolean {
+  return (EXPIRY_TRACKED_DOC_TYPES as readonly string[]).includes(type)
 }
 
 export const ADMIN_UPLOADABLE_DOC_TYPES: UploadableDocType[] = [
