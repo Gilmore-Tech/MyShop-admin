@@ -6,7 +6,7 @@
 import type { Permission, Role, CategoryScope } from './roles'
 
 // In the browser during local dev, route through the Next.js rewrite proxy to avoid CORS.
-// In production (or when NEXT_PUBLIC_API_URL is set), hit the API directly.
+
 export const API_BASE =
   typeof window !== 'undefined'
     ? '/api/proxy'
