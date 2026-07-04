@@ -623,6 +623,21 @@ export function reviewDocument(
   return api.patch(`/admin/verifications/documents/${documentId}`, { action, providerType, reason })
 }
 
+// PATCH /admin/verifications/documents/:id/expiry — backfills the expiry date on a
+// provider document. Writes ONLY expiresAt (and updatedBy); never changes the
+// document's review status. Requires the `verify_documents` permission (same gate
+// as approve/reject). `expiresAt` is an ISO date string (YYYY-MM-DD); a PAST date
+// is allowed and intentionally flags the document as already-expired so the
+// provider is prompted to re-upload. Only the current version of a confirmed
+// document can be patched — a stale/superseded id returns 404 DOCUMENT_NOT_FOUND.
+export interface SetDocumentExpiryResult {
+  documentId: string
+  expiresAt: string  // ISO datetime the backend persisted, e.g. "2028-12-31T00:00:00.000Z"
+}
+export function setDocumentExpiry(documentId: string, expiresAt: string): Promise<SetDocumentExpiryResult> {
+  return api.patch<SetDocumentExpiryResult>(`/admin/verifications/documents/${documentId}/expiry`, { expiresAt })
+}
+
 // ── Disputes ──────────────────────────────────────────────────────────────────
 
 export interface Dispute {
@@ -1060,6 +1075,102 @@ export async function uploadProviderPhoto(userId: string, file: File): Promise<s
   const url = payload?.url ?? payload?.profilePhotoUrl ?? payload?.secure_url
   if (typeof url !== 'string') throw new Error('Photo upload returned no URL.')
   return url
+}
+
+// Document types an admin may upload on a provider's behalf. These MUST match
+// the backend's canonical VALID_DOCUMENT_TYPES (apps/api/.../request-document-upload.dto.ts)
+// exactly — note the British spellings (drivers_licence, roadworthiness_certificate)
+// which differ from the display-only keys in DOC_TYPE_LABELS. `expiryRequired`
+// mirrors the backend EXPIRY_REQUIRED guard.
+export interface UploadableDocType {
+  value: string
+  label: string
+  /** Which provider role this document applies to (null = both). */
+  appliesTo: 'driver' | 'artisan' | null
+  expiryRequired: boolean
+}
+
+// Document types that carry a real-world expiry an admin can backfill on a
+// provider's behalf (legacy docs uploaded before expiry capture existed). These
+// are the canonical BACKEND document_type values (British spellings) and mirror
+// the mobile app's `DocumentType.requiresExpiry` set. NOTE: this is deliberately
+// distinct from `UploadableDocType.expiryRequired` above — that gates whether an
+// expiry is *required at admin upload time*, whereas this set decides which
+// documents show the expiry-backfill control on the review surface.
+export const EXPIRY_TRACKED_DOC_TYPES = [
+  'drivers_licence',
+  'roadworthiness_certificate',
+  'ghana_card',
+  'business_registration',
+] as const
+
+export function documentTypeTracksExpiry(type: string): boolean {
+  return (EXPIRY_TRACKED_DOC_TYPES as readonly string[]).includes(type)
+}
+
+export const ADMIN_UPLOADABLE_DOC_TYPES: UploadableDocType[] = [
+  { value: 'drivers_licence',            label: "Driver's Licence",          appliesTo: 'driver',  expiryRequired: true },
+  { value: 'vehicle_registration',       label: 'Vehicle Registration',      appliesTo: 'driver',  expiryRequired: false },
+  { value: 'roadworthiness_certificate', label: 'Roadworthiness Certificate', appliesTo: 'driver', expiryRequired: true },
+  { value: 'trade_certificate',          label: 'Trade Certificate',         appliesTo: 'artisan', expiryRequired: false },
+  { value: 'business_registration',      label: 'Business Registration',     appliesTo: 'artisan', expiryRequired: false },
+  { value: 'portfolio_photo',            label: 'Portfolio Photo',           appliesTo: 'artisan', expiryRequired: false },
+  { value: 'ghana_card',                 label: 'Ghana Card',                appliesTo: null,      expiryRequired: false },
+  { value: 'national_id',                label: 'National ID',               appliesTo: null,      expiryRequired: false },
+  { value: 'profile_photo',              label: 'Profile Photo',             appliesTo: null,      expiryRequired: false },
+]
+
+export interface UploadProviderDocumentResult {
+  documentId: string
+  providerType: 'driver' | 'artisan'
+  providerId: string
+  documentType: string
+  version: number
+  status: 'pending_review'
+}
+
+// Admin (Regional Manager) uploads a replacement document on a provider's
+// behalf. Multipart, so we bypass the JSON apiFetch wrapper and build the
+// request by hand (mirrors uploadProviderPhoto). `expiresAt` is an ISO date
+// string (yyyy-mm-dd) and is required by the backend for expiring document
+// types. POST /admin/users/:userId/documents.
+export async function uploadProviderDocument(
+  userId: string,
+  input: {
+    providerType: 'driver' | 'artisan'
+    documentType: string
+    file: File
+    expiresAt?: string
+  },
+): Promise<UploadProviderDocumentResult> {
+  const body = new FormData()
+  body.append('file', input.file)
+  body.append('providerType', input.providerType)
+  body.append('documentType', input.documentType)
+  if (input.expiresAt) body.append('expiresAt', input.expiresAt)
+
+  const headers = new Headers()
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  // Intentionally no Content-Type — the browser sets the multipart boundary.
+
+  const res = await fetch(`${API_BASE}/admin/users/${userId}/documents`, {
+    method: 'POST',
+    headers,
+    body,
+  })
+
+  let json: any = null
+  try { json = await res.json() } catch { /* non-JSON response */ }
+
+  if (!res.ok) {
+    const code = json?.error?.code ?? json?.error ?? json?.message ?? String(res.status)
+    const msg = json?.error?.message ?? json?.message ?? 'Document upload failed.'
+    throw new ApiError(res.status, code, msg)
+  }
+
+  // NestJS TransformInterceptor wraps successful bodies in { success, data }.
+  return (json?.data ?? json) as UploadProviderDocumentResult
 }
 
 export function editDriverProfile(userId: string, data: EditDriverProfileInput) {

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { changeMyPassword } from '@/lib/api'
+import { changeOwnPassword } from '@/lib/api'
 import { ApiError, getAdminUser, type AdminUser } from '@/lib/api-client'
 
 function initials(name: string) {
@@ -55,7 +55,7 @@ export default function AccountPage() {
     if (!matches) { setError('Passwords do not match.'); return }
     setSubmitting(true)
     try {
-      await changeMyPassword(currentPw, newPw)
+      await changeOwnPassword(currentPw, newPw)
       setSuccess(true)
       setCurrentPw(''); setNewPw(''); setConfirmPw('')
     } catch (err) {

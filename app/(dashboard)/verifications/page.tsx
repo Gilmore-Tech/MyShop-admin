@@ -19,12 +19,14 @@ import { PdfViewer } from '@/components/common/pdf-viewer'
 import {
   getVerificationQueue, getVerificationItem, reviewDocument,
   submitVerification, validateVerification, finalizeVerification, getVerificationHistory,
+  documentTypeTracksExpiry,
   type VerificationItem, type ProviderDocument, type VerificationStage, type VerificationHistory,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { ROLE_DEFINITIONS, type Permission } from '@/lib/roles'
 import { DriverRideCategoriesSection } from '@/components/users/driver-ride-categories-section'
+import { DocumentExpiryControl } from '@/components/common/document-expiry-control'
 
 // Which pipeline step the viewer acts on, derived from their permissions. The
 // queue is filtered to that stage; the drawer renders the matching action.
@@ -225,6 +227,7 @@ function DocumentStep({
   refreshNote,
   readOnly = false,
   finishLabel = 'Finish',
+  onExpiryStale,
 }: {
   doc: ProviderDocument
   index: number
@@ -242,6 +245,8 @@ function DocumentStep({
   // coordinator/RM who view (not re-decide) the admin's document verdicts.
   readOnly?: boolean
   finishLabel?: string
+  // Called when the expiry PATCH 404s (stale/superseded id) so the drawer reloads.
+  onExpiryStale?: () => void
 }) {
   const defaultAction: 'approve' | 'reject' = doc.status === 'rejected' ? 'reject' : 'approve'
   const [action, setAction] = useState<'approve' | 'reject'>(existingReview?.action ?? defaultAction)
@@ -294,11 +299,18 @@ function DocumentStep({
             {doc.version > 1 && (
               <span className="text-[11px] bg-gray-100 text-gray-600 px-1.5 rounded font-medium">v{doc.version}</span>
             )}
-            {doc.expires_at && (
+            {documentTypeTracksExpiry(doc.type) ? (
+              <DocumentExpiryControl
+                documentId={doc.id}
+                documentType={doc.type}
+                expiresAt={doc.expires_at}
+                onStale={onExpiryStale}
+              />
+            ) : doc.expires_at ? (
               <span className="text-[11px] bg-gray-100 text-gray-500 px-1.5 rounded">
                 Expires {new Date(doc.expires_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
               </span>
-            )}
+            ) : null}
           </div>
         </div>
         <DocStatusBadge status={existingReview ? (existingReview.action === 'approve' ? 'approved' : 'rejected') : doc.status} />
@@ -933,6 +945,7 @@ function ReviewDrawer({
               refreshNote={refreshNote}
               readOnly={docsReadOnly}
               finishLabel={action === 'admin' ? 'Finish' : action === 'none' ? 'Done' : 'Continue'}
+              onExpiryStale={() => { refresh().catch(() => {}) }}
             />
           ) : step === 'final' ? (
             action === 'none' ? (
