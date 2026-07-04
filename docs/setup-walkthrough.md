@@ -16,7 +16,7 @@
 
 ---
 
-## Step 1: Clone the Repo
+## Step 1: Clone this Repo
 
 ```bash
 git clone git@github.com:gilmore-technologies/myshop-mobile.git
