@@ -797,6 +797,9 @@ export interface PlatformUser {
     vehicleYear: number | null
     vehiclePlate: string | null
     vehicleColor: string | null
+    // Server-computed: true only when every vehicle field is set. Optional —
+    // absent on older API builds, in which case the completeness badge is hidden.
+    vehicleDetailsComplete?: boolean
     licenceNumber: string | null
     licenceExpiry: string | null
     serviceRadius: number | null
@@ -851,6 +854,10 @@ export async function listUsers(params?: {
   search?: string
   page?: number
   limit?: number
+  // Driver role only: keep just drivers missing at least one vehicle field.
+  // Enforced server-side (added in the API's region-scoped listUsers). Older API
+  // builds ignore the unknown param and return all drivers.
+  missingVehicleDetails?: boolean
 }): Promise<UserListResponse> {
   const qs = params ? '?' + new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
@@ -889,6 +896,7 @@ function normalisePlatformUser(raw: any): PlatformUser {
       vehicleYear:         d.vehicleYear ?? d.vehicle_year ?? d.vehicle?.year ?? null,
       vehiclePlate:        d.vehiclePlate ?? d.vehicle?.plate ?? d.vehicle?.licensePlate ?? null,
       vehicleColor:        d.vehicleColor ?? d.vehicle?.color ?? null,
+      vehicleDetailsComplete: d.vehicleDetailsComplete ?? d.vehicle_details_complete,
       licenceNumber:       d.licenceNumber ?? d.licence_number ?? null,
       licenceExpiry:       d.licenceExpiry ?? d.licence_expiry ?? null,
       serviceRadius:       d.serviceRadiusKm != null ? Number(d.serviceRadiusKm) : d.service_radius_km != null ? Number(d.service_radius_km) : null,

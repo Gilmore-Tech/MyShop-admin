@@ -30,6 +30,18 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+// Vehicle-detail completeness badge. `complete` is the server-computed
+// `vehicleDetailsComplete` flag; when undefined (older API build that doesn't
+// return it) we render a neutral dash rather than a misleading "Missing".
+function VehicleBadge({ complete }: { complete: boolean | undefined }) {
+  if (complete === undefined) return <span className="text-xs text-gray-400">—</span>
+  return complete ? (
+    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Complete</span>
+  ) : (
+    <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">Missing</span>
+  )
+}
+
 type ActionType = 'suspend' | 'ban' | 'reinstate' | 'lift_verification'
 
 export default function DriversPage() {
@@ -49,6 +61,7 @@ export default function DriversPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [search, setSearch] = useState(() => searchParams.get('search') ?? '')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [vehicleFilter, setVehicleFilter] = useState('all')
   const [loading, setLoading] = useState(true)
 
   const [profileUser, setProfileUser] = useState<PlatformUser | null>(null)
@@ -67,6 +80,7 @@ export default function DriversPage() {
       role: 'driver',
       status: statusFilter === 'all' ? undefined : statusFilter,
       search: search || undefined,
+      missingVehicleDetails: vehicleFilter === 'missing' ? true : undefined,
       page,
       limit: LIMIT,
     })
@@ -77,11 +91,11 @@ export default function DriversPage() {
       })
       .catch(() => setUsers([]))
       .finally(() => setLoading(false))
-  }, [statusFilter, search, page])
+  }, [statusFilter, search, vehicleFilter, page])
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
   useAutoRefresh(fetchUsers)
-  useEffect(() => { setPage(1) }, [statusFilter, search])
+  useEffect(() => { setPage(1) }, [statusFilter, search, vehicleFilter])
 
   function openAction(user: PlatformUser, type: ActionType) {
     setActionUser(user)
@@ -149,6 +163,13 @@ export default function DriversPage() {
             <SelectItem value="banned">Banned</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
+          <SelectTrigger className="w-44 bg-white"><SelectValue placeholder="Vehicle" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All vehicles</SelectItem>
+            <SelectItem value="missing">Missing details</SelectItem>
+          </SelectContent>
+        </Select>
         <div className="ml-auto text-sm text-gray-500">{total} drivers</div>
       </div>
 
@@ -161,6 +182,7 @@ export default function DriversPage() {
               <TableHead>Registered</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Verification</TableHead>
+              <TableHead>Vehicle</TableHead>
               <TableHead>Online Status</TableHead>
               <TableHead className="w-10" />
             </TableRow>
@@ -169,14 +191,14 @@ export default function DriversPage() {
             {loading ? (
               [...Array(8)].map((_, i) => (
                 <TableRow key={i}>
-                  {[...Array(7)].map((_, j) => (
+                  {[...Array(8)].map((_, j) => (
                     <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-gray-400 text-sm">No drivers found</TableCell>
+                <TableCell colSpan={8} className="text-center py-12 text-gray-400 text-sm">No drivers found</TableCell>
               </TableRow>
             ) : (
               users.map(user => (
@@ -196,6 +218,9 @@ export default function DriversPage() {
                   <TableCell><StatusBadge status={user.status} /></TableCell>
                   <TableCell>
                     <StatusBadge status={user.driver?.verificationStatus ?? 'pending'} />
+                  </TableCell>
+                  <TableCell>
+                    <VehicleBadge complete={user.driver?.vehicleDetailsComplete} />
                   </TableCell>
                   <TableCell>
                     {user.driver?.onlineStatus === 'online'
