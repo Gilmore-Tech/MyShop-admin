@@ -48,6 +48,7 @@ interface FieldDef {
   maxLength?: number
   hint?: string
   full?: boolean // span both grid columns
+  integer?: boolean // number must be a whole number (e.g. vehicle year)
 }
 
 const DRIVER_FIELDS: FieldDef[] = [
@@ -56,7 +57,7 @@ const DRIVER_FIELDS: FieldDef[] = [
   { key: 'displayName', label: 'Display name', type: 'text', full: true },
   { key: 'vehicleMake', label: 'Vehicle make', type: 'text' },
   { key: 'vehicleModel', label: 'Vehicle model', type: 'text' },
-  { key: 'vehicleYear', label: 'Vehicle year', type: 'number', min: 1990, max: 2100 },
+  { key: 'vehicleYear', label: 'Vehicle year', type: 'number', min: 1990, max: 2100, integer: true },
   { key: 'vehicleColor', label: 'Vehicle colour', type: 'text' },
   { key: 'vehiclePlate', label: 'Plate number', type: 'text' },
   { key: 'serviceRadiusKm', label: 'Service radius (km)', type: 'number', min: 1, max: 100 },
@@ -220,6 +221,7 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
         if (raw === '') continue // a number can't be cleared via this form; skip
         const n = Number(raw)
         if (Number.isNaN(n)) return { error: `${f.label} must be a number.` }
+        if (f.integer && !Number.isInteger(n)) return { error: `${f.label} must be a whole number.` }
         if (f.min != null && n < f.min) return { error: `${f.label} must be at least ${f.min}.` }
         if (f.max != null && n > f.max) return { error: `${f.label} must be at most ${f.max}.` }
         payload[f.key] = n
