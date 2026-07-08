@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
@@ -23,7 +23,10 @@ function formatGhs(pesewas: number) {
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  if (!iso) return '-'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 function formatSource(source: string | null) {
@@ -43,6 +46,7 @@ function defaultReminderMessage(cb: AdminClawback) {
 
 function formatStatus(status: string) {
   if (!status) return '-'
+  if (status === 'mixed') return 'Multiple'
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
@@ -55,9 +59,102 @@ function statusBadgeClass(status: string) {
       return base + 'bg-amber-50 text-amber-700'
     case 'escalated':
       return base + 'bg-red-50 text-red-700'
+    case 'mixed':
+      return base + 'bg-slate-100 text-slate-700'
     default:
       return base + 'bg-gray-100 text-gray-600'
   }
+}
+
+type AggregatedClawback = AdminClawback & {
+  clawbackCount: number
+  clawbacks: AdminClawback[]
+  originalDisputeIds: string[]
+  sources: string[]
+  statuses: string[]
+}
+
+function groupKeyForClawback(clawback: AdminClawback) {
+  if (clawback.userId.trim()) return `user:${clawback.userId.trim()}`
+  if (clawback.providerId.trim()) return `provider:${clawback.providerId.trim()}`
+  if (clawback.providerName?.trim()) return `provider-name:${clawback.providerName.trim().toLowerCase()}`
+  return `clawback:${clawback.id}`
+}
+
+function addUnique(values: string[], value: string | null | undefined) {
+  const normalized = value?.trim()
+  if (normalized && !values.includes(normalized)) values.push(normalized)
+}
+
+function olderDate(current: string, next: string) {
+  if (!current) return next
+  if (!next) return current
+
+  const currentTime = new Date(current).getTime()
+  const nextTime = new Date(next).getTime()
+  if (Number.isNaN(currentTime)) return next
+  if (Number.isNaN(nextTime)) return current
+
+  return nextTime < currentTime ? next : current
+}
+
+function aggregateStatus(statuses: string[]) {
+  if (statuses.length === 0) return 'outstanding'
+  if (statuses.length === 1) return statuses[0]
+  return 'mixed'
+}
+
+function aggregateClawbacks(clawbacks: AdminClawback[]): AggregatedClawback[] {
+  const groups = new Map<string, AggregatedClawback>()
+
+  clawbacks.forEach(clawback => {
+    const key = groupKeyForClawback(clawback)
+    const existing = groups.get(key)
+
+    if (!existing) {
+      groups.set(key, {
+        ...clawback,
+        id: key,
+        source: clawback.source,
+        originalDisputeId: clawback.originalDisputeId,
+        clawbackCount: 1,
+        clawbacks: [clawback],
+        originalDisputeIds: clawback.originalDisputeId ? [clawback.originalDisputeId] : [],
+        sources: clawback.source ? [clawback.source] : [],
+        statuses: clawback.status ? [clawback.status] : [],
+      })
+      return
+    }
+
+    existing.amountPesewas += clawback.amountPesewas
+    existing.paidAmountPesewas += clawback.paidAmountPesewas
+    existing.outstandingPesewas += clawback.outstandingPesewas
+    existing.initiatedAt = olderDate(existing.initiatedAt, clawback.initiatedAt)
+    existing.daysOutstanding = Math.max(existing.daysOutstanding, clawback.daysOutstanding)
+    existing.clawbackCount += 1
+    existing.clawbacks.push(clawback)
+
+    if (!existing.providerName && clawback.providerName) existing.providerName = clawback.providerName
+    if (!existing.providerId && clawback.providerId) existing.providerId = clawback.providerId
+    if (!existing.userId && clawback.userId) existing.userId = clawback.userId
+
+    addUnique(existing.originalDisputeIds, clawback.originalDisputeId)
+    addUnique(existing.sources, clawback.source)
+    addUnique(existing.statuses, clawback.status)
+  })
+
+  return Array.from(groups.values()).map(group => ({
+    ...group,
+    source: group.sources.length === 1 ? group.sources[0] : null,
+    originalDisputeId: group.originalDisputeIds.length === 1 ? group.originalDisputeIds[0] : null,
+    status: aggregateStatus(group.statuses),
+  }))
+}
+
+function sourceSummary(sources: string[]) {
+  if (sources.length === 0) return '-'
+  if (sources.length === 1) return formatSource(sources[0])
+  return `${sources.length} sources`
 }
 
 export default function ClawbacksPage() {
@@ -135,13 +232,18 @@ export default function ClawbacksPage() {
 
   useEffect(() => { load() }, [load])
 
-  async function handleWriteOff(clawback: AdminClawback) {
+  const aggregatedClawbacks = useMemo(() => aggregateClawbacks(clawbacks), [clawbacks])
+
+  async function handleWriteOff(clawback: AggregatedClawback) {
     setActionId(clawback.id)
     setActionError('')
+    const ids = new Set(clawback.clawbacks.map(c => c.id))
     try {
-      await writeOffClawback(clawback.id, 'Write-off approved: under GHS 100, inactive 90+ days')
-      setClawbacks(prev => prev.filter(c => c.id !== clawback.id))
-      setTotalOutstanding(prev => prev - clawback.outstandingPesewas)
+      await Promise.all(clawback.clawbacks.map(c => (
+        writeOffClawback(c.id, 'Write-off approved: under GHS 100, inactive 90+ days')
+      )))
+      setClawbacks(prev => prev.filter(c => !ids.has(c.id)))
+      setTotalOutstanding(prev => Math.max(0, prev - clawback.outstandingPesewas))
     } catch (err) {
       setActionError(err instanceof ApiError
         ? `Write-off failed: ${err.message}`
@@ -151,12 +253,14 @@ export default function ClawbacksPage() {
     }
   }
 
-  async function handleEscalate(id: string) {
-    setActionId(id)
+  async function handleEscalate(clawback: AggregatedClawback) {
+    setActionId(clawback.id)
     setActionError('')
+    const targets = clawback.clawbacks.filter(c => c.status !== 'escalated')
+    const ids = new Set(targets.map(c => c.id))
     try {
-      await escalateClawback(id)
-      setClawbacks(prev => prev.map(c => c.id === id ? { ...c, status: 'escalated' } : c))
+      await Promise.all(targets.map(c => escalateClawback(c.id)))
+      setClawbacks(prev => prev.map(c => ids.has(c.id) ? { ...c, status: 'escalated' } : c))
     } catch (err) {
       setActionError(err instanceof ApiError
         ? `Escalation failed: ${err.message}`
@@ -166,7 +270,11 @@ export default function ClawbacksPage() {
     }
   }
 
-  const eligible = clawbacks.filter(c => c.outstandingPesewas < WRITEOFF_THRESHOLD && c.daysOutstanding >= WRITEOFF_INACTIVE_DAYS)
+  const eligible = aggregatedClawbacks.filter(c => (
+    c.outstandingPesewas > 0 &&
+    c.outstandingPesewas < WRITEOFF_THRESHOLD &&
+    c.daysOutstanding >= WRITEOFF_INACTIVE_DAYS
+  ))
 
   return (
      <PageGuard permission="view_payments">
@@ -194,7 +302,7 @@ export default function ClawbacksPage() {
       {eligible.length > 0 && (
         <Alert className="mb-4 bg-emerald-50">
           <AlertDescription className="text-emerald-700 text-sm">
-            <strong>{eligible.length} clawback{eligible.length > 1 ? 's' : ''}</strong> under GHS 100 are inactive for 90+ days and eligible for write-off.
+            <strong>{eligible.length} provider balance{eligible.length > 1 ? 's' : ''}</strong> under GHS 100 are inactive for 90+ days and eligible for write-off.
           </AlertDescription>
         </Alert>
       )}
@@ -219,13 +327,13 @@ export default function ClawbacksPage() {
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead>Provider</TableHead>
-              <TableHead>Source</TableHead>
-              <TableHead className="text-right">Original Amount</TableHead>
+              <TableHead>Sources</TableHead>
+              <TableHead className="text-right">Total Amount</TableHead>
               <TableHead className="text-right">Paid</TableHead>
               <TableHead className="text-right">Outstanding</TableHead>
-              <TableHead>Original Dispute</TableHead>
-              <TableHead>Initiated</TableHead>
-              <TableHead className="text-right">Days Outstanding</TableHead>
+              <TableHead>Disputes</TableHead>
+              <TableHead>Earliest</TableHead>
+              <TableHead className="text-right">Oldest</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -239,15 +347,15 @@ export default function ClawbacksPage() {
                   ))}
                 </TableRow>
               ))
-            ) : clawbacks.length === 0 ? (
+            ) : aggregatedClawbacks.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={10} className="text-center py-12 text-gray-400 text-sm">
                   {error ? 'No clawbacks to display while the endpoint is unavailable.' : 'No outstanding clawbacks'}
                 </TableCell>
               </TableRow>
             ) : (
-              clawbacks.map(cb => {
-                const isEligible = cb.outstandingPesewas < WRITEOFF_THRESHOLD && cb.daysOutstanding >= WRITEOFF_INACTIVE_DAYS
+              aggregatedClawbacks.map(cb => {
+                const isEligible = cb.outstandingPesewas > 0 && cb.outstandingPesewas < WRITEOFF_THRESHOLD && cb.daysOutstanding >= WRITEOFF_INACTIVE_DAYS
                 const isHighValue = cb.outstandingPesewas >= WRITEOFF_THRESHOLD
                 const isActing = actionId === cb.id
                 return (
@@ -255,23 +363,36 @@ export default function ClawbacksPage() {
                     <TableCell>
                       <p className="font-medium text-sm text-gray-900">{cb.providerName ?? '-'}</p>
                       <p className="text-xs text-gray-500 font-mono">{cb.providerId.slice(-12).toUpperCase()}</p>
+                      {cb.clawbackCount > 1 && (
+                        <p className="text-xs text-gray-500">{cb.clawbackCount} clawbacks aggregated</p>
+                      )}
                     </TableCell>
-                    <TableCell className="text-sm text-gray-600">{formatSource(cb.source)}</TableCell>
+                    <TableCell className="text-sm text-gray-600" title={cb.sources.map(formatSource).join(', ')}>
+                      {sourceSummary(cb.sources)}
+                    </TableCell>
                     <TableCell className="text-right text-sm text-gray-700">{formatGhs(cb.amountPesewas)}</TableCell>
                     <TableCell className="text-right text-sm text-emerald-600">{formatGhs(cb.paidAmountPesewas)}</TableCell>
                     <TableCell className="text-right text-sm font-semibold text-red-600">
                       {formatGhs(cb.outstandingPesewas)}
                     </TableCell>
                     <TableCell className="font-mono text-sm">
-                      {cb.originalDisputeId
+                      {cb.originalDisputeIds.length > 0
                         ? (
-                          <Link
-                            href={`/disputes?search=${encodeURIComponent(cb.originalDisputeId)}`}
-                            className="inline-flex items-center gap-1 text-blue-600 hover:underline"
-                          >
-                            {cb.originalDisputeId.slice(-8).toUpperCase()}
-                            <ExternalLink className="h-3 w-3" />
-                          </Link>
+                          <div className="flex flex-col gap-1">
+                            {cb.originalDisputeIds.slice(0, 2).map(disputeId => (
+                              <Link
+                                key={disputeId}
+                                href={`/disputes?search=${encodeURIComponent(disputeId)}`}
+                                className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+                              >
+                                {disputeId.slice(-8).toUpperCase()}
+                                <ExternalLink className="h-3 w-3" />
+                              </Link>
+                            ))}
+                            {cb.originalDisputeIds.length > 2 && (
+                              <span className="text-xs text-slate-500">+{cb.originalDisputeIds.length - 2} more</span>
+                            )}
+                          </div>
                         )
                         : <span className="text-slate-500">-</span>}
                     </TableCell>
@@ -282,7 +403,9 @@ export default function ClawbacksPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span className={statusBadgeClass(cb.status)}>{formatStatus(cb.status)}</span>
+                      <span className={statusBadgeClass(cb.status)} title={cb.statuses.map(formatStatus).join(', ')}>
+                        {formatStatus(cb.status)}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2 justify-end">
@@ -299,14 +422,14 @@ export default function ClawbacksPage() {
                             </Button>
                           </RoleGate>
                         )}
-                        {isHighValue && cb.status !== 'escalated' && (
+                        {isHighValue && cb.clawbacks.some(c => c.status !== 'escalated') && (
                           <RoleGate permission="escalate_clawback">
                             <Button
                               size="sm"
                               variant="outline"
                               className="text-xs h-7 text-red-600 hover:bg-red-50 gap-1"
                               disabled={isActing}
-                              onClick={() => handleEscalate(cb.id)}
+                              onClick={() => handleEscalate(cb)}
                             >
                               {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <><ArrowUpRight className="h-3.5 w-3.5" /> Escalate</>}
                             </Button>
@@ -348,7 +471,7 @@ export default function ClawbacksPage() {
         <div className="px-4 py-3 bg-gray-50">
           <p className="text-xs text-gray-500">
             Total outstanding: <strong className="text-red-600">
-              {loading ? '—' : formatGhs(totalOutstanding || clawbacks.reduce((s, c) => s + c.outstandingPesewas, 0))}
+              {loading ? '—' : formatGhs(totalOutstanding || aggregatedClawbacks.reduce((s, c) => s + c.outstandingPesewas, 0))}
             </strong>
           </p>
         </div>
