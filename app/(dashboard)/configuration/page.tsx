@@ -506,8 +506,8 @@ export default function ConfigurationPage() {
             {field('Daily Batch Payout Time (HH:MM)', 'batchPayoutTime', { type: 'text', description: 'UTC time. Providers paid once daily.' })}
             {field('Refund Threshold for Support Agents', 'refundApprovalThresholdPesewas', { description: 'Refunds above this need Ops Admin approval' })}
             {field('Micro-Escrow Retry Interval', 'microEscrowRetryIntervalMins', { description: 'How often failed escrow releases are retried' })}
-            {field('Clawback Write-off Threshold', 'clawbackWriteoffThresholdPesewas', { description: 'Small clawbacks written off automatically' })}
-            {field('Clawback Write-off Inactivity', 'clawbackWriteoffInactiveDays', { description: 'Written off after this many inactive days' })}
+            {field('Provider Balance Write-off Threshold', 'clawbackWriteoffThresholdPesewas', { description: 'Small provider balances written off automatically' })}
+            {field('Provider Balance Write-off Inactivity', 'clawbackWriteoffInactiveDays', { description: 'Written off after this many inactive days' })}
           </Section>
 
           <Section title="Safety & Emergency" description="Emergency dial, share links, and welfare check timeouts">

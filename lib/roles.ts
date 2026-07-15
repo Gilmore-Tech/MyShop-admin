@@ -123,7 +123,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     group: 'Disputes & Recovery',
     permissions: [
       { key: 'view_disputes', label: 'View disputes', description: 'Disputes and incidents list/detail' },
-      { key: 'resolve_dispute', label: 'Resolve disputes', description: 'Refund, reject or clawback a dispute' },
+      { key: 'resolve_dispute', label: 'Resolve disputes', description: 'Refund, reject or recover a dispute amount' },
       { key: 'view_session_recovery', label: 'View account recovery', description: 'Session/account recovery requests' },
       { key: 'resolve_session_recovery', label: 'Resolve account recovery', description: 'Approve or reject recovery requests' },
     ],
@@ -164,10 +164,10 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
     group: 'Payments',
     permissions: [
-      { key: 'view_payments', label: 'View payments', description: 'Transactions, revenue, payouts, clawbacks' },
+      { key: 'view_payments', label: 'View payments', description: 'Transactions, revenue, payouts, provider balances' },
       { key: 'run_batch_payouts', label: 'Run batch payouts', description: 'Force-run a payout batch' },
-      { key: 'write_off_clawback', label: 'Write off clawbacks', description: 'Cancel an outstanding clawback balance' },
-      { key: 'escalate_clawback', label: 'Escalate clawbacks', description: 'Escalate a clawback for manual collection' },
+      { key: 'write_off_clawback', label: 'Write off provider balances', description: 'Cancel an eligible outstanding provider balance' },
+      { key: 'escalate_clawback', label: 'Escalate provider balances', description: 'Escalate an outstanding provider balance for manual collection' },
     ],
   },
   {

@@ -461,7 +461,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                   <div className="flex items-start gap-2 pt-1">
                     <Info className="h-3 w-3 text-gray-300 shrink-0 mt-0.5" />
                     <p className="text-[10px] text-gray-400 leading-snug">
-                      Approving a refund triggers an automatic clawback against the provider if they were already paid.
+                      Approving a refund triggers an automatic provider balance recovery if they were already paid.
                     </p>
                   </div>
                 </div>
@@ -546,4 +546,3 @@ function ResolutionRadio({
     </button>
   )
 }
-

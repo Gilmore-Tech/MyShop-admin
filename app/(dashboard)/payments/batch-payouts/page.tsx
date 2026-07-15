@@ -98,14 +98,14 @@ export default function BatchPayoutsPage() {
   return (
      <PageGuard permission="view_payments">
     <div>
-      <PageHeader title="Payments" subtitle="Financial transactions and payout management" />
+      <PageHeader title="Payments" subtitle="Transactions, payouts, refund recoveries, and cash commission balances" />
 
       <Tabs defaultValue="batch-payouts" className="mb-6">
         <TabsList className="bg-white">
           <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
           <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
           <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payouts</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
+          <TabsTrigger value="provider-balances" asChild><Link href="/payments/provider-balances">Provider Balances</Link></TabsTrigger>
         </TabsList>
       </Tabs>
 

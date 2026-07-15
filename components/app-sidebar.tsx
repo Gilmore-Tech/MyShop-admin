@@ -219,7 +219,7 @@ export default function AppSidebar() {
             { title: 'Transactions',  href: '/payments/transactions', permission: 'view_payments' },
             { title: 'Revenue',       href: '/payments/revenue',      permission: 'view_payments' },
             { title: 'Batch Payouts', href: '/payments/batch-payouts', permission: 'run_batch_payouts' },
-            { title: 'Clawbacks',     href: '/payments/clawbacks',    permission: 'view_payments' },
+            { title: 'Provider Balances', href: '/payments/provider-balances', permission: 'view_payments' },
           ],
         },
       ],

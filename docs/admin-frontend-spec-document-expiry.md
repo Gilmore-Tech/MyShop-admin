@@ -11,7 +11,7 @@
 
 Provider verification documents (driver's licence, roadworthiness certificate, Ghana Card, business registration) carry a real-world expiry date. The mobile apps now:
 
-- **capture** that expiry from the provider at upload time, and
+- **capture** 0that expiry from the provider at upload time, and
 - **act** on it — once `expiresAt` passes, the provider's document flips to an **Expired** state (tappable to re-upload) and stops counting toward "go online"; 30 days before, it shows an **Expiring soon** nudge.
 
 The provider app reads `expiresAt` straight from `GET /verification/status` and does not care who set it. **Existing** providers uploaded their documents _before_ expiry capture existed, so their rows have `expiresAt = null` (treated as "never expires" — they are not disrupted). To bring those legacy documents under expiry tracking, an admin needs to set the expiry date on the provider's behalf.

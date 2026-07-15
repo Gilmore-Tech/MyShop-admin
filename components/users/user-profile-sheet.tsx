@@ -1412,7 +1412,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                 : actionDialog === 'ban'
                 ? 'This will permanently ban the user. This action is hard to reverse.'
                 : actionDialog === 'delete'
-                ? 'Soft-deletes the account. Use for housekeeping (duplicate / test) or when the user has requested removal. Data is retained 90 days; outstanding clawbacks must be settled first.'
+                ? 'Soft-deletes the account. Use for housekeeping (duplicate / test) or when the user has requested removal. Data is retained 90 days; outstanding provider balances must be settled first.'
                 : actionDialog === 'force_logout'
                 ? 'Revoke every active session for this user. They will be signed out on every device and must log in again - use after verifying identity over the phone.'
                 : actionDialog === 'lift_verification'

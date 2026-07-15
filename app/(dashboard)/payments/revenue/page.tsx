@@ -98,14 +98,14 @@ export default function RevenuePage() {
   return (
      <PageGuard permission="view_payments">
     <div>
-      <PageHeader title="Payments" subtitle="Financial transactions and payout management" />
+      <PageHeader title="Payments" subtitle="Transactions, payouts, refund recoveries, and cash commission balances" />
 
       <Tabs defaultValue="revenue" className="mb-6">
         <TabsList className="bg-white">
           <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
           <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
           <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payouts</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
+          <TabsTrigger value="provider-balances" asChild><Link href="/payments/provider-balances">Provider Balances</Link></TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -204,7 +204,7 @@ export default function RevenuePage() {
               <CardContent className="p-5">
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Net Revenue</p>
                 <p className={`text-2xl font-bold mt-1 ${totalNetRevenue < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatGhs(totalNetRevenue)}</p>
-                <p className="text-xs text-emerald-600 mt-1">Commission − refunds + clawbacks</p>
+                <p className="text-xs text-emerald-600 mt-1">Commission - refunds + refund recoveries</p>
               </CardContent>
             </Card>
             <Card>
@@ -218,7 +218,7 @@ export default function RevenuePage() {
               <CardContent className="p-5">
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Refunds</p>
                 <p className="text-2xl font-bold text-red-600 mt-1">{formatGhs(totalRefunds)}</p>
-                <p className="text-xs text-gray-500 mt-1">Returned to clients{totalClawbacks > 0 ? ` · ${formatGhs(totalClawbacks)} reclaimed` : ''}</p>
+                <p className="text-xs text-gray-500 mt-1">Returned to clients{totalClawbacks > 0 ? ` · ${formatGhs(totalClawbacks)} refund recoveries` : ''}</p>
               </CardContent>
             </Card>
             <Card>

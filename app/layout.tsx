@@ -1,20 +1,6 @@
 import type { Metadata } from 'next'
-import { Raleway, Roboto } from 'next/font/google'
 import './globals.css'
 import EnvBanner from '@/components/env-banner'
-
-const raleway = Raleway({
-  variable: '--font-raleway',
-  subsets: ['latin'],
-  display: 'swap',
-})
-
-const roboto = Roboto({
-  variable: '--font-roboto',
-  subsets: ['latin'],
-  weight: ['400', '500', '700'],
-  display: 'swap',
-})
 
 export const metadata: Metadata = {
   title: 'MyShop Admin Dashboard',
@@ -28,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link href="https://fonts.googleapis.com/icon?family=Material+Icons|Material+Icons+Outlined" rel="stylesheet" />
       </head>
-      <body className={`${raleway.variable} ${roboto.variable} antialiased flex flex-col h-screen overflow-hidden`}>
+      <body className="antialiased flex flex-col h-screen overflow-hidden">
         <div className="flex-1 min-h-0">
           {children}
         </div>

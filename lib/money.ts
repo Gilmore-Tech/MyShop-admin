@@ -35,9 +35,9 @@ export function formatTransactionAmount(
   amountPesewas: number,
   type: 'collection' | 'payout' | 'refund' | 'clawback' | 'tip' | 'remittance',
 ): string {
-  // Outflows leave the platform (payouts, refunds to clients, clawbacks).
-  // Collections, tips and cash-commission remittances are inflows.
-  const isOutflow = type === 'payout' || type === 'clawback' || type === 'refund'
+  // Outflows leave the platform. Refund recoveries and cash-commission
+  // remittances are recoveries/receipts, so they display as inflows.
+  const isOutflow = type === 'payout' || type === 'refund'
   const signed = isOutflow ? -Math.abs(amountPesewas) : Math.abs(amountPesewas)
   return formatGhs(signed, { signed: true })
 }

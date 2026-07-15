@@ -5,7 +5,8 @@
 import { api, apiFetch, AdminUser, setTokens, setAdminUser, clearTokens, API_BASE, getToken, ApiError } from './api-client'
 import type { Permission, Role, CategoryScope } from './roles'
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+
+// ── Auth ───────────────────────────────────────────────────────────────
 
 export interface AdminLoginResponse {
   accessToken: string
@@ -73,7 +74,7 @@ export interface RevenueDataPoint {
   tipsGhs: number
   // Refunds returned to clients and dispute-clawbacks recovered from providers
   // in this period. netRevenueGhs = commission − refunds + clawbacks (the
-  // platform's true take; can be negative in a refund-heavy period).
+  // platform's true take; can be negative in a refund-heavy period). this is a comment so ignore it
   refundsGhs: number
   clawbacksGhs: number
   netRevenueGhs: number
@@ -83,15 +84,13 @@ export interface RevenueDataPoint {
   momoCount: number
   cardCount: number
   cashCount: number
-  // Per-vertical split (rides vs artisan services). Used to show revenue by
-  // category — coordinators see only their vertical; RM/global can filter.
   byVertical?: {
-    rides: VerticalRevenue
-    artisans: VerticalRevenue
+    rides: RevenueVerticalDataPoint
+    artisans: RevenueVerticalDataPoint
   }
 }
 
-export interface VerticalRevenue {
+export interface RevenueVerticalDataPoint {
   collectionsGhs: number
   commissionGhs: number
   payoutsGhs: number
@@ -115,24 +114,39 @@ export async function getRevenueReport(params?: { from?: string; to?: string; gr
   const to = params?.to ?? new Date().toISOString().split('T')[0]
   const qs = '?' + new URLSearchParams({ from, to, groupBy }).toString()
   const raw = await api.get<any>(`/admin/reports/revenue${qs}`)
-  const periods: RevenueDataPoint[] = (raw.periods ?? raw.data ?? []).map((p: any) => ({
-    period:               p.period               ?? p.date               ?? '',
-    collectionsGhs:       p.collectionsGhs        ?? p.collections_ghs    ?? 0,
-    commissionGhs:        p.commissionGhs         ?? p.commission_ghs     ?? 0,
-    payoutsGhs:           p.payoutsGhs            ?? p.payouts_ghs        ?? 0,
-    tipsGhs:              p.tipsGhs               ?? p.tips_ghs           ?? 0,
-    refundsGhs:           p.refundsGhs            ?? p.refunds_ghs        ?? 0,
-    clawbacksGhs:         p.clawbacksGhs          ?? p.clawbacks_ghs      ?? 0,
-    netRevenueGhs:        p.netRevenueGhs         ?? p.net_revenue_ghs    ?? ((p.commissionGhs ?? 0) - (p.refundsGhs ?? 0) + (p.clawbacksGhs ?? 0)),
-    totalPayments:        p.totalPayments         ?? p.total_payments     ?? 0,
-    successfulPayments:   p.successfulPayments    ?? p.successful_payments ?? 0,
-    paymentSuccessRatePct: p.paymentSuccessRatePct ?? p.payment_success_rate_pct ?? null,
-    momoCount:            p.momoCount             ?? p.momo_count         ?? 0,
-    cardCount:            p.cardCount             ?? p.card_count         ?? 0,
-    cashCount:            p.cashCount             ?? p.cash_count         ?? 0,
-    byVertical:           p.byVertical,
-  }))
+  const periods: RevenueDataPoint[] = (raw.periods ?? raw.data ?? []).map((p: any) => {
+    const byVertical = p.byVertical ?? p.by_vertical ?? null
+    return {
+      period:               p.period               ?? p.date               ?? '',
+      collectionsGhs:       p.collectionsGhs        ?? p.collections_ghs    ?? 0,
+      commissionGhs:        p.commissionGhs         ?? p.commission_ghs     ?? 0,
+      payoutsGhs:           p.payoutsGhs            ?? p.payouts_ghs        ?? 0,
+      tipsGhs:              p.tipsGhs               ?? p.tips_ghs           ?? 0,
+      refundsGhs:           p.refundsGhs            ?? p.refunds_ghs        ?? 0,
+      clawbacksGhs:         p.clawbacksGhs          ?? p.clawbacks_ghs      ?? 0,
+      netRevenueGhs:        p.netRevenueGhs         ?? p.net_revenue_ghs    ?? ((p.commissionGhs ?? 0) - (p.refundsGhs ?? 0) + (p.clawbacksGhs ?? 0)),
+      totalPayments:        p.totalPayments         ?? p.total_payments     ?? 0,
+      successfulPayments:   p.successfulPayments    ?? p.successful_payments ?? 0,
+      paymentSuccessRatePct: p.paymentSuccessRatePct ?? p.payment_success_rate_pct ?? null,
+      momoCount:            p.momoCount             ?? p.momo_count         ?? 0,
+      cardCount:            p.cardCount             ?? p.card_count         ?? 0,
+      cashCount:            p.cashCount             ?? p.cash_count         ?? 0,
+      byVertical: byVertical ? {
+        rides: normaliseRevenueVertical(byVertical.rides ?? byVertical.ride ?? {}),
+        artisans: normaliseRevenueVertical(byVertical.artisans ?? byVertical.artisan ?? {}),
+      } : undefined,
+    }
+  })
   return { from: raw.from ?? '', to: raw.to ?? '', groupBy: raw.groupBy ?? 'day', periods }
+}
+
+function normaliseRevenueVertical(raw: any): RevenueVerticalDataPoint {
+  return {
+    collectionsGhs: raw.collectionsGhs ?? raw.collections_ghs ?? 0,
+    commissionGhs:  raw.commissionGhs  ?? raw.commission_ghs  ?? 0,
+    payoutsGhs:     raw.payoutsGhs     ?? raw.payouts_ghs     ?? 0,
+    totalPayments:  raw.totalPayments  ?? raw.total_payments  ?? 0,
+  }
 }
 
 // ── Provider Report ───────────────────────────────────────────────────────────
@@ -290,14 +304,56 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   ghana_card:           'Ghana Card',
   passport:             'Passport',
   drivers_license:      "Driver's License",
+  drivers_licence:      "Driver's Licence",
   vehicle_registration: 'Vehicle Registration',
   vehicle_insurance:    'Vehicle Insurance',
   roadworthy:           'Roadworthy Certificate',
+  roadworthiness_certificate: 'Roadworthiness Certificate',
   profile_photo:        'Profile Photo',
   certificate:          'Certificate / Qualification',
   trade_license:        'Trade License',
   tin_certificate:      'TIN Certificate',
   business_registration:'Business Registration',
+}
+
+export interface AdminUploadableDocType {
+  value: string
+  label: string
+  appliesTo: 'driver' | 'artisan' | null
+  expiryRequired: boolean
+}
+
+export const ADMIN_UPLOADABLE_DOC_TYPES: AdminUploadableDocType[] = [
+  { value: 'national_id', label: DOC_TYPE_LABELS.national_id, appliesTo: null, expiryRequired: false },
+  { value: 'ghana_card', label: DOC_TYPE_LABELS.ghana_card, appliesTo: null, expiryRequired: true },
+  { value: 'passport', label: DOC_TYPE_LABELS.passport, appliesTo: null, expiryRequired: true },
+  { value: 'drivers_license', label: DOC_TYPE_LABELS.drivers_license, appliesTo: 'driver', expiryRequired: true },
+  { value: 'vehicle_registration', label: DOC_TYPE_LABELS.vehicle_registration, appliesTo: 'driver', expiryRequired: false },
+  { value: 'vehicle_insurance', label: DOC_TYPE_LABELS.vehicle_insurance, appliesTo: 'driver', expiryRequired: true },
+  { value: 'roadworthy', label: DOC_TYPE_LABELS.roadworthy, appliesTo: 'driver', expiryRequired: true },
+  { value: 'profile_photo', label: DOC_TYPE_LABELS.profile_photo, appliesTo: null, expiryRequired: false },
+  { value: 'certificate', label: DOC_TYPE_LABELS.certificate, appliesTo: 'artisan', expiryRequired: false },
+  { value: 'trade_license', label: DOC_TYPE_LABELS.trade_license, appliesTo: 'artisan', expiryRequired: true },
+  { value: 'tin_certificate', label: DOC_TYPE_LABELS.tin_certificate, appliesTo: 'artisan', expiryRequired: false },
+  { value: 'business_registration', label: DOC_TYPE_LABELS.business_registration, appliesTo: 'artisan', expiryRequired: true },
+]
+
+const EXPIRY_TRACKED_DOC_TYPES = new Set([
+  'ghana_card',
+  'passport',
+  'drivers_license',
+  'drivers_licence',
+  'driver_license',
+  'driver_licence',
+  'vehicle_insurance',
+  'roadworthy',
+  'roadworthiness_certificate',
+  'trade_license',
+  'business_registration',
+])
+
+export function documentTypeTracksExpiry(documentType: string | null | undefined) {
+  return EXPIRY_TRACKED_DOC_TYPES.has((documentType ?? '').trim().toLowerCase())
 }
 
 function docTypeLabel(raw: string): string {
@@ -462,17 +518,6 @@ export function finalizeVerification(
   return api.patch(`/admin/verifications/${providerId}/finalize`, { action, providerType, reason })
 }
 
-// Who performed each verification stage (from the audit trail).
-export interface StageApprover { by: string; at: string }
-export interface VerificationHistory {
-  stage1: StageApprover | null                                            // Admin submitted to coordinator
-  stage2: StageApprover | null                                            // Coordinator validated
-  stage3: (StageApprover & { decision: 'approved' | 'rejected' }) | null  // RM finalized
-}
-export function getVerificationHistory(providerId: string, providerType: 'driver' | 'artisan') {
-  return api.get<VerificationHistory>(`/admin/verifications/${providerId}/history?providerType=${providerType}`)
-}
-
 // Lifts an auto-suspension (rating-engine or cancellation-engine triggered).
 // Backend flips driver/artisan.verificationStatus back to 'approved' and updates
 // the matching ProviderSuspension row with reinstatedAt/reinstatedBy.
@@ -482,6 +527,78 @@ export function liftVerificationSuspension(
   reason: string,
 ) {
   return api.post(`/admin/verifications/${providerId}/lift-suspension`, { providerType, reason })
+}
+
+export interface VerificationHistoryStage {
+  by: string
+  at: string
+  decision?: string
+}
+
+export interface VerificationHistory {
+  stage1: VerificationHistoryStage | null
+  stage2: VerificationHistoryStage | null
+  stage3: VerificationHistoryStage | null
+}
+
+function normaliseHistoryStage(raw: any): VerificationHistoryStage | null {
+  if (!raw) return null
+  const actor = raw.admin ?? raw.actor ?? raw.reviewedBy ?? raw.reviewed_by ?? raw.performedBy ?? raw.performed_by ?? null
+  const by = raw.by
+    ?? raw.adminName
+    ?? raw.admin_name
+    ?? raw.actorName
+    ?? raw.actor_name
+    ?? actor?.fullName
+    ?? actor?.full_name
+    ?? actor?.email
+    ?? null
+  const at = raw.at ?? raw.createdAt ?? raw.created_at ?? raw.reviewedAt ?? raw.reviewed_at ?? raw.performedAt ?? raw.performed_at ?? null
+  if (!by || !at) return null
+  return {
+    by,
+    at,
+    decision: raw.decision ?? raw.action ?? raw.status ?? undefined,
+  }
+}
+
+function historyEntryMatches(raw: any, stage: VerificationStage, hints: string[]) {
+  const haystack = [
+    raw.stage,
+    raw.verificationStage,
+    raw.verification_stage,
+    raw.action,
+    raw.type,
+    raw.event,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  return haystack.includes(stage) || hints.some(hint => haystack.includes(hint))
+}
+
+function normaliseVerificationHistory(raw: any): VerificationHistory {
+  const payload = raw?.history ?? raw?.items ?? raw?.events ?? raw ?? {}
+  if (!Array.isArray(payload)) {
+    return {
+      stage1: normaliseHistoryStage(payload.stage1 ?? payload.pendingDocuments ?? payload.pending_documents),
+      stage2: normaliseHistoryStage(payload.stage2 ?? payload.docsVerified ?? payload.docs_verified),
+      stage3: normaliseHistoryStage(payload.stage3 ?? payload.coordinatorValidated ?? payload.coordinator_validated),
+    }
+  }
+
+  return {
+    stage1: normaliseHistoryStage(payload.find(e => historyEntryMatches(e, 'pending_documents', ['document', 'submit']))),
+    stage2: normaliseHistoryStage(payload.find(e => historyEntryMatches(e, 'docs_verified', ['validate', 'coordinator']))),
+    stage3: normaliseHistoryStage(payload.find(e => historyEntryMatches(e, 'coordinator_validated', ['finalize', 'regional', 'rm']))),
+  }
+}
+
+export async function getVerificationHistory(
+  providerId: string,
+  providerType: 'driver' | 'artisan',
+): Promise<VerificationHistory> {
+  const qs = '?' + new URLSearchParams({ providerType }).toString()
+  const raw = await api.get<any>(`/admin/verifications/${providerId}/history${qs}`)
+  return normaliseVerificationHistory(raw)
 }
 
 // ── Provider Suspensions ──────────────────────────────────────────────────────
@@ -623,19 +740,13 @@ export function reviewDocument(
   return api.patch(`/admin/verifications/documents/${documentId}`, { action, providerType, reason })
 }
 
-// PATCH /admin/verifications/documents/:id/expiry — backfills the expiry date on a
-// provider document. Writes ONLY expiresAt (and updatedBy); never changes the
-// document's review status. Requires the `verify_documents` permission (same gate
-// as approve/reject). `expiresAt` is an ISO date string (YYYY-MM-DD); a PAST date
-// is allowed and intentionally flags the document as already-expired so the
-// provider is prompted to re-upload. Only the current version of a confirmed
-// document can be patched — a stale/superseded id returns 404 DOCUMENT_NOT_FOUND.
-export interface SetDocumentExpiryResult {
+export interface DocumentExpiryResponse {
   documentId: string
-  expiresAt: string  // ISO datetime the backend persisted, e.g. "2028-12-31T00:00:00.000Z"
+  expiresAt: string
 }
-export function setDocumentExpiry(documentId: string, expiresAt: string): Promise<SetDocumentExpiryResult> {
-  return api.patch<SetDocumentExpiryResult>(`/admin/verifications/documents/${documentId}/expiry`, { expiresAt })
+
+export function setDocumentExpiry(documentId: string, expiresAt: string) {
+  return api.patch<DocumentExpiryResponse>(`/admin/verifications/documents/${documentId}/expiry`, { expiresAt })
 }
 
 // ── Disputes ──────────────────────────────────────────────────────────────────
@@ -1077,82 +1188,26 @@ export async function uploadProviderPhoto(userId: string, file: File): Promise<s
   return url
 }
 
-// Document types an admin may upload on a provider's behalf. These MUST match
-// the backend's canonical VALID_DOCUMENT_TYPES (apps/api/.../request-document-upload.dto.ts)
-// exactly — note the British spellings (drivers_licence, roadworthiness_certificate)
-// which differ from the display-only keys in DOC_TYPE_LABELS. `expiryRequired`
-// mirrors the backend EXPIRY_REQUIRED guard.
-export interface UploadableDocType {
-  value: string
-  label: string
-  /** Which provider role this document applies to (null = both). */
-  appliesTo: 'driver' | 'artisan' | null
-  expiryRequired: boolean
-}
-
-// Document types that carry a real-world expiry an admin can backfill on a
-// provider's behalf (legacy docs uploaded before expiry capture existed). These
-// are the canonical BACKEND document_type values (British spellings) and mirror
-// the mobile app's `DocumentType.requiresExpiry` set. NOTE: this is deliberately
-// distinct from `UploadableDocType.expiryRequired` above — that gates whether an
-// expiry is *required at admin upload time*, whereas this set decides which
-// documents show the expiry-backfill control on the review surface.
-export const EXPIRY_TRACKED_DOC_TYPES = [
-  'drivers_licence',
-  'roadworthiness_certificate',
-  'ghana_card',
-  'business_registration',
-] as const
-
-export function documentTypeTracksExpiry(type: string): boolean {
-  return (EXPIRY_TRACKED_DOC_TYPES as readonly string[]).includes(type)
-}
-
-export const ADMIN_UPLOADABLE_DOC_TYPES: UploadableDocType[] = [
-  { value: 'drivers_licence',            label: "Driver's Licence",          appliesTo: 'driver',  expiryRequired: true },
-  { value: 'vehicle_registration',       label: 'Vehicle Registration',      appliesTo: 'driver',  expiryRequired: false },
-  { value: 'roadworthiness_certificate', label: 'Roadworthiness Certificate', appliesTo: 'driver', expiryRequired: true },
-  { value: 'trade_certificate',          label: 'Trade Certificate',         appliesTo: 'artisan', expiryRequired: false },
-  { value: 'business_registration',      label: 'Business Registration',     appliesTo: 'artisan', expiryRequired: false },
-  { value: 'portfolio_photo',            label: 'Portfolio Photo',           appliesTo: 'artisan', expiryRequired: false },
-  { value: 'ghana_card',                 label: 'Ghana Card',                appliesTo: null,      expiryRequired: false },
-  { value: 'national_id',                label: 'National ID',               appliesTo: null,      expiryRequired: false },
-  { value: 'profile_photo',              label: 'Profile Photo',             appliesTo: null,      expiryRequired: false },
-]
-
-export interface UploadProviderDocumentResult {
-  documentId: string
+export interface UploadProviderDocumentInput {
   providerType: 'driver' | 'artisan'
-  providerId: string
   documentType: string
-  version: number
-  status: 'pending_review'
+  file: File
+  expiresAt?: string
 }
 
-// Admin (Regional Manager) uploads a replacement document on a provider's
-// behalf. Multipart, so we bypass the JSON apiFetch wrapper and build the
-// request by hand (mirrors uploadProviderPhoto). `expiresAt` is an ISO date
-// string (yyyy-mm-dd) and is required by the backend for expiring document
-// types. POST /admin/users/:userId/documents.
 export async function uploadProviderDocument(
   userId: string,
-  input: {
-    providerType: 'driver' | 'artisan'
-    documentType: string
-    file: File
-    expiresAt?: string
-  },
-): Promise<UploadProviderDocumentResult> {
+  input: UploadProviderDocumentInput,
+): Promise<unknown> {
   const body = new FormData()
-  body.append('file', input.file)
   body.append('providerType', input.providerType)
   body.append('documentType', input.documentType)
+  body.append('file', input.file)
   if (input.expiresAt) body.append('expiresAt', input.expiresAt)
 
   const headers = new Headers()
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  // Intentionally no Content-Type — the browser sets the multipart boundary.
 
   const res = await fetch(`${API_BASE}/admin/users/${userId}/documents`, {
     method: 'POST',
@@ -1169,8 +1224,7 @@ export async function uploadProviderDocument(
     throw new ApiError(res.status, code, msg)
   }
 
-  // NestJS TransformInterceptor wraps successful bodies in { success, data }.
-  return (json?.data ?? json) as UploadProviderDocumentResult
+  return json?.data ?? json
 }
 
 export function editDriverProfile(userId: string, data: EditDriverProfileInput) {
@@ -1368,10 +1422,16 @@ export function resetAdminPassword(adminId: string, newPassword: string) {
   return api.patch(`/admin/admins/${adminId}/reset-password`, { newPassword })
 }
 
-// An admin changes their OWN password (verifies the current one server-side).
-export function changeOwnPassword(currentPassword: string, newPassword: string) {
-  return api.patch('/admin/me/password', { currentPassword, newPassword })
+// Self-service: the authenticated admin changes their own password. Acts on the
+// account in the JWT (no adminId, no manage_admins permission required) and
+// requires the current password for verification. Distinct from the privileged
+// resetAdminPassword above.
+export function changeMyPassword(currentPassword: string, newPassword: string) {
+  return api.patch('/auth/admin/change-password', { currentPassword, newPassword })
 }
+
+// Backward-compatible alias used by older account/profile surfaces.
+export const changeOwnPassword = changeMyPassword
 
 export function deleteAdmin(adminId: string) {
   return api.delete(`/admin/admins/${adminId}`)
@@ -2031,7 +2091,14 @@ export interface RideDetail {
   startedAt: string | null
   completedAt: string | null
   createdAt: string
-  stops: { stopOrder: number; addressText: string | null }[]
+  stops: { stopOrder: number; addressText: string | null; lat?: number | null; lng?: number | null }[]
+  pickupLocation?: RideRoutePoint | null
+  dropoffLocation?: RideRoutePoint | null
+  currentDriverLocation?: RideRoutePoint | null
+  /** Actual GPS trail captured for the trip. */
+  gpsTrail?: RideRoutePoint[] | null
+  /** Planned/estimated route, when the backend returns it. */
+  plannedRoute?: RideRoutePoint[] | null
   client: { id: string; user: { fullName: string; phone: string } } | null
   driver: {
     id: string
@@ -2043,8 +2110,118 @@ export interface RideDetail {
   } | null
 }
 
-export function getRideDetail(rideId: string) {
-  return api.get<RideDetail>(`/admin/rides/${rideId}`)
+export interface RideRoutePoint {
+  lat: number
+  lng: number
+  /** ISO timestamp when this point was captured, if available. */
+  t?: string | null
+}
+
+function normaliseRideRoutePoint(raw: any): RideRoutePoint | null {
+  if (!raw) return null
+
+  if (Array.isArray(raw)) {
+    if (raw.length < 2) return null
+    // GeoJSON/PostGIS coordinates are [lng, lat].
+    return normaliseRideRoutePoint({ lng: raw[0], lat: raw[1] })
+  }
+
+  const nested = raw.location ?? raw.point ?? raw.position
+  if (
+    raw.lat == null &&
+    raw.latitude == null &&
+    raw.lng == null &&
+    raw.lon == null &&
+    raw.longitude == null &&
+    nested
+  ) {
+    return normaliseRideRoutePoint(nested)
+  }
+
+  const coordinates = raw.coordinates ?? raw.coords
+  const lat = raw.lat ?? raw.latitude ?? raw.y ?? (Array.isArray(coordinates) ? coordinates[1] : undefined)
+  const lng = raw.lng ?? raw.lon ?? raw.longitude ?? raw.x ?? (Array.isArray(coordinates) ? coordinates[0] : undefined)
+  const nLat = Number(lat)
+  const nLng = Number(lng)
+  if (!Number.isFinite(nLat) || !Number.isFinite(nLng)) return null
+  if (Math.abs(nLat) > 90 || Math.abs(nLng) > 180) return null
+
+  return {
+    lat: nLat,
+    lng: nLng,
+    t: raw.t ?? raw.timestamp ?? raw.recordedAt ?? raw.recorded_at ?? raw.createdAt ?? raw.created_at ?? null,
+  }
+}
+
+function normaliseRideRoutePoints(raw: any): RideRoutePoint[] | null {
+  if (!raw) return null
+
+  if (typeof raw === 'string') {
+    try {
+      return normaliseRideRoutePoints(JSON.parse(raw))
+    } catch {
+      return null
+    }
+  }
+
+  if (raw.type === 'Feature') return normaliseRideRoutePoints(raw.geometry)
+  if (raw.type === 'LineString') return normaliseRideRoutePoints(raw.coordinates)
+  if (raw.type === 'MultiLineString' && Array.isArray(raw.coordinates)) {
+    const points = raw.coordinates.flatMap((line: any) => normaliseRideRoutePoints(line) ?? [])
+    return points.length ? points : null
+  }
+
+  if (Array.isArray(raw)) {
+    const points = raw.map(normaliseRideRoutePoint).filter((p): p is RideRoutePoint => Boolean(p))
+    return points.length ? points : null
+  }
+
+  const nested = raw.points ?? raw.path ?? raw.route ?? raw.trail ?? raw.coordinates
+  return nested && nested !== raw ? normaliseRideRoutePoints(nested) : null
+}
+
+function normaliseRideDetail(raw: any): RideDetail {
+  const pickupLocation =
+    normaliseRideRoutePoint(raw.pickupLocation ?? raw.pickup_location) ??
+    normaliseRideRoutePoint({ lat: raw.pickupLat ?? raw.pickup_lat, lng: raw.pickupLng ?? raw.pickup_lng })
+  const dropoffLocation =
+    normaliseRideRoutePoint(raw.dropoffLocation ?? raw.dropoff_location) ??
+    normaliseRideRoutePoint({ lat: raw.dropoffLat ?? raw.dropoff_lat, lng: raw.dropoffLng ?? raw.dropoff_lng })
+  const currentDriverLocation =
+    normaliseRideRoutePoint(raw.currentDriverLocation ?? raw.current_driver_location) ??
+    normaliseRideRoutePoint(raw.driverLocation ?? raw.driver_location) ??
+    normaliseRideRoutePoint(raw.driverCurrentLocation ?? raw.driver_current_location) ??
+    normaliseRideRoutePoint(raw.lastDriverLocation ?? raw.last_driver_location)
+
+  return {
+    ...raw,
+    pickupLocation,
+    dropoffLocation,
+    currentDriverLocation,
+    gpsTrail: normaliseRideRoutePoints(
+      raw.gpsTrail ?? raw.gps_trail ?? raw.actualRoute ?? raw.actual_route ?? raw.routePoints ?? raw.route_points ?? raw.trackedRoute ?? raw.tracked_route,
+    ),
+    plannedRoute: normaliseRideRoutePoints(
+      raw.plannedRoute ?? raw.planned_route ?? raw.optimalRoute ?? raw.optimal_route ?? raw.estimatedRoute ?? raw.estimated_route,
+    ),
+    stops: (raw.stops ?? raw.rideStops ?? raw.ride_stops ?? []).map((s: any) => {
+      const location =
+        normaliseRideRoutePoint(s.location ?? s.point ?? s.position) ??
+        normaliseRideRoutePoint({ lat: s.lat ?? s.latitude, lng: s.lng ?? s.lon ?? s.longitude })
+      return {
+        ...s,
+        stopOrder: s.stopOrder ?? s.stop_order ?? 0,
+        addressText: s.addressText ?? s.address_text ?? null,
+        lat: location?.lat ?? null,
+        lng: location?.lng ?? null,
+      }
+    }),
+  }
+}
+
+export async function getRideDetail(rideId: string): Promise<RideDetail> {
+  const raw = await api.get<any>(`/admin/rides/${rideId}`)
+  return normaliseRideDetail(raw)
 }
 
 export function cancelRide(rideId: string, reason: string) {

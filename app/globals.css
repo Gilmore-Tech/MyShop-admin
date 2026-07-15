@@ -22,8 +22,8 @@
   --color-info: #1A73E8;
 
   /* Typography */
-  --font-heading: var(--font-raleway), sans-serif;
-  --font-body: var(--font-roboto), sans-serif;
+  --font-heading: "Segoe UI", Arial, sans-serif;
+  --font-body: "Segoe UI", Arial, sans-serif;
 }
 
 @layer base {
