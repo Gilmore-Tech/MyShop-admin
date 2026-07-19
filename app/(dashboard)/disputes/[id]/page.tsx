@@ -90,6 +90,9 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
   }, [id])
 
   const isResolved = detail?.status?.startsWith('resolved') || detail?.status === 'rejected'
+  const canResolve = detail?.status === 'open' || detail?.status === 'under_review'
+  const refundPending = detail?.status === 'refund_pending'
+  const refundFailed = detail?.status === 'refund_failed'
 
   const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
   const mapsMapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? 'DEMO_MAP_ID'
@@ -104,6 +107,13 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
   const maxRefundPesewas = detail?.amountPesewas ?? detail?.payment?.grossPesewas ?? null
 
   function validate(): string | null {
+    if (
+      mode !== 'REJECT' &&
+      detail?.refundDestination?.required &&
+      !detail.refundDestination.verified
+    ) {
+      return 'The client must OTP-verify a refund MoMo destination before a refund can be approved.'
+    }
     if (mode === 'REFUND_PARTIAL') {
       const value = Number(partialAmountGhs)
       if (!Number.isFinite(value) || value <= 0) return 'Enter a refund amount greater than zero.'
@@ -132,13 +142,14 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
     setSubmitting(true)
 
     try {
+      let result
       if (mode === 'REFUND_FULL') {
-        await resolveDispute(detail.id, 'approved', notes.trim())
+        result = await resolveDispute(detail.id, 'approved', notes.trim())
       } else if (mode === 'REFUND_PARTIAL') {
         const amountPesewas = Math.round(Number(partialAmountGhs) * 100)
-        await resolveDispute(detail.id, 'approved', notes.trim(), amountPesewas)
+        result = await resolveDispute(detail.id, 'approved', notes.trim(), amountPesewas)
       } else {
-        await resolveDispute(detail.id, 'denied', notes.trim())
+        result = await resolveDispute(detail.id, 'denied', notes.trim())
       }
 
       // Flash banner on the list page.
@@ -149,16 +160,20 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
       try {
         sessionStorage.setItem(
           'disputes:resolved',
-          JSON.stringify({ id: detail.id, refundedPesewas, mode }),
+          JSON.stringify({ id: detail.id, refundedPesewas, mode, status: result.status }),
         )
       } catch { /* sessionStorage can be unavailable in incognito; ignore */ }
 
       router.push('/disputes')
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.message.includes('DISPUTE_ALREADY_RESOLVED') || err.status === 409) {
+        if (err.code === 'CASH_REFUND_DESTINATION_REQUIRED') {
+          setSubmitError('The client must OTP-verify a refund MoMo destination before approval.')
+        } else if (err.code === 'PAYOUT_OUTCOME_PENDING') {
+          setSubmitError('The provider payout outcome is still being reconciled. Try again after reconciliation.')
+        } else if (err.code === 'DISPUTE_ALREADY_RESOLVED' || err.status === 409) {
           setSubmitError('This dispute has already been resolved.')
-        } else if (err.message.includes('REFUND_AMOUNT_REQUIRED')) {
+        } else if (err.code === 'REFUND_AMOUNT_REQUIRED') {
           setSubmitError('Refund amount is required for partial refunds.')
         } else {
           setSubmitError(err.message)
@@ -367,14 +382,54 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                 )}
               </div>
 
-              {isResolved ? (
+              {detail.refundDestination?.required && (
+                <div className={`rounded-2xl border p-5 space-y-2 ${
+                  detail.refundDestination.verified
+                    ? 'bg-emerald-50 border-emerald-100'
+                    : 'bg-amber-50 border-amber-100'
+                }`}>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">
+                    Cash refund destination
+                  </p>
+                  {detail.refundDestination.verified ? (
+                    <div className="flex items-start gap-2 text-sm text-emerald-700">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>
+                        OTP verified: {paymentMethodLabel(detail.refundDestination.method)} •••• {detail.refundDestination.accountLast4 ?? '----'}
+                        {detail.refundDestination.locked ? ' (locked for processing)' : ''}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2 text-sm text-amber-800">
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>The client has not yet OTP-verified a MoMo destination. Refund approval must remain blocked; rejection is still available.</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {refundPending ? (
+                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 flex items-start gap-3">
+                  <Loader2 className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-800">
+                    The refund is approved and being reconciled. No provider clawback is created until the client repayment is authoritatively successful.
+                  </p>
+                </div>
+              ) : refundFailed ? (
+                <div className="bg-red-50 border border-red-100 rounded-2xl p-5 flex items-start gap-3">
+                  <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-700">
+                    Refund processing failed closed. The payment remains blocked and no provider clawback exists. Reconcile the gateway outcome before any further action.
+                  </p>
+                </div>
+              ) : isResolved ? (
                 <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 flex items-start gap-3">
                   <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
                   <p className="text-sm text-emerald-700">
                     This dispute has already been resolved.
                   </p>
                 </div>
-              ) : (
+              ) : canResolve ? (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Resolution</p>
 
@@ -443,13 +498,20 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                     </div>
                   )}
 
+                  {mode !== 'REJECT' && detail.refundDestination?.required && !detail.refundDestination.verified && (
+                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-800">Refund actions are disabled until the client verifies the destination.</p>
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-2 pt-2">
                     <Link href="/disputes" className="flex-1">
                       <Button variant="outline" size="sm" className="w-full">Cancel</Button>
                     </Link>
                     <Button
                       size="sm"
-                      disabled={submitting}
+                      disabled={submitting || (mode !== 'REJECT' && detail.refundDestination?.required && !detail.refundDestination.verified)}
                       onClick={handleSubmit}
                       className="flex-1 text-white"
                       style={{ backgroundColor: mode === 'REJECT' ? '#EF4444' : '#10B981' }}
@@ -461,9 +523,13 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                   <div className="flex items-start gap-2 pt-1">
                     <Info className="h-3 w-3 text-gray-300 shrink-0 mt-0.5" />
                     <p className="text-[10px] text-gray-400 leading-snug">
-                      Approving a refund triggers an automatic clawback against the provider if they were already paid.
+                      Approval starts an idempotent client refund. Any provider clawback is created only after repayment succeeds.
                     </p>
                   </div>
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-5 text-sm text-gray-600">
+                  This dispute is not in an actionable state. Refresh after reconciliation.
                 </div>
               )}
             </div>
@@ -546,4 +612,3 @@ function ResolutionRadio({
     </button>
   )
 }
-

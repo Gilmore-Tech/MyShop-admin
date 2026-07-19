@@ -8,7 +8,7 @@ import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import { UserTabs } from '@/components/users/user-tabs'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, MoreHorizontal, Loader2, UserPlus, RotateCcw, RefreshCw } from 'lucide-react'
+import { Search, MoreHorizontal, Loader2, RotateCcw } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
-import { listUsers, suspendUser, banUser, reinstateUser, triggerReverification, type PlatformUser } from '@/lib/api'
+import { listUsers, suspendUser, banUser, reinstateUser, type PlatformUser } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { UserProfileSheet } from '@/components/users/user-profile-sheet'
@@ -52,7 +52,6 @@ export default function ArtisansPage() {
   const [loading, setLoading] = useState(true)
 
   const [profileUser, setProfileUser] = useState<PlatformUser | null>(null)
-  const [reverifyingId, setReverifyingId] = useState<string | null>(null)
 
   const [actionUser, setActionUser] = useState<PlatformUser | null>(null)
   const [actionType, setActionType] = useState<ActionType | null>(null)
@@ -100,9 +99,9 @@ export default function ArtisansPage() {
     setActionLoading(true)
     setActionError('')
     try {
-      if (actionType === 'suspend') await suspendUser(actionUser.id, actionReason.trim())
-      else if (actionType === 'ban') await banUser(actionUser.id, actionReason.trim())
-      else if (actionType === 'reinstate') await reinstateUser(actionUser.id, actionReason.trim() || undefined)
+      if (actionType === 'suspend') await suspendUser('artisan', actionUser.roleAccountId, actionReason.trim())
+      else if (actionType === 'ban') await banUser('artisan', actionUser.roleAccountId, actionReason.trim())
+      else if (actionType === 'reinstate') await reinstateUser('artisan', actionUser.roleAccountId, actionReason.trim() || undefined)
       setActionUser(null)
       setActionType(null)
       setActionReason('')
@@ -111,17 +110,6 @@ export default function ArtisansPage() {
       setActionError(err instanceof ApiError ? err.message : 'Action failed. Please try again.')
     } finally {
       setActionLoading(false)
-    }
-  }
-
-  async function handleTriggerReverification(user: PlatformUser) {
-    setReverifyingId(user.id)
-    try {
-      await triggerReverification(user.id)
-    } catch {
-      // Silently ignore — the backend may not support this yet
-    } finally {
-      setReverifyingId(null)
     }
   }
 
@@ -137,8 +125,8 @@ export default function ArtisansPage() {
     <PageGuard permission="view_users">
     <div>
       <PageHeader
-        title="User Management"
-        subtitle="Manage all platform users"
+        title="Artisan Accounts"
+        subtitle="Manage artisan accounts independently from client and driver accounts"
       />
 
       <UserTabs active="artisans" />
@@ -203,10 +191,10 @@ export default function ArtisansPage() {
                   <TableCell className="text-sm text-gray-500">{formatDate(user.createdAt)}</TableCell>
                   <TableCell><StatusBadge status={user.status} /></TableCell>
                   <TableCell>
-                    <StatusBadge status={user.artisan?.verificationStatus ?? 'pending'} />
+                    <StatusBadge status={user.role === 'artisan' ? user.profile.verificationStatus : 'pending'} />
                   </TableCell>
                   <TableCell>
-                    {user.artisan?.onlineStatus === 'online'
+                    {user.role === 'artisan' && user.profile.onlineStatus === 'online'
                       ? <span className="flex items-center gap-1.5 text-xs text-gray-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-gray-400" />Online</span>
                       : <span className="text-xs text-gray-400">Offline</span>
                     }
@@ -220,14 +208,6 @@ export default function ArtisansPage() {
                         <DropdownMenuItem onSelect={() => setProfileUser(user)}>View Profile</DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => router.push(`/artisan-jobs?search=${encodeURIComponent(user.fullName)}`)}>
                           Job History
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          disabled={reverifyingId === user.id}
-                          onSelect={() => handleTriggerReverification(user)}
-                          className="gap-2"
-                        >
-                          <RefreshCw className={`h-3.5 w-3.5 ${reverifyingId === user.id ? 'animate-spin' : ''}`} />
-                          Trigger Re-verification
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <RoleGate permission="suspend_user">
@@ -273,14 +253,14 @@ export default function ArtisansPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className={actionType === 'ban' ? 'text-red-600' : actionType === 'reinstate' ? 'text-emerald-700' : 'text-orange-600'}>
-              {actionType === 'reinstate' ? 'Reinstate' : actionType === 'ban' ? 'Ban' : 'Suspend'} {actionUser?.fullName}
+              {actionType === 'reinstate' ? 'Reinstate artisan account' : actionType === 'ban' ? 'Ban artisan account' : 'Suspend artisan account'} {actionUser?.fullName}
             </DialogTitle>
             <DialogDescription>
               {actionType === 'reinstate'
-                ? 'Restore this artisan\'s access to the platform.'
+                ? 'Restore only this artisan account. Client and driver sibling accounts remain untouched.'
                 : actionType === 'ban'
-                ? 'This will permanently ban the artisan. They will not be able to log in again.'
-                : 'This will suspend the artisan. You can reinstate them later.'
+                ? 'This bans only the artisan account. Client and driver sibling accounts remain untouched.'
+                : 'This suspends only the artisan account. Client and driver sibling accounts remain untouched.'
               }
             </DialogDescription>
           </DialogHeader>

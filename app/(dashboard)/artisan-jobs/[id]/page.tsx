@@ -18,6 +18,7 @@ import {
   getJobDetail, lockJob, assignJob, forceCompleteJob, unexpireBid, cancelJob,
   type JobDetail, type JobBid,
 } from '@/lib/api'
+import { ApiError } from '@/lib/api-client'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -320,7 +321,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     setLoading(true)
     getJobDetail(jobId)
       .then(setJob)
-      .catch(e => setError(e.message ?? 'Failed to load job'))
+      .catch(e => setError(e instanceof ApiError ? e.message : 'Failed to load job.'))
       .finally(() => setLoading(false))
   }, [jobId])
 
@@ -335,8 +336,11 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       const updated = await getJobDetail(jobId)
       setJob(updated)
     } catch (e: unknown) {
-      const msg = (e as { message?: string })?.message ?? 'Assignment failed'
-      setActionError(msg.includes('LOCK_NOT_HELD') ? 'Could not acquire lock. Please try again.' : msg)
+      setActionError(
+        e instanceof ApiError && e.code === 'LOCK_NOT_HELD'
+          ? 'Could not acquire lock. Please try again.'
+          : e instanceof ApiError ? e.message : 'Assignment failed.',
+      )
     } finally {
       setAssigning(false)
     }
@@ -350,7 +354,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       const updated = await getJobDetail(jobId)
       setJob(updated)
     } catch (e: unknown) {
-      setActionError((e as { message?: string })?.message ?? 'Failed to restore bid')
+      setActionError(e instanceof ApiError ? e.message : 'Failed to restore bid.')
     } finally {
       setUnexpiringBidId(null)
     }
@@ -365,7 +369,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       setJob(updated)
       setForceCompleteOpen(false)
     } catch (e: unknown) {
-      setActionError((e as { message?: string })?.message ?? 'Force complete failed')
+      setActionError(e instanceof ApiError ? e.message : 'Force complete failed.')
     } finally {
       setForcingComplete(false)
     }
@@ -380,7 +384,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       setJob(updated)
       setCancelOpen(false)
     } catch (e: unknown) {
-      setActionError((e as { message?: string })?.message ?? 'Cancel failed')
+      setActionError(e instanceof ApiError ? e.message : 'Cancel failed.')
     } finally {
       setCancelling(false)
     }

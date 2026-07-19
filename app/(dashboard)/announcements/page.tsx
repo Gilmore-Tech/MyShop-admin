@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { PageHeader } from '@/components/common/page-header'
 import { sendAnnouncement, getAnnouncementHistory, sendSms, type AnnouncementTopic, type AnnouncementHistoryItem, type SmsAudience } from '@/lib/api'
-import { ApiError } from '@/lib/api-client'
+import { userSafeAdminError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 
 const AUDIENCE: { value: AnnouncementTopic; label: string; sub: string; icon: React.ElementType; colors: string; active: string }[] = [
@@ -105,7 +105,7 @@ export default function AnnouncementsPage() {
       setTitle('')
       setBody('')
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Failed to send.')
+      setError(userSafeAdminError(err, 'Failed to send.'))
     } finally {
       setSending(false)
     }

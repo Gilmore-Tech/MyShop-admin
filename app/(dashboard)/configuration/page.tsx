@@ -24,7 +24,9 @@ function toCamel(key: string): string {
 // ─── Defaults ────────────────────────────────────────────────────────────────
 
 const DEFAULTS = {
-  commissionRatePercent:           20,
+  // Financially authoritative: there is deliberately no client-side fallback.
+  // The page refuses to render editable settings if the DB value is missing.
+  commissionRatePercent:           Number.NaN,
   rideBaseFarePesewas:             300,
   ridePerKmPesewas:                150,
   ridePerMinPesewas:               20,
@@ -124,6 +126,9 @@ function validate(key: ConfigKey, value: string | number): string | null {
   if (typeof DEFAULTS[key] === 'number') {
     const n = Number(str)
     if (isNaN(n)) return 'Must be a valid number'
+    if (key === 'commissionRatePercent' && !/^\d+(?:\.\d{1,2})?$/.test(str)) {
+      return 'Use at most 2 decimal places'
+    }
     if (rule.min !== undefined && n < rule.min) return rule.message
     if (rule.max !== undefined && n > rule.max) return rule.message
   }
@@ -165,7 +170,7 @@ function unitHint(key: string, value: string | number): string | null {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function ConfigField({
-  label, configKey, value, original, systemDefault, onChange, type = 'number', description,
+  label, configKey, value, original, systemDefault, onChange, type = 'number', description, disabled = false,
 }: {
   label: string
   configKey: ConfigKey
@@ -175,9 +180,11 @@ function ConfigField({
   onChange: (k: ConfigKey, v: string) => void
   type?: string
   description?: string
+  disabled?: boolean
 }) {
   const isDirty = String(value) !== String(original)
-  const isNonDefault = String(original) !== String(systemDefault)
+  const hasSystemDefault = typeof systemDefault !== 'number' || Number.isFinite(systemDefault)
+  const isNonDefault = hasSystemDefault && String(original) !== String(systemDefault)
   const error = validate(configKey, value)
   const hint = unitHint(configKey, value)
 
@@ -189,9 +196,12 @@ function ConfigField({
           {isDirty && (
             <span className="inline-flex items-center text-[10px] font-medium px-1 py-0.5 rounded bg-amber-100 text-amber-700">unsaved</span>
           )}
+          {disabled && (
+            <span className="inline-flex items-center text-[10px] font-medium px-1 py-0.5 rounded bg-gray-100 text-gray-500">paused</span>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {isDirty && (
+          {isDirty && !disabled && (
             <button
               onClick={() => onChange(configKey, String(original))}
               className="flex items-center gap-0.5 text-[10px] text-gray-400 hover:text-gray-700 transition-colors"
@@ -201,7 +211,7 @@ function ConfigField({
               Undo
             </button>
           )}
-          {isNonDefault && !isDirty && (
+          {isNonDefault && !isDirty && !disabled && (
             <button
               onClick={() => onChange(configKey, String(systemDefault))}
               className="flex items-center gap-0.5 text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
@@ -220,8 +230,9 @@ function ConfigField({
         <Input
           type={type}
           value={value}
-          step={type === 'number' ? 'any' : undefined}
+          step={type === 'number' ? (configKey === 'commissionRatePercent' ? '0.01' : 'any') : undefined}
           onChange={e => onChange(configKey, e.target.value)}
+          disabled={disabled}
           className={`w-44 text-sm h-8 ${
             error
               ? 'border-red-300 ring-2 ring-red-100 focus-visible:ring-red-300'
@@ -322,6 +333,12 @@ export default function ConfigurationPage() {
     getAllConfig()
       .then(items => {
         const fromServer = serverToState(items)
+        if (
+          typeof fromServer.commissionRatePercent !== 'number'
+          || !Number.isFinite(fromServer.commissionRatePercent)
+        ) {
+          throw new Error('Required commission configuration is missing or invalid')
+        }
         const merged: ConfigState = { ...DEFAULTS, ...fromServer }
         setConfig(merged)
         setSaved(merged)
@@ -363,7 +380,7 @@ export default function ConfigurationPage() {
   function field(
     label: string,
     configKey: ConfigKey,
-    opts?: { type?: string; description?: string }
+    opts?: { type?: string; description?: string; disabled?: boolean }
   ) {
     return (
       <ConfigField
@@ -376,6 +393,7 @@ export default function ConfigurationPage() {
         onChange={handleChange}
         type={opts?.type ?? (typeof DEFAULTS[configKey] === 'number' ? 'number' : 'text')}
         description={opts?.description}
+        disabled={opts?.disabled}
       />
     )
   }
@@ -459,7 +477,7 @@ export default function ConfigurationPage() {
 
         <div className="space-y-4">
           <Section title="Commission" description="Platform revenue share applied to all completed bookings">
-            {field('Commission Rate (%)', 'commissionRatePercent', { description: 'Applied to pre-promo fare. Pilot target: 20%.' })}
+            {field('Commission Rate (%)', 'commissionRatePercent', { description: 'Applied to new payments and snapshotted for historical reporting.' })}
           </Section>
 
           <Section title="Ride Fares" description="Fare formula components for ride-hailing bookings">
@@ -475,15 +493,15 @@ export default function ConfigurationPage() {
             {field('Driver Acceptance Window', 'rideDriverAcceptanceWindowSecs', { description: 'Time driver has to accept a request' })}
           </Section>
 
-          <Section title="Ride Cancellation" description="Client free-cancellation window and rules">
-            {field('Free Cancellation Window', 'rideCancellationWindowSecs', { description: 'Client can cancel penalty-free within this window' })}
+          <Section title="Ride Cancellation" description="Automatic cancellation consequences are paused for this release">
+            {field('Free Cancellation Window', 'rideCancellationWindowSecs', { description: 'Stored for later policy activation; currently not applied', disabled: true })}
           </Section>
 
           <Section title="Artisan Job Settings" description="Bidding window, job limits, and cancellation policy">
             {field('Bid Collection Window', 'jobBidWindowSecs', { description: 'How long the job stays open for bids' })}
             {field('Max Bids Per Job', 'jobMaxBids', { description: 'Client sees top N bids to choose from' })}
-            {field('Free Cancellation Window', 'jobCancellationFreeWindowSecs', { description: 'Penalty-free window after job is confirmed' })}
-            {field('Cancellation Fee (%)', 'jobCancellationFeePercent', { description: 'Charged on agreed price outside free window' })}
+            {field('Free Cancellation Window', 'jobCancellationFreeWindowSecs', { description: 'Stored for later policy activation; currently not applied', disabled: true })}
+            {field('Cancellation Fee (%)', 'jobCancellationFeePercent', { description: 'Automatic fees and transfers are currently paused', disabled: true })}
             {field('High Bid Review Threshold', 'jobHighBidFlagPesewas', { description: 'Bids above this are flagged for admin review' })}
           </Section>
 
@@ -495,8 +513,8 @@ export default function ConfigurationPage() {
 
           <Section title="Provider Behaviour Thresholds" description="Automatic suspension and rating-based intervention rules">
             {field('Min Artisan Service Radius (km)', 'artisanMinServiceRadiusKm', { description: 'Smallest radius an artisan can set' })}
-            {field('Cancellation Suspension Count', 'cancellationSuspensionCount', { description: 'Number of cancellations that triggers suspension' })}
-            {field('Cancellation Rolling Period (days)', 'cancellationRollingPeriodDays', { description: 'Lookback window for cancellation count' })}
+            {field('Cancellation Suspension Count', 'cancellationSuspensionCount', { description: 'Cancellation counters and automatic suspensions are currently paused', disabled: true })}
+            {field('Cancellation Rolling Period (days)', 'cancellationRollingPeriodDays', { description: 'Stored for later policy activation; currently not applied', disabled: true })}
             {field('Rating Warning Threshold (stars)', 'ratingWarningThreshold', { description: 'Warning sent below this average' })}
             {field('Rating Suspension Threshold (stars)', 'ratingSuspensionThreshold', { description: 'Auto-suspend below this average' })}
             {field('Min Ratings for Threshold', 'ratingMinJobsForThreshold', { description: 'Ignore thresholds until provider has this many ratings' })}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import {
@@ -25,7 +26,6 @@ import {
 import { ApiError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { ROLE_DEFINITIONS, type Permission } from '@/lib/roles'
-import { DriverRideCategoriesSection } from '@/components/users/driver-ride-categories-section'
 import { DocumentExpiryControl } from '@/components/common/document-expiry-control'
 
 // Which pipeline step the viewer acts on, derived from their permissions. The
@@ -42,7 +42,10 @@ const STAGE_LABEL: Record<string, string> = {
   pending_documents: 'Stage 1 — Document check',
   docs_verified: 'Stage 2 — Coordinator',
   coordinator_validated: 'Stage 3 — RM final',
-  online: 'Online',
+  // The backend's historical stage value is "online", but final verification
+  // only makes the provider eligible to go online. Availability is a separate
+  // provider-controlled state.
+  online: 'Verified',
 }
 
 // The single action available on an item is decided by the item's CURRENT stage
@@ -85,7 +88,7 @@ function DocsProgress({ pending, approved, rejected, total }: {
 }
 
 function DocStatusBadge({ status }: { status: string }) {
-  if (status === 'approved' || status === 'confirmed') return (
+  if (status === 'approved') return (
     <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
       <CheckCircle className="h-3 w-3" /> Approved
     </span>
@@ -98,6 +101,11 @@ function DocStatusBadge({ status }: { status: string }) {
   if (status === 'uploaded') return (
     <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
       Awaiting Upload
+    </span>
+  )
+  if (status === 'confirmed') return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+      Upload confirmed · pending review
     </span>
   )
   return (
@@ -454,15 +462,16 @@ function FinalDecisionStep({
   heading?: string
   showTiers?: boolean
 }) {
-  const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded'
+  const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded' || s === 'confirmed'
   const resolved = documents.map(d => ({
     doc: d,
     review: reviews.get(d.id) ?? (!needsReview(d.status)
-      ? { action: (d.status === 'approved' || d.status === 'confirmed') ? 'approve' : 'reject' as 'approve' | 'reject', reason: d.rejection_reason ?? '' }
+      ? { action: d.status === 'approved' ? 'approve' : 'reject' as 'approve' | 'reject', reason: d.rejection_reason ?? '' }
       : null),
   }))
-  const allApproved = resolved.every(r => r.review?.action === 'approve')
+  const allApproved = resolved.length > 0 && resolved.every(r => r.review?.action === 'approve')
   const anyRejected = resolved.some(r => r.review?.action === 'reject')
+  const anyUnresolved = resolved.some(r => r.review == null)
   const suggested: 'approve' | 'reject' = allApproved ? 'approve' : 'reject'
 
   const [action, setAction] = useState<'approve' | 'reject'>(suggested)
@@ -471,8 +480,16 @@ function FinalDecisionStep({
 
   async function handleSubmit() {
     if (reason.trim().length < 5) { setError('Reason must be at least 5 characters.'); return }
+    if (action === 'approve' && !allApproved) {
+      setError('Every current document must be independently approved before the provider can be approved.')
+      return
+    }
     setError('')
-    await onSubmit(action, reason.trim())
+    try {
+      await onSubmit(action, reason.trim())
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to submit provider decision.')
+    }
   }
 
   return (
@@ -495,12 +512,17 @@ function FinalDecisionStep({
         ))}
       </div>
 
-      {/* Ride-tier verification — drivers pick tiers at signup; an admin must
-          confirm the vehicle qualifies for each before the driver is matched.
-          Reuses the same surface as the driver profile sheet. */}
+      {/* BR-46: category authority belongs to a physical vehicle. Never expose
+          the legacy driver-level approval endpoint on a release surface. */}
       {showTiers && item.provider_type === 'driver' && (
-        <div className="border border-gray-100 rounded-xl p-3">
-          <DriverRideCategoriesSection driverId={item.provider_id} canReview={canReviewTiers} />
+        <div className="border border-gray-100 rounded-xl p-3 text-sm">
+          <p className="font-medium text-gray-800">Vehicle-specific ride categories</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Vehicle approval and category approval are separate decisions.
+          </p>
+          <Link className="inline-block mt-2 text-xs font-medium text-orange-600" href="/verifications/vehicles">
+            {canReviewTiers ? 'Review vehicle categories' : 'View vehicle categories'}
+          </Link>
         </div>
       )}
 
@@ -508,6 +530,18 @@ function FinalDecisionStep({
         <div className="flex items-start gap-2 bg-red-50 text-red-700 text-xs rounded-lg px-3 py-2">
           <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
           One or more documents rejected - approval not recommended.
+        </div>
+      )}
+      {anyUnresolved && (
+        <div className="flex items-start gap-2 bg-amber-50 text-amber-700 text-xs rounded-lg px-3 py-2">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          One or more documents still require an independent decision. Provider approval is blocked.
+        </div>
+      )}
+      {documents.length === 0 && (
+        <div className="flex items-start gap-2 bg-red-50 text-red-700 text-xs rounded-lg px-3 py-2">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          No current documents were returned. Provider approval is blocked.
         </div>
       )}
       {allApproved && (
@@ -526,13 +560,14 @@ function FinalDecisionStep({
               setAction(a)
               setReason(a === 'approve' ? 'All documents reviewed and verified.' : '')
             }}
+            disabled={a === 'approve' && !allApproved}
             className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors border ${
               action === a
                 ? a === 'approve'
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                 : 'bg-red-50 text-red-700 border-red-200'
                 : 'text-gray-500 border-gray-200 hover:bg-gray-50'
-            }`}
+            } disabled:cursor-not-allowed disabled:opacity-40`}
           >
             {a === 'approve'
               ? <><CheckCircle className="h-4 w-4" /> {approveLabel}</>
@@ -568,7 +603,7 @@ function FinalDecisionStep({
         <Button
           size="sm"
           onClick={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || (action === 'approve' && !allApproved)}
           className="flex-1 text-white"
           style={{ backgroundColor: action === 'approve' ? '#059669' : '#DC2626' }}
         >
@@ -594,20 +629,25 @@ function AdminSubmitStep({
   onSubmit: () => Promise<void>
   submitting: boolean
 }) {
-  const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded'
+  const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded' || s === 'confirmed'
   const resolved = documents.map(d => ({
     doc: d,
     review: reviews.get(d.id) ?? (!needsReview(d.status)
-      ? { action: (d.status === 'approved' || d.status === 'confirmed') ? 'approve' : 'reject' as 'approve' | 'reject', reason: d.rejection_reason ?? '' }
+      ? { action: d.status === 'approved' ? 'approve' : 'reject' as 'approve' | 'reject', reason: d.rejection_reason ?? '' }
       : null),
   }))
-  const allDecided = resolved.every(r => r.review != null)
+  const allDecided = resolved.length > 0 && resolved.every(r => r.review != null)
   const [error, setError] = useState('')
 
   async function handleSubmit() {
+    if (documents.length === 0) { setError('At least one current document is required before submitting.'); return }
     if (!allDecided) { setError('Review every document (approve or reject) before submitting.'); return }
     setError('')
-    await onSubmit()
+    try {
+      await onSubmit()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to submit to coordinator.')
+    }
   }
 
   return (
@@ -730,7 +770,8 @@ function ApprovalChain({ history, showStages }: { history: VerificationHistory; 
 
 // Sort: pending_review → uploaded → approved/rejected. Historical versions
 // (isCurrent === false) are dropped — only the current version is reviewable.
-const docStatusRank = (s: string) => s === 'pending_review' ? 0 : s === 'uploaded' ? 1 : 2
+const docStatusRank = (s: string) =>
+  s === 'pending_review' || s === 'confirmed' ? 0 : s === 'uploaded' ? 1 : 2
 function sortReviewDocs(docs: ProviderDocument[]): ProviderDocument[] {
   return [...docs]
     .filter(d => d.isCurrent !== false)
@@ -813,8 +854,12 @@ function ReviewDrawer({
       await reviewDocument(currentDoc.id, item.provider_type, review.action, review.reason || (review.action === 'approve' ? 'Approved.' : ''))
       setReviews(prev => new Map(prev).set(currentDoc.id, review))
     } catch (err) {
-      const e = err as { status?: number; code?: string; message?: string }
-      console.error('[verifications] reviewDocument failed', { docId: currentDoc.id, status: e?.status, code: e?.code, message: e?.message, error: err })
+      const e = err instanceof ApiError ? err : null
+      console.error('[verifications] reviewDocument failed', {
+        status: e?.status,
+        code: e?.code,
+        supportReference: e?.supportReference,
+      })
       // A re-upload supersedes the version we're holding — refetch the current
       // version and prompt a retry instead of surfacing a raw 404.
       if (e?.code === 'DOCUMENT_NOT_FOUND' || e?.status === 404) {
@@ -825,9 +870,7 @@ function ReviewDrawer({
           setSaveError('This document was re-uploaded and the latest version could not be reloaded. Close and reopen the review to continue.')
         }
       } else {
-        const status = e?.status ? `${e.status} ` : ''
-        const code = e?.code && e.code !== String(e?.status) ? ` (${e.code})` : ''
-        setSaveError(`${status}${e?.message ?? 'Failed to save document review.'}${code}`)
+        setSaveError(e?.message ?? 'Failed to save document review.')
       }
     } finally {
       setSaving(false)
@@ -846,9 +889,9 @@ function ReviewDrawer({
         await validateVerification(item.provider_id, providerType, decision, reason)
       }
       onDone()
-    } catch {
+    } catch (err) {
       setSubmitting(false)
-      throw new Error('Failed to submit decision.')
+      throw err
     }
   }
 
@@ -858,9 +901,9 @@ function ReviewDrawer({
     try {
       await submitVerification(item.provider_id, providerType)
       onDone()
-    } catch {
+    } catch (err) {
       setSubmitting(false)
-      throw new Error('Failed to submit to coordinator.')
+      throw err
     }
   }
 
@@ -923,9 +966,9 @@ function ReviewDrawer({
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-                <Button size="sm" className="flex-1 text-white" style={{ backgroundColor: '#F5A623' }} onClick={() => setStep('final')}>
-                  Skip to Provider Decision
+                <Button size="sm" variant="outline" className="flex-1" onClick={onClose}>Close</Button>
+                <Button size="sm" className="flex-1 text-white" style={{ backgroundColor: '#F5A623' }} onClick={() => { refresh().catch(() => {}) }} disabled={refreshing}>
+                  {refreshing ? 'Reloading…' : 'Reload Documents'}
                 </Button>
               </div>
             </div>
@@ -934,7 +977,7 @@ function ReviewDrawer({
               doc={currentDoc}
               index={currentIndex}
               total={documents.length}
-              pendingOnly={documents.filter(d => d.status === 'pending_review' || d.status === 'uploaded')}
+              pendingOnly={documents.filter(d => d.status === 'pending_review' || d.status === 'uploaded' || d.status === 'confirmed')}
               existingReview={reviews.get(currentDoc.id)}
               onSave={handleDocSave}
               onPrev={() => setCurrentIndex(i => Math.max(0, i - 1))}
@@ -969,7 +1012,7 @@ function ReviewDrawer({
                 canReviewTiers={canReviewTiers}
                 showTiers={action === 'rm'}
                 heading={action === 'rm' ? 'Final Verification' : 'Validate Documents'}
-                approveLabel={action === 'rm' ? 'Approve & Send Online' : 'Send to RM'}
+                approveLabel={action === 'rm' ? 'Approve Provider' : 'Send to RM'}
                 rejectLabel={action === 'rm' ? 'Reject Provider' : 'Bounce to Admin'}
               />
             )
@@ -1055,7 +1098,7 @@ export default function VerificationsPage() {
           isGlobal ? 'All providers across the verification pipeline'
           : homeRole === 'admin' ? 'Stage 1 — check each document for authenticity, then submit to the coordinator'
           : homeRole === 'coordinator' ? 'Stage 2 — validate the admin-approved documents for your category'
-          : homeRole === 'rm' ? 'Stage 3 — final verification that sends the provider online'
+          : homeRole === 'rm' ? 'Stage 3 — final verification that makes the provider eligible to go online'
           : 'Provider identity and document submissions'
         }
         actions={

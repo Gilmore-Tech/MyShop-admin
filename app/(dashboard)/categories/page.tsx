@@ -295,7 +295,7 @@ function CategoryDialog({
       onSaved(saved)
       onClose()
     } catch (err: unknown) {
-      setError((err as { message?: string })?.message ?? 'Failed to save category.')
+      setError(err instanceof ApiError ? err.message : 'Failed to save category.')
     } finally {
       setSaving(false)
     }
@@ -470,20 +470,18 @@ function DeleteCategoryDialog({
       onClose()
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 409) {
-        const details = (err as unknown as { details?: CategoryDeleteConflict }).details
-        // Surface counts from the 409 body when present. ApiError today doesn't
-        // carry a typed details field; if backend wraps in the standard envelope
-        // we fall back to inferring from the message.
+        const details = err.details as CategoryDeleteConflict | null
+        // Surface only typed counts from the standard error.details envelope.
         if (details && typeof details === 'object') {
           setConflict({
-            code: details.code ?? (err.message.includes('JOBS') ? 'CATEGORY_HAS_JOBS' : 'CATEGORY_IN_USE'),
+            code: details.code ?? (err.code === 'CATEGORY_HAS_JOBS' ? 'CATEGORY_HAS_JOBS' : 'CATEGORY_IN_USE'),
             artisansCount: details.artisansCount ?? 0,
             jobsCount: details.jobsCount ?? 0,
             subcategoryCount: details.subcategoryCount ?? 0,
           })
         } else {
           setConflict({
-            code: err.message.includes('JOBS') ? 'CATEGORY_HAS_JOBS' : 'CATEGORY_IN_USE',
+            code: err.code === 'CATEGORY_HAS_JOBS' ? 'CATEGORY_HAS_JOBS' : 'CATEGORY_IN_USE',
             artisansCount: 0, jobsCount: 0, subcategoryCount: 0,
           })
         }

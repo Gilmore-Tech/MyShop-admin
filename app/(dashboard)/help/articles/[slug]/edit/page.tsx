@@ -11,6 +11,7 @@ import {
   type HelpArticle, type HelpCategory,
 } from '@/lib/api'
 import { ArticleForm } from '../../_components/article-form'
+import { userSafeAdminError } from '@/lib/api-client'
 
 export default function EditHelpArticlePage() {
   const params = useParams<{ slug: string }>()
@@ -32,8 +33,8 @@ export default function EditHelpArticlePage() {
           setCategories(cats)
         }
       })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message ?? 'Failed to load article.')
+      .catch((err: unknown) => {
+        if (!cancelled) setError(userSafeAdminError(err, 'Failed to load article.'))
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }

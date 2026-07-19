@@ -501,7 +501,7 @@ function PromoFormDialog({
       }
       onSaved()
     } catch (err: unknown) {
-      if (err instanceof ApiError && err.message.includes('PROMO_CODE_EXISTS')) {
+      if (err instanceof ApiError && err.code === 'PROMO_CODE_EXISTS') {
         setError('A promo with this code already exists.')
       } else {
         setError(err instanceof ApiError ? err.message : 'Failed to save promo.')
@@ -813,4 +813,3 @@ function Stat({ label, value }: { label: string; value: string }) {
     </div>
   )
 }
-
