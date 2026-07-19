@@ -1,4 +1,5 @@
 import { getLiveMapData, type ArtisanSearchResult } from './api'
+import { safeAdminErrorDiagnostic } from './api-client'
 
 export interface LatLng {
   lat: number
@@ -37,14 +38,14 @@ export async function annotateDistancesFromLiveMap(
   try {
     markers = (await getLiveMapData()) as unknown as unknown[]
   } catch (err) {
-    console.warn('[manual-assignment] live-map fallback failed', err)
+    console.warn('[manual-assignment] live-map fallback failed', safeAdminErrorDiagnostic(err))
     return artisans
   }
 
   const byId = new Map<string, LatLng>()
   for (const raw of markers) {
     const m = raw as Record<string, unknown>
-    const id = (m.artisanId ?? m.providerId ?? m.userId) as string | undefined
+    const id = (m.artisanId ?? m.providerId) as string | undefined
     if (id && typeof m.lat === 'number' && typeof m.lng === 'number') {
       byId.set(id, { lat: m.lat, lng: m.lng })
     }
@@ -53,7 +54,7 @@ export async function annotateDistancesFromLiveMap(
 
   return artisans.map(a => {
     if (a.distanceKm != null) return a
-    const m = byId.get(a.id) ?? byId.get(a.userId)
+    const m = byId.get(a.id)
     if (!m) return a
     return {
       ...a,

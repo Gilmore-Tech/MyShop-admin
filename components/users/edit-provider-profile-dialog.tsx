@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useRef, useState } from 'react'
-import { Loader2, Pencil, Camera, Trash2 } from 'lucide-react'
+import { Loader2, Pencil, Camera } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,15 +16,11 @@ import {
   type EditDriverProfileInput,
   type EditArtisanProfileInput,
 } from '@/lib/api'
-import { ApiError } from '@/lib/api-client'
+import { ApiError, FEATURES } from '@/lib/api-client'
 
-// Form key for the profile photo — handled outside the descriptor grid (it has a
-// bespoke upload control) but tracked in the same form/initial record so the
-// shared diff logic still picks up changes.
-const PHOTO_KEY = 'profilePhotoUrl'
-
-// Client-side guard before uploading to Cloudinary.
+// Client-side convenience only; the backend verifies byte length and magic.
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024 // 5 MB
+const PHOTO_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
 function initials(name: string | null | undefined) {
   if (!name) return '?'
@@ -83,10 +79,9 @@ const ARTISAN_FIELDS: FieldDef[] = [
 // Number/date are stringified; date is trimmed to yyyy-MM-dd for the date input.
 function initialValues(providerType: 'driver' | 'artisan', u: PlatformUser): Record<string, string> {
   const str = (v: unknown) => (v == null ? '' : String(v))
-  if (providerType === 'driver') {
-    const d = u.driver
+  if (providerType === 'driver' && u.role === 'driver') {
+    const d = u.profile
     return {
-      profilePhotoUrl: str(d?.profilePhotoUrl),
       legalName: str(d?.legalName),
       email: str(d?.email),
       displayName: str(d?.displayName),
@@ -100,9 +95,8 @@ function initialValues(providerType: 'driver' | 'artisan', u: PlatformUser): Rec
       licenceExpiry: d?.licenceExpiry ? d.licenceExpiry.slice(0, 10) : '',
     }
   }
-  const a = u.artisan
+  const a = u.role === 'artisan' ? u.profile : null
   return {
-    profilePhotoUrl: str(a?.profilePhotoUrl),
     legalName: str(a?.legalName),
     email: str(a?.email),
     displayName: str(a?.displayName),
@@ -131,6 +125,8 @@ function messageForError(err: unknown, providerType: 'driver' | 'artisan'): { ge
       return { general: `This user has no ${providerType} profile to edit.` }
     case 'EMAIL_ALREADY_EXISTS':
       return { email: 'This email is already used by another provider.' }
+    case 'INVALID_ARTISAN_CAPACITY':
+      return { general: 'Solo artisans can handle one active job; multi-worker artisans can handle up to three.' }
     default:
       return { general: err.message || 'Failed to save changes.' }
   }
@@ -155,6 +151,9 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
   const [loading, setLoading] = useState(false)
   const [generalError, setGeneralError] = useState('')
   const [emailError, setEmailError] = useState('')
+  const initialPhotoUrl =
+    user.role === providerType ? (user.profile?.profilePhotoUrl ?? '') : ''
+  const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
@@ -168,13 +167,18 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
       setGeneralError('')
       setEmailError('')
       setPhotoError('')
+      setPhotoUrl(initialPhotoUrl)
     } else {
       onClose()
     }
   }
 
   function setField(key: string, value: string) {
-    setForm(f => ({ ...f, [key]: value }))
+    setForm(f =>
+      key === 'shopCapacity' && value === 'solo'
+        ? { ...f, shopCapacity: 'solo', maxConcurrentJobs: '1' }
+        : { ...f, [key]: value }
+    )
     setGeneralError('')
     if (key === 'email') setEmailError('')
   }
@@ -182,8 +186,12 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
   async function handlePhotoPick(file: File | null) {
     if (!file) return
     setPhotoError('')
-    if (!file.type.startsWith('image/')) {
-      setPhotoError('Please choose an image file.')
+    if (!FEATURES.adminProviderProfilePhoto) {
+      setPhotoError('Profile-photo replacement is temporarily unavailable.')
+      return
+    }
+    if (!PHOTO_MIME_TYPES.has(file.type)) {
+      setPhotoError('Please choose a JPEG, PNG or WebP image.')
       return
     }
     if (file.size > MAX_PHOTO_BYTES) {
@@ -192,10 +200,15 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
     }
     setUploadingPhoto(true)
     try {
-      const url = await uploadProviderPhoto(user.id, file)
-      setField(PHOTO_KEY, url)
+      if (user.role !== providerType) throw new Error('The selected role account does not match this editor.')
+      const url = await uploadProviderPhoto(providerType, user.roleAccountId, file)
+      setPhotoUrl(url)
+      // Upload is an exact-role, audited server-side assignment. Refresh the
+      // parent sheet immediately; the URL is never echoed into profile PATCH.
+      const refreshed = await getUser(user.role, user.roleAccountId)
+      onSaved(refreshed)
     } catch (err) {
-      setPhotoError(err instanceof Error ? err.message : 'Photo upload failed.')
+      setPhotoError(err instanceof ApiError ? err.message : 'Photo upload failed.')
     } finally {
       setUploadingPhoto(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -204,11 +217,8 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
 
   // Build the PATCH body from only the fields that actually changed — keeps the
   // request minimal (no accidental overwrites) and avoids NO_UPDATE_FIELDS.
-  // The photo lives outside `fields`, so check it explicitly.
   const changedKeys = useMemo(() => {
-    const keys = fields.filter(f => (form[f.key] ?? '') !== (initial[f.key] ?? '')).map(f => f.key)
-    if ((form[PHOTO_KEY] ?? '') !== (initial[PHOTO_KEY] ?? '')) keys.push(PHOTO_KEY)
-    return keys
+    return fields.filter(f => (form[f.key] ?? '') !== (initial[f.key] ?? '')).map(f => f.key)
   }, [fields, form, initial])
   const hasChanges = changedKeys.length > 0
 
@@ -229,7 +239,6 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
         payload[f.key] = raw
       }
     }
-    if (changedKeys.includes(PHOTO_KEY)) payload[PHOTO_KEY] = (form[PHOTO_KEY] ?? '').trim()
     return { payload }
   }
 
@@ -251,12 +260,12 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
     setEmailError('')
     try {
       if (providerType === 'driver') {
-        await editDriverProfile(user.id, payload as EditDriverProfileInput)
+        await editDriverProfile(user.roleAccountId, payload as EditDriverProfileInput)
       } else {
-        await editArtisanProfile(user.id, payload as EditArtisanProfileInput)
+        await editArtisanProfile(user.roleAccountId, payload as EditArtisanProfileInput)
       }
       // Re-fetch the normalised detail so the sheet reflects the saved values.
-      const refreshed = await getUser(user.id)
+      const refreshed = await getUser(user.role, user.roleAccountId)
       onSaved(refreshed)
       onClose()
     } catch (err) {
@@ -284,7 +293,7 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {/* Profile photo */}
           {(() => {
-            const photo = form[PHOTO_KEY] ?? ''
+            const photo = photoUrl
             return (
               <div className="mb-5 flex items-center gap-4">
                 <Avatar className="h-16 w-16">
@@ -296,34 +305,31 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
                 <div className="min-w-0">
                   <Label className="text-xs text-gray-500">Profile photo</Label>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => handlePhotoPick(e.target.files?.[0] ?? null)}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1.5 text-xs"
-                      disabled={uploadingPhoto}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      {uploadingPhoto ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
-                      {uploadingPhoto ? 'Uploading…' : photo ? 'Replace' : 'Upload'}
-                    </Button>
-                    {photo && !uploadingPhoto && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 gap-1.5 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                        onClick={() => { setField(PHOTO_KEY, ''); setPhotoError('') }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" /> Remove
-                      </Button>
+                    {FEATURES.adminProviderProfilePhoto ? (
+                      <>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={e => handlePhotoPick(e.target.files?.[0] ?? null)}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5 text-xs"
+                          disabled={uploadingPhoto}
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          {uploadingPhoto ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                          {uploadingPhoto ? 'Uploading…' : photo ? 'Replace' : 'Upload'}
+                        </Button>
+                      </>
+                    ) : (
+                      <span className="text-[11px] text-amber-700">
+                        Replacement is temporarily unavailable.
+                      </span>
                     )}
                   </div>
                   <p className="mt-1 text-[11px] text-gray-400">JPG or PNG, up to 5 MB.</p>
@@ -372,6 +378,7 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
                       min={f.min}
                       max={f.max}
                       maxLength={f.maxLength}
+                      disabled={f.key === 'maxConcurrentJobs' && form.shopCapacity === 'solo'}
                       onChange={e => setField(f.key, e.target.value)}
                       className={`mt-1 h-9 text-sm ${showEmailError ? 'border-red-300 focus-visible:ring-red-200' : ''}`}
                     />

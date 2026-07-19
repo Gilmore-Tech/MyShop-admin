@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import {
-  Search, RefreshCw, Scale, ChevronRight, AlertTriangle, CheckCircle2,
+  Search, RefreshCw, Scale, ChevronRight, CheckCircle2,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -19,11 +19,6 @@ import { ApiError } from '@/lib/api-client'
 import { formatGhs } from '@/lib/money'
 
 // Spec: docs/admin-frontend-spec-payment-panel.md §4.3.
-
-// PRD 4.8.x — disputes have a 24h SLA for ops to resolve. Badge anything >18h
-// old as approaching the deadline.
-const SLA_HOURS = 24
-const SLA_WARN_HOURS = 18
 
 function ageHours(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / 3_600_000
@@ -48,6 +43,7 @@ interface ResolvedFlash {
   id: string
   refundedPesewas: number | null
   mode: 'REFUND_FULL' | 'REFUND_PARTIAL' | 'REJECT'
+  status?: string
 }
 
 function readResolvedFlash(): ResolvedFlash | null {
@@ -107,10 +103,6 @@ export default function DisputesPage() {
 
   const openCount = items.filter(d => d.status === 'open').length
   const underReviewCount = items.filter(d => d.status === 'under_review').length
-  const slaWarnCount = items.filter(
-    d => (d.status === 'open' || d.status === 'under_review') && ageHours(d.createdAt) >= SLA_WARN_HOURS,
-  ).length
-
   return (
     <PageGuard permission="view_disputes">
       <div>
@@ -122,11 +114,6 @@ export default function DisputesPage() {
               <div className="flex items-center gap-3 text-sm text-gray-500 bg-white rounded-lg px-3 py-1.5">
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />{openCount} Open</span>
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />{underReviewCount} In Review</span>
-                {slaWarnCount > 0 && (
-                  <span className="flex items-center gap-1.5 text-amber-700 font-medium" title={`Disputes older than ${SLA_WARN_HOURS}h — approaching the ${SLA_HOURS}h SLA`}>
-                    <AlertTriangle className="h-3 w-3" />{slaWarnCount} near SLA
-                  </span>
-                )}
               </div>
               <Button variant="outline" size="sm" onClick={load} className="gap-2">
                 <RefreshCw className="h-3.5 w-3.5" /> Refresh
@@ -141,8 +128,10 @@ export default function DisputesPage() {
             <p className="text-sm text-emerald-700 font-medium">
               {flash.mode === 'REJECT'
                 ? 'Dispute rejected - no refund issued.'
+                : flash.status === 'refund_pending'
+                  ? `Refund approved - ${formatGhs(flash.refundedPesewas)} is being processed. No provider clawback exists until repayment succeeds.`
                 : flash.refundedPesewas != null
-                  ? `Dispute resolved - ${formatGhs(flash.refundedPesewas)} refunded.`
+                  ? `Refund update - ${formatGhs(flash.refundedPesewas)}.`
                   : 'Dispute resolved.'}
             </p>
             <button
@@ -154,7 +143,7 @@ export default function DisputesPage() {
 
         <div className="mb-4 text-xs text-gray-500 bg-amber-50 rounded-lg px-4 py-2.5 flex items-center gap-2">
           <span className="text-amber-600 font-semibold">Rule:</span>
-          Disputes must be raised within <strong>2 hours</strong> of ride/job completion. Only the disputed amount is frozen — other provider earnings remain accessible. Ops SLA: resolve within {SLA_HOURS}h.
+          Clients may raise a dispute for <strong>24 hours</strong> from ride completion or client-confirmed artisan completion. Provider payout is held for 2 hours; only this payment is blocked when a dispute is open.
         </div>
 
         <div className="flex items-center gap-3 mb-4 flex-wrap">
@@ -168,8 +157,11 @@ export default function DisputesPage() {
               <SelectItem value="all">All Statuses</SelectItem>
               <SelectItem value="open">Open</SelectItem>
               <SelectItem value="under_review">Under Review</SelectItem>
-              <SelectItem value="resolved_refunded">Resolved (refunded)</SelectItem>
-              <SelectItem value="resolved_rejected">Resolved (rejected)</SelectItem>
+              <SelectItem value="refund_pending">Refund processing</SelectItem>
+              <SelectItem value="refund_failed">Refund needs attention</SelectItem>
+              <SelectItem value="resolved_refund">Resolved (full refund)</SelectItem>
+              <SelectItem value="resolved_partial_refund">Resolved (partial refund)</SelectItem>
+              <SelectItem value="resolved_no_refund">Resolved (no refund)</SelectItem>
             </SelectContent>
           </Select>
           <div className="ml-auto text-sm text-gray-400">{sorted.length} disputes</div>
@@ -213,9 +205,6 @@ export default function DisputesPage() {
               ) : (
                 sorted.map(d => {
                   const isActive = d.status === 'open' || d.status === 'under_review'
-                  const ageH = ageHours(d.createdAt)
-                  const slaWarn = isActive && ageH >= SLA_WARN_HOURS && ageH < SLA_HOURS
-                  const slaBreached = isActive && ageH >= SLA_HOURS
                   return (
                     <TableRow key={d.id} className="hover:bg-gray-50">
                       <TableCell className="font-mono text-sm font-semibold text-orange-600">
@@ -228,13 +217,10 @@ export default function DisputesPage() {
                         {isActive && (
                           <div
                             className={`text-[10px] mt-0.5 ${
-                              slaBreached ? 'text-red-600 font-semibold' :
-                              slaWarn ? 'text-amber-600 font-medium' : 'text-gray-400'
+                              'text-gray-400'
                             }`}
                           >
                             {ageLabel(d.createdAt)}
-                            {slaBreached && ' - SLA breached'}
-                            {slaWarn && ' - near SLA'}
                           </div>
                         )}
                       </TableCell>

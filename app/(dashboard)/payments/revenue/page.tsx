@@ -104,8 +104,9 @@ export default function RevenuePage() {
         <TabsList className="bg-white">
           <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
           <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payouts</Link></TabsTrigger>
+          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
           <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
+          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
         </TabsList>
       </Tabs>
 

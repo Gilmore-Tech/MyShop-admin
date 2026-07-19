@@ -16,6 +16,7 @@ import {
   listRides, listArtisanJobs, type AdminRide, type AdminJob,
 } from '@/lib/api'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
+import { userSafeAdminError } from '@/lib/api-client'
 
 type SelectedMarker = LiveMapMarker & { detail: Record<string, unknown> | null }
 
@@ -133,7 +134,7 @@ function RidesTable() {
       setTotal(res.total)
       setTotalPages(res.totalPages)
     } catch (e) {
-      setError((e as Error).message ?? 'Failed to load rides')
+      setError(userSafeAdminError(e, 'Failed to load rides.'))
     } finally {
       setLoading(false)
     }
@@ -244,7 +245,7 @@ function JobsTable() {
       setTotal(res.total)
       setTotalPages(res.totalPages)
     } catch (e) {
-      setError((e as Error).message ?? 'Failed to load jobs')
+      setError(userSafeAdminError(e, 'Failed to load jobs.'))
     } finally {
       setLoading(false)
     }

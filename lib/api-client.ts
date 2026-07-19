@@ -7,10 +7,7 @@ import type { Permission, Role, CategoryScope } from './roles'
 
 // In the browser during local dev, route through the Next.js rewrite proxy to avoid CORS.
 
-export const API_BASE =
-  typeof window !== 'undefined'
-    ? '/api/proxy'
-    : (process.env.NEXT_PUBLIC_API_URL ?? 'https://myshop-api-2hy2.onrender.com/v1')
+export const API_BASE = typeof window !== 'undefined' ? '/api/proxy' : (process.env.NEXT_PUBLIC_API_URL ?? 'https://myshop-api-2hy2.onrender.com/v1')
 
 const TOKEN_KEY = 'myshop_admin_token'
 const REFRESH_KEY = 'myshop_admin_refresh'
@@ -43,7 +40,11 @@ export function getAdminUser(): AdminUser | null {
   if (typeof window === 'undefined') return null
   const raw = localStorage.getItem(ADMIN_KEY)
   if (!raw) return null
-  try { return JSON.parse(raw) } catch { return null }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
 }
 
 export function setAdminUser(user: AdminUser) {
@@ -106,18 +107,27 @@ interface ApiOptions extends RequestInit {
 // the dashboard hides any UI tied to a backend endpoint that isn't shipped yet.
 export const FEATURES = {
   highBidReview: process.env.NEXT_PUBLIC_FEATURE_HIGH_BID_REVIEW === 'true',
+  // Enable only alongside backend FF_SESSION_RECOVERY after the exact-SID
+  // durability proof passes. Missing means no page, nav item or polling.
+  sessionRecovery: process.env.NEXT_PUBLIC_FF_SESSION_RECOVERY === 'true',
+  // BR-63 deleted-role recovery is independent from lost-device recovery and
+  // stays hidden unless its backend gate is enabled for the same artifact.
+  roleAccountRecovery:
+    process.env.NEXT_PUBLIC_FF_ROLE_ACCOUNT_RECOVERY === 'true',
+  // BR-61 containment. The backend independently defaults this writer off.
+  // Do not enable until replacement lifecycle and durable cleanup are approved.
+  adminProviderProfilePhoto: process.env.NEXT_PUBLIC_FF_ADMIN_PROVIDER_PROFILE_PHOTO === 'true',
+  // Privileged document bytes are independently gated until real storage
+  // verification and orphan-cleanup rehearsal pass end to end.
+  adminProviderDocumentUpload: process.env.NEXT_PUBLIC_FF_ADMIN_PROVIDER_DOCUMENT_UPLOAD === 'true',
   // Best-effort interim distance annotation on the manual-assignment page
   // using /admin/live-map as the artisan-location source. See
   // docs/backend-spec-nearby-artisan-search.md (Option C). Drop this once the
   // backend ships first-class distance on /admin/artisans/search.
-  nearbyArtisanHaversine: process.env.NEXT_PUBLIC_FEATURE_NEARBY_ARTISAN_HAVERSINE === 'true',
+  nearbyArtisanHaversine: process.env.NEXT_PUBLIC_FEATURE_NEARBY_ARTISAN_HAVERSINE === 'true'
 } as const
 
-
-export async function apiFetch<T = unknown>(
-  path: string,
-  options: ApiOptions = {},
-): Promise<T> {
+export async function apiFetch<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
   const { skipAuth, localRoute, ...init } = options
   const token = getToken()
 
@@ -135,49 +145,158 @@ export async function apiFetch<T = unknown>(
 
 async function unwrap<T>(res: Response): Promise<T> {
   let body: unknown
-  try { body = await res.json() } catch { body = null }
+  try {
+    body = await res.json()
+  } catch {
+    body = null
+  }
 
   if (!res.ok) {
     if (res.status === 401 && typeof window !== 'undefined') {
       window.dispatchEvent(new Event('auth:unauthorized'))
     }
-    const err = body as any
-    const code = err?.error?.code ?? err?.error ?? err?.message ?? String(res.status)
-    const msg = err?.error?.message ?? err?.message ?? 'Request failed'
-    throw new ApiError(res.status, code, msg)
+    throw apiErrorFromResponse(res, body)
   }
 
   // NestJS TransformInterceptor wraps in { success, data, meta }
-  const b = body as any
-  return (b?.data !== undefined ? b.data : b) as T
+  const envelope = body && typeof body === 'object'
+    ? body as Record<string, unknown>
+    : null
+  return (envelope?.data !== undefined ? envelope.data : body) as T
 }
 
 export class ApiError extends Error {
+  readonly status: number
+  readonly code: string
+  readonly supportReference: string | null
+  readonly details: Readonly<Record<string, unknown>> | null
+
   constructor(
-    public readonly status: number,
-    public readonly code: string,
-    message: string,
+    status: number,
+    code: string,
+    supportReference: string | null = null,
+    details: Readonly<Record<string, unknown>> | null = null
   ) {
-    super(message)
+    super(userSafeApiErrorMessage(status, code, supportReference))
     this.name = 'ApiError'
+    this.status = status
+    this.code = code
+    this.supportReference = supportReference
+    this.details = details
   }
+}
+
+const SAFE_ERROR_CODE_RX = /^[A-Z][A-Z0-9_]{0,79}$/
+const SUPPORT_REFERENCE_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
+  INVALID_CREDENTIALS: 'Incorrect email or password. Please try again.',
+  INVALID_CURRENT_PASSWORD: 'The current password is incorrect.',
+  OUT_OF_SCOPE: 'You do not have access to this record.',
+  ROLE_MISMATCH: 'This action does not match the selected account role.',
+  TWO_PERSON_APPROVAL_REQUIRED: 'A different authorised reviewer must complete the second approval.',
+  COORDINATOR_APPROVAL_REQUIRED: 'Coordinator approval is required before this action.',
+  REGIONAL_MANAGER_APPROVAL_REQUIRED: 'Regional Manager approval is required before this action.',
+  DOCUMENTS_REQUIRED: 'The required documents have not been uploaded.',
+  DOCUMENTS_NOT_REVIEWED: 'Review every required document before continuing.',
+  DOCUMENTS_NOT_APPROVED: 'Every required document must be independently approved.',
+  DOCUMENT_EXPIRED: 'A required document has expired.',
+  DOCUMENT_NOT_FOUND: 'This document is no longer available. Reload and try again.',
+  EXPIRY_REQUIRED: 'Enter the document expiry date.',
+  INVALID_EXPIRY_DATE: 'Enter a valid document expiry date.',
+  FILE_TOO_LARGE: 'The selected file is too large.',
+  INVALID_FILE_TYPE: 'The selected file type is not supported.',
+  FILE_CONTENT_TYPE_MISMATCH: 'The file contents do not match its file type.',
+  INVALID_FILE_CONTENT: 'The selected file could not be verified.',
+  STORAGE_VERIFICATION_UNAVAILABLE: 'File verification is temporarily unavailable. Try again later.',
+  PRIVATE_MEDIA_URL_UNAVAILABLE: 'This private document is temporarily unavailable.',
+  VERIFICATION_CHANGED_RETRY: 'This verification changed. Reload the latest record and try again.',
+  VERIFICATION_STAGE_CHANGED: 'This verification moved to another review stage. Reload and try again.',
+  VEHICLE_CHANGED_RETRY: 'This vehicle changed. Reload the latest record and try again.',
+  VEHICLE_RIDE_CATEGORY_CHANGED_RETRY: 'This vehicle category decision changed. Reload and try again.',
+  PAYMENT_NOT_FOUND: 'The payment could not be found.',
+  PAYMENT_NOT_RETRYABLE: 'This payment cannot be retried in its current state.',
+  PAYOUT_IN_FLIGHT: 'This payout is already being processed.',
+  PAYOUT_MANUAL_RECONCILIATION_REQUIRED: 'This payout requires manual reconciliation before another action.',
+  AGGREGATE_BATCH_PAYOUTS_DISABLED: 'Automated batch payouts are suspended for this release.',
+  CLAWBACK_ALREADY_SETTLED: 'This clawback has already been settled.',
+  CLAWBACK_ALREADY_ESCALATED: 'This clawback has already been escalated.',
+  RECOVERY_REQUEST_NOT_FOUND: 'This recovery request could not be found.',
+  RECOVERY_REQUEST_NOT_PENDING: 'This recovery request is no longer pending.',
+  RECOVERY_RESOLUTION_IN_PROGRESS: 'This recovery request is already being resolved.',
+  RECOVERY_RESOLUTION_RETRY_QUEUED: 'The recovery action is queued for a safe retry.',
+  SESSION_RECOVERY_DISABLED: 'Session recovery is currently unavailable.',
+}
+
+function fallbackForStatus(status: number): string {
+  if (status === 400 || status === 422) return 'Check the information and try again.'
+  if (status === 401) return 'Your session has expired. Sign in again.'
+  if (status === 403) return 'You do not have permission to perform this action.'
+  if (status === 404) return 'The requested record could not be found.'
+  if (status === 409) return 'This record changed or conflicts with another action. Reload and try again.'
+  if (status === 413) return 'The selected file is too large.'
+  if (status === 415) return 'The selected file type is not supported.'
+  if (status === 429) return 'Too many attempts. Wait a moment and try again.'
+  if (status >= 500) return 'The server could not complete this request. Try again.'
+  return 'The request could not be completed. Try again.'
+}
+
+function normalizeSupportReference(value: unknown): string | null {
+  return typeof value === 'string' && SUPPORT_REFERENCE_RX.test(value) ? value : null
+}
+
+export function userSafeApiErrorMessage(
+  status: number,
+  code: string,
+  supportReference: string | null = null
+): string {
+  const message = SAFE_ERROR_COPY[code] ?? fallbackForStatus(status)
+  return supportReference ? `${message} Reference: ${supportReference}.` : message
+}
+
+export function userSafeAdminError(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback
+}
+
+export function safeAdminErrorDiagnostic(error: unknown): Readonly<Record<string, unknown>> {
+  if (error instanceof ApiError) {
+    return {
+      status: error.status,
+      code: error.code,
+      supportReference: error.supportReference,
+    }
+  }
+  return { kind: error instanceof Error ? error.name : typeof error }
+}
+
+export function apiErrorFromResponse(res: Response, body: unknown): ApiError {
+  const envelope = body && typeof body === 'object' ? body as Record<string, unknown> : {}
+  const error = envelope.error && typeof envelope.error === 'object'
+    ? envelope.error as Record<string, unknown>
+    : {}
+  const candidateCode = error.code ?? (typeof envelope.error === 'string' ? envelope.error : null)
+  const code = typeof candidateCode === 'string' && SAFE_ERROR_CODE_RX.test(candidateCode)
+    ? candidateCode
+    : `HTTP_${res.status}`
+  const supportReference =
+    normalizeSupportReference(error.supportReference) ??
+    normalizeSupportReference(res.headers.get('x-support-reference'))
+  const details = error.details && typeof error.details === 'object' && !Array.isArray(error.details)
+    ? Object.freeze({ ...(error.details as Record<string, unknown>) })
+    : null
+  return new ApiError(res.status, code, supportReference, details)
 }
 
 // ── Convenience methods ───────────────────────────────────────────────────────
 
 export const api = {
-  get: <T>(path: string, opts?: ApiOptions) =>
-    apiFetch<T>(path, { method: 'GET', ...opts }),
+  get: <T>(path: string, opts?: ApiOptions) => apiFetch<T>(path, { method: 'GET', ...opts }),
 
-  post: <T>(path: string, body?: unknown, opts?: ApiOptions) =>
-    apiFetch<T>(path, { method: 'POST', body: JSON.stringify(body), ...opts }),
+  post: <T>(path: string, body?: unknown, opts?: ApiOptions) => apiFetch<T>(path, { method: 'POST', body: JSON.stringify(body), ...opts }),
 
-  patch: <T>(path: string, body?: unknown, opts?: ApiOptions) =>
-    apiFetch<T>(path, { method: 'PATCH', body: JSON.stringify(body), ...opts }),
+  patch: <T>(path: string, body?: unknown, opts?: ApiOptions) => apiFetch<T>(path, { method: 'PATCH', body: JSON.stringify(body), ...opts }),
 
-  put: <T>(path: string, body?: unknown, opts?: ApiOptions) =>
-    apiFetch<T>(path, { method: 'PUT', body: JSON.stringify(body), ...opts }),
+  put: <T>(path: string, body?: unknown, opts?: ApiOptions) => apiFetch<T>(path, { method: 'PUT', body: JSON.stringify(body), ...opts }),
 
-  delete: <T>(path: string, opts?: ApiOptions) =>
-    apiFetch<T>(path, { method: 'DELETE', ...opts }),
+  delete: <T>(path: string, opts?: ApiOptions) => apiFetch<T>(path, { method: 'DELETE', ...opts })
 }

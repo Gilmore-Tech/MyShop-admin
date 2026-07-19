@@ -18,6 +18,7 @@ import {
   getHelpArticles, getHelpCategories, deleteHelpArticle,
   type HelpArticleSummary, type HelpCategory, type HelpAudience,
 } from '@/lib/api'
+import { safeAdminErrorDiagnostic, userSafeAdminError } from '@/lib/api-client'
 
 const AUDIENCE_LABEL: Record<HelpAudience, string> = {
   client:   'Clients',
@@ -55,8 +56,7 @@ export default function HelpArticlesPage() {
       setLoadError(null)
       const labelled = <T,>(label: string, p: Promise<T>) =>
         p.catch((err: unknown) => {
-          const e = err as { status?: number; code?: string; message?: string }
-          console.error(`[help] ${label} failed`, { status: e?.status, code: e?.code, message: e?.message, error: err })
+          console.error(`[help] ${label} failed`, safeAdminErrorDiagnostic(err))
           throw err
         })
       try {
@@ -70,9 +70,7 @@ export default function HelpArticlesPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          const e = err as { status?: number; code?: string; message?: string }
-          const status = e?.status ? `${e.status} ` : ''
-          setLoadError(`${status}${e?.message ?? 'Failed to load help center data.'}`)
+          setLoadError(userSafeAdminError(err, 'Failed to load help center data.'))
           setArticles([])
           setCategories([])
         }
@@ -107,7 +105,7 @@ export default function HelpArticlesPage() {
       setArticles((prev) => prev.filter((a) => a.id !== pendingDelete.id))
       setPendingDelete(null)
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to delete article.')
+      setDeleteError(userSafeAdminError(err, 'Failed to delete article.'))
     } finally {
       setDeleting(false)
     }

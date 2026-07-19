@@ -8,7 +8,7 @@ import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import { UserTabs } from '@/components/users/user-tabs'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, MoreHorizontal, Loader2, UserPlus, RotateCcw, ShieldCheck } from 'lucide-react'
+import { Search, MoreHorizontal, Loader2, RotateCcw } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
-import { listUsers, suspendUser, banUser, reinstateUser, liftVerificationSuspension, type PlatformUser } from '@/lib/api'
+import { listUsers, suspendUser, banUser, reinstateUser, type PlatformUser } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { UserProfileSheet } from '@/components/users/user-profile-sheet'
@@ -42,7 +42,7 @@ function VehicleBadge({ complete }: { complete: boolean | undefined }) {
   )
 }
 
-type ActionType = 'suspend' | 'ban' | 'reinstate' | 'lift_verification'
+type ActionType = 'suspend' | 'ban' | 'reinstate'
 
 export default function DriversPage() {
   const router = useRouter()
@@ -113,13 +113,9 @@ export default function DriversPage() {
     setActionLoading(true)
     setActionError('')
     try {
-      if (actionType === 'suspend') await suspendUser(actionUser.id, actionReason.trim())
-      else if (actionType === 'ban') await banUser(actionUser.id, actionReason.trim())
-      else if (actionType === 'reinstate') await reinstateUser(actionUser.id, actionReason.trim() || undefined)
-      else if (actionType === 'lift_verification') {
-        if (!actionUser.driver?.id) throw new Error('Driver profile missing on this user.')
-        await liftVerificationSuspension(actionUser.driver.id, 'driver', actionReason.trim())
-      }
+      if (actionType === 'suspend') await suspendUser('driver', actionUser.roleAccountId, actionReason.trim())
+      else if (actionType === 'ban') await banUser('driver', actionUser.roleAccountId, actionReason.trim())
+      else if (actionType === 'reinstate') await reinstateUser('driver', actionUser.roleAccountId, actionReason.trim() || undefined)
       setActionUser(null)
       setActionType(null)
       setActionReason('')
@@ -143,8 +139,8 @@ export default function DriversPage() {
     <PageGuard permission="view_users">
     <div>
       <PageHeader
-        title="User Management"
-        subtitle="Manage all platform users"
+        title="Driver Accounts"
+        subtitle="Manage driver accounts independently from client and artisan accounts"
       />
 
       <UserTabs active="drivers" />
@@ -217,13 +213,13 @@ export default function DriversPage() {
                   <TableCell className="text-sm text-gray-500">{formatDate(user.createdAt)}</TableCell>
                   <TableCell><StatusBadge status={user.status} /></TableCell>
                   <TableCell>
-                    <StatusBadge status={user.driver?.verificationStatus ?? 'pending'} />
+                    <StatusBadge status={user.role === 'driver' ? user.profile.verificationStatus : 'pending'} />
                   </TableCell>
                   <TableCell>
-                    <VehicleBadge complete={user.driver?.vehicleDetailsComplete} />
+                    <VehicleBadge complete={user.role === 'driver' ? user.profile.vehicleDetailsComplete : undefined} />
                   </TableCell>
                   <TableCell>
-                    {user.driver?.onlineStatus === 'online'
+                    {user.role === 'driver' && user.profile.onlineStatus === 'online'
                       ? <span className="flex items-center gap-1.5 text-xs text-gray-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-gray-400" />Online</span>
                       : <span className="text-xs text-gray-400">Offline</span>
                     }
@@ -239,16 +235,6 @@ export default function DriversPage() {
                           Ride History
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <RoleGate permission="lift_verification_suspension">
-                          {user.driver?.verificationStatus === 'suspended' && (
-                            <DropdownMenuItem
-                              className="text-emerald-700 gap-2"
-                              onSelect={() => openAction(user, 'lift_verification')}
-                            >
-                              <ShieldCheck className="h-4 w-4" /> Lift verification suspension
-                            </DropdownMenuItem>
-                          )}
-                        </RoleGate>
                         <RoleGate permission="suspend_user">
                           {user.status === 'suspended' && (
                             <DropdownMenuItem className="text-emerald-700 gap-2" onSelect={() => openAction(user, 'reinstate')}>
@@ -293,22 +279,19 @@ export default function DriversPage() {
           <DialogHeader>
             <DialogTitle className={
               actionType === 'ban' ? 'text-red-600'
-              : actionType === 'reinstate' || actionType === 'lift_verification' ? 'text-emerald-700'
+              : actionType === 'reinstate' ? 'text-emerald-700'
               : 'text-orange-600'
             }>
-              {actionType === 'reinstate' ? 'Reinstate'
-                : actionType === 'ban' ? 'Ban'
-                : actionType === 'lift_verification' ? 'Lift verification suspension for'
-                : 'Suspend'} {actionUser?.fullName}
+              {actionType === 'reinstate' ? 'Reinstate driver account'
+                : actionType === 'ban' ? 'Ban driver account'
+                : 'Suspend driver account'} {actionUser?.fullName}
             </DialogTitle>
             <DialogDescription>
               {actionType === 'reinstate'
-                ? 'Restore this driver\'s access to the platform.'
+                ? 'Restore only this driver account. Client and artisan sibling accounts remain untouched.'
                 : actionType === 'ban'
-                ? 'This will permanently ban the driver. They will not be able to log in again.'
-                : actionType === 'lift_verification'
-                ? 'Restores the driver to "approved" verification status, lifting an auto-suspension from the rating or cancellation engine. They\'ll be able to go online again.'
-                : 'This will suspend the driver. You can reinstate them later.'
+                ? 'This bans only the driver account. Client and artisan sibling accounts remain untouched.'
+                : 'This suspends only the driver account. Client and artisan sibling accounts remain untouched.'
               }
             </DialogDescription>
           </DialogHeader>
@@ -328,7 +311,7 @@ export default function DriversPage() {
               onClick={handleAction}
               className={actionType === 'ban'
                 ? 'bg-red-600 hover:bg-red-700 text-white'
-                : actionType === 'reinstate' || actionType === 'lift_verification'
+                : actionType === 'reinstate'
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                 : 'bg-orange-500 hover:bg-orange-600 text-white'
               }
@@ -336,7 +319,6 @@ export default function DriversPage() {
               {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : `Confirm ${
                 actionType === 'reinstate' ? 'Reinstatement'
                 : actionType === 'ban' ? 'Ban'
-                : actionType === 'lift_verification' ? 'Lift Suspension'
                 : 'Suspension'
               }`}
             </Button>

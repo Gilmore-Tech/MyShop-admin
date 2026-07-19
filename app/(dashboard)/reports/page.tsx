@@ -10,13 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/common/page-header'
 import {
-  getOverviewReport, getRevenueReport, getProviderReport, getPilotReport, listUsers,
+  getOverviewReport, getRevenueReport, getProviderReport, getPilotReport,
   type OverviewReport, type RevenueReport, type RevenueDataPoint, type ProviderReport, type PilotMetric,
 } from '@/lib/api'
 import {
   exportOverviewCsv, exportRevenueCsv, exportRidesCsv, exportArtisansCsv, exportPilotCsv,
 } from '@/lib/report-export'
 import { formatDate } from '@/lib/format-date'
+import { userSafeAdminError } from '@/lib/api-client'
 
 // Shared pagination control.
 function Pager({ page, pageSize, total, onPage }: {
@@ -51,11 +52,9 @@ function pct(n: number) { return n.toFixed(1) + '%' }
 
 // ── Overview panel ────────────────────────────────────────────────────────────
 
-function OverviewPanel({ data, userTotal }: { data: OverviewReport; userTotal: number | null }) {
-  // Distinct accounts from /admin/users — summing role counts double-counts
-  // users who hold more than one role (e.g. a client who is also a driver).
-  const roleSum = data.registeredClients + data.registeredDrivers + data.registeredArtisans
-  const totalUsers = userTotal ?? roleSum
+function OverviewPanel({ data }: { data: OverviewReport }) {
+  // These are separate role accounts, even when they share a private auth identity.
+  const totalUsers = data.registeredClients + data.registeredDrivers + data.registeredArtisans
   const stats = [
     { label: 'Total Users',           value: totalUsers.toLocaleString() },
     { label: 'Registered Clients',    value: data.registeredClients.toLocaleString() },
@@ -323,7 +322,6 @@ export default function ReportsPage() {
   const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month'>('day')
 
   const [overview,   setOverview]   = useState<OverviewReport | null>(null)
-  const [userTotal,  setUserTotal]  = useState<number | null>(null)
   const [revenue,    setRevenue]    = useState<RevenueReport | null>(null)
   const [providers,  setProviders]  = useState<ProviderReport | null>(null)
   const [pilot,      setPilot]      = useState<PilotMetric[] | null>(null)
@@ -336,16 +334,16 @@ export default function ReportsPage() {
     setError(null)
 
     let p: Promise<void>
-    if (tab === 'overview')   p = Promise.all([getOverviewReport(), listUsers({ limit: 1 })])
-      .then(([ov, u]) => { setOverview(ov); setUserTotal(u.total) })
-      .catch(e => { setError(e.message) })
+    if (tab === 'overview')   p = getOverviewReport()
+      .then(setOverview)
+      .catch(e => { setError(userSafeAdminError(e, 'Failed to load overview report.')) })
     // Rides & Artisans share the provider report; each also shows a vertical KPI
     // strip sourced from the overview report.
     else if (tab === 'rides' || tab === 'artisans') p = Promise.all([getProviderReport(), getOverviewReport()])
       .then(([pr, ov]) => { setProviders(pr); setOverview(ov) })
-      .catch(e => { setError(e.message) })
-    else if (tab === 'revenue') p = getRevenueReport({ groupBy }).then(setRevenue).catch(e => { setError(e.message) })
-    else p = getPilotReport().then(setPilot).catch(e => { setError(e.message) })
+      .catch(e => { setError(userSafeAdminError(e, 'Failed to load provider report.')) })
+    else if (tab === 'revenue') p = getRevenueReport({ groupBy }).then(setRevenue).catch(e => { setError(userSafeAdminError(e, 'Failed to load revenue report.')) })
+    else p = getPilotReport().then(setPilot).catch(e => { setError(userSafeAdminError(e, 'Failed to load pilot report.')) })
 
     p.finally(() => setLoading(false))
   }, [tab, groupBy])
@@ -360,7 +358,10 @@ export default function ReportsPage() {
     (tab === 'pilot'    && !!pilot)
 
   function handleExport() {
-    if (tab === 'overview' && overview)  exportOverviewCsv(overview, userTotal)
+    if (tab === 'overview' && overview)  exportOverviewCsv(
+      overview,
+      overview.registeredClients + overview.registeredDrivers + overview.registeredArtisans,
+    )
     else if (tab === 'rides'    && providers) exportRidesCsv(providers)
     else if (tab === 'artisans' && providers) exportArtisansCsv(providers)
     else if (tab === 'revenue'  && revenue)   exportRevenueCsv(revenue)
@@ -468,7 +469,7 @@ export default function ReportsPage() {
                 {error}
               </div>
             )}
-            {!loading && !error && tab === 'overview' && overview  && <OverviewPanel data={overview} userTotal={userTotal} />}
+            {!loading && !error && tab === 'overview' && overview  && <OverviewPanel data={overview} />}
             {!loading && !error && tab === 'rides'    && providers && <RidesPanel    data={providers} overview={overview} />}
             {!loading && !error && tab === 'artisans' && providers && <ArtisansPanel data={providers} overview={overview} />}
             {!loading && !error && tab === 'revenue'  && revenue   && <RevenuePanel  data={revenue} lockedCategory={category} />}
