@@ -4,6 +4,15 @@ import { useState, useEffect } from 'react'
 import { getAdminUser } from '@/lib/api-client'
 import { can, type Permission, type Role, type CategoryScope } from '@/lib/roles'
 
+const SUPER_ADMIN_VERIFICATION_PERMISSIONS: ReadonlySet<Permission> = new Set([
+  'view_verifications',
+  'verify_documents',
+  'validate_verification',
+  'finalize_verification',
+  'lift_verification_suspension',
+  'upload_provider_document',
+])
+
 export function useRole() {
   const [permissions, setPermissions] = useState<Permission[] | null>(() => {
     if (typeof window === 'undefined') return null
@@ -36,8 +45,17 @@ export function useRole() {
     setCategory(user?.categoryScope ?? null)
   }, [])
 
+  // `product_owner` is the current root role; manage_admins is retained as the
+  // legacy root marker. The verification override is intentionally scoped to
+  // this module until the deferred platform-wide authorization sweep is done.
+  const isSuperAdmin = role === 'product_owner' || can(permissions, 'manage_admins')
+  const effectivePermissions: Permission[] | null = isSuperAdmin
+    ? [...new Set([...(permissions ?? []), ...SUPER_ADMIN_VERIFICATION_PERMISSIONS])]
+    : permissions
+  const canAccess = (permission: Permission) => can(effectivePermissions, permission)
+
   return {
-    permissions,
+    permissions: effectivePermissions,
     adminName,
     role,
     // Region the admin is scoped to (null = global). `region.name` drives the
@@ -45,10 +63,10 @@ export function useRole() {
     region,
     // Category the admin is scoped to ('rides' | 'artisan'); null = both/global.
     category,
-    can: (permission: Permission) => can(permissions, permission),
+    can: canAccess,
     // The only account allowed to create admins and assign permissions: the
     // Product Owner. Keyed off the role when present, falling back to the
     // `manage_admins` permission for legacy/custom admins.
-    isSuperAdmin: role === 'product_owner' || can(permissions, 'manage_admins'),
+    isSuperAdmin,
   }
 }
