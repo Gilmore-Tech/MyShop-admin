@@ -62,6 +62,8 @@ export interface AdminVehicleDetail extends AdminVehicle {
     id: string
     documentType: string
     status: string
+    fileUrl: string
+    mimeType: string | null
     expiresAt: string | null
     rejectionReason: string | null
     version: number
@@ -139,6 +141,8 @@ export function parseAdminVehicleDetail(value: unknown): AdminVehicleDetail {
         id: requiredString(document.id, 'document id'),
         documentType: requiredString(document.documentType, 'document type'),
         status: requiredString(document.status, 'document status'),
+        fileUrl: requiredString(document.fileUrl, 'document file URL'),
+        mimeType: optionalString(document.mimeType, 'document MIME type'),
         expiresAt: optionalDate(document.expiresAt, 'document expiry'),
         rejectionReason: optionalString(document.rejectionReason, 'document rejection reason'),
         version: positiveInteger(document.version, 'document version'),

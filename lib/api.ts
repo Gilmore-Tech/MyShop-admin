@@ -368,6 +368,13 @@ function resolveCloudinaryUrl(fileUrl: string, mimeType: string | null): string 
   return `https://res.cloudinary.com/${cloudName}/${resourceType}/upload/${fileUrl}`
 }
 
+// Provider evidence is private. The API must return a short-lived signed URL;
+// never turn a bare storage key into a public Cloudinary `/upload/` URL.
+function resolvedAdminDocumentUrl(raw: unknown): string {
+  if (typeof raw !== 'string' || raw.trim() === '') return ''
+  return /^https?:\/\//i.test(raw) ? raw : ''
+}
+
 // A provider profile photo is always an image; resolve a bare Cloudinary storage
 // key to a delivery URL, pass through full URLs, and normalise empty/missing to null.
 function resolveProfilePhoto(raw: unknown): string | null {
@@ -405,6 +412,7 @@ export interface VerificationItem {
   provider_id: string
   provider_name: string | null
   verification_stage: VerificationStage | null
+  document_review_only: boolean
   region_id: string | null
   region_name: string | null
   docs_pending: number
@@ -425,7 +433,7 @@ function normaliseDoc(d: any): ProviderDocument {
     type: rawType,
     label: d.label ?? docTypeLabel(rawType),
     status: d.status ?? 'pending_review',
-    file_url: resolveCloudinaryUrl(rawUrl, mimeType),
+    file_url: resolvedAdminDocumentUrl(rawUrl),
     mime_type: mimeType,
     uploaded_at: d.uploaded_at ?? d.uploadedAt ?? d.created_at ?? d.createdAt ?? '',
     expires_at: d.expires_at ?? d.expiresAt ?? null,
@@ -459,6 +467,7 @@ function normaliseItem(v: any): VerificationItem {
     verification_stage: (v.verification_stage ??
       v.verificationStage ??
       null) as VerificationStage | null,
+    document_review_only: Boolean(v.document_review_only ?? v.documentReviewOnly ?? false),
     region_id: v.region_id ?? v.regionId ?? null,
     region_name: v.region_name ?? v.regionName ?? null,
     provider_name: v.provider_name ?? v.providerName ?? null,
@@ -1529,7 +1538,7 @@ function parseDoc(d: any): UserProviderDocument {
     label:
       DOC_TYPE_LABELS[d.documentType ?? d.document_type ?? ''] ??
       (d.documentType ?? '').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
-    fileUrl: resolveCloudinaryUrl(rawFileUrl, mimeType),
+    fileUrl: resolvedAdminDocumentUrl(rawFileUrl),
     mimeType,
     status: d.status ?? 'uploaded',
     rejectionReason: d.rejectionReason ?? d.rejection_reason ?? null,

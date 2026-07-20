@@ -22,8 +22,16 @@ export async function GET(req: NextRequest) {
     return textError(400, 'The document URL is invalid.')
   }
 
-  // Only allow Cloudinary delivery hostnames — block api.cloudinary.com (upload endpoint)
-  if (parsed.hostname !== 'res.cloudinary.com') {
+  const isCloudinaryDelivery = parsed.hostname === 'res.cloudinary.com'
+  const isSignedPrivateDownload =
+    parsed.hostname === 'api.cloudinary.com' &&
+    /^\/v1_1\/[A-Za-z0-9_-]+\/(?:image|raw)\/download$/.test(parsed.pathname) &&
+    ['timestamp', 'public_id', 'type', 'signature', 'api_key'].every(key => parsed.searchParams.has(key))
+
+  // Permit only normal Cloudinary delivery URLs or the SDK's exact signed
+  // private-download route. Other API endpoints (including uploads) remain
+  // blocked so this server-side proxy cannot be repurposed.
+  if (!isCloudinaryDelivery && !isSignedPrivateDownload) {
     return textError(403, 'This document host is not allowed.')
   }
 

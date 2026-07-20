@@ -506,7 +506,10 @@ export default function VehicleVerificationPage() {
                         onStale={() => void refreshDetail(selected.id)}
                       />
                     </div>
-                    <StatusBadge status={doc.status} />
+                    <div className="flex items-center gap-2">
+                      <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-orange-600">Open <ExternalLink className="h-3 w-3" /></a>
+                      <StatusBadge status={doc.status} />
+                    </div>
                   </div>
                 ))}
                 <p className="text-[11px] text-gray-500 mt-3">An approved licence, roadworthiness certificate or insurance record without the printed expiry date remains ineligible until an authorized reviewer adds that date.</p>

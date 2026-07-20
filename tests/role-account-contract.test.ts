@@ -107,6 +107,24 @@ test('admin API contains no legacy ambiguous account-action routes', () => {
   assert.match(source, /role: 'client'; profile: ClientRoleProfile/)
 })
 
+test('provider evidence stays private and isolated vehicle review does not restart account approval', () => {
+  const api = readFileSync(new URL('../lib/api.ts', import.meta.url), 'utf8')
+  const verification = readFileSync(
+    new URL('../app/(dashboard)/verifications/page.tsx', import.meta.url),
+    'utf8',
+  )
+  const proxy = readFileSync(new URL('../app/api/pdf-proxy/route.ts', import.meta.url), 'utf8')
+
+  assert.match(api, /resolvedAdminDocumentUrl\(rawUrl\)/)
+  assert.match(api, /resolvedAdminDocumentUrl\(rawFileUrl\)/)
+  assert.doesNotMatch(api, /fileUrl:\s*resolveCloudinaryUrl\(rawFileUrl/)
+  assert.match(api, /document_review_only/)
+  assert.match(verification, /item\.document_review_only/)
+  assert.match(verification, /Independent document review/)
+  assert.match(proxy, /isSignedPrivateDownload/)
+  assert.match(proxy, /\(\?:image\|raw\)\\\/download/)
+})
+
 test('session recovery is granted only to current global operations roles', () => {
   for (const role of ['product_owner', 'director'] as const) {
     assert.equal(ROLE_DEFINITIONS[role].permissions.includes('view_session_recovery'), true)

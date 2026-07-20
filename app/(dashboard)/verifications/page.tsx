@@ -622,12 +622,14 @@ function AdminSubmitStep({
   onBack,
   onSubmit,
   submitting,
+  reviewOnly = false,
 }: {
   documents: ProviderDocument[]
   reviews: Map<string, DocReview>
   onBack: () => void
   onSubmit: () => Promise<void>
   submitting: boolean
+  reviewOnly?: boolean
 }) {
   const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded' || s === 'confirmed'
   const resolved = documents.map(d => ({
@@ -646,16 +648,16 @@ function AdminSubmitStep({
     try {
       await onSubmit()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to submit to coordinator.')
+      setError(err instanceof ApiError ? err.message : reviewOnly ? 'Failed to complete document review.' : 'Failed to submit to coordinator.')
     }
   }
 
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Stage 1 of 3 — Admin</p>
-        <p className="text-base font-semibold text-gray-900 mt-0.5">Submit to Coordinator</p>
-        <p className="text-xs text-gray-400 mt-0.5">Confirm each document is authentic, then hand off to the category coordinator.</p>
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">{reviewOnly ? 'Independent document review' : 'Stage 1 of 3 — Admin'}</p>
+        <p className="text-base font-semibold text-gray-900 mt-0.5">{reviewOnly ? 'Complete Document Review' : 'Submit to Coordinator'}</p>
+        <p className="text-xs text-gray-400 mt-0.5">{reviewOnly ? 'This vehicle evidence is reviewed independently and does not restart the approved driver account pipeline.' : 'Confirm each document is authentic, then hand off to the category coordinator.'}</p>
       </div>
 
       <div className="bg-gray-50 rounded-xl p-3 space-y-2 max-h-56 overflow-y-auto">
@@ -694,7 +696,7 @@ function AdminSubmitStep({
           style={{ backgroundColor: '#F5A623' }}
         >
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {submitting ? 'Submitting…' : 'Submit to Coordinator'}
+          {submitting ? 'Submitting…' : reviewOnly ? 'Complete Review' : 'Submit to Coordinator'}
         </Button>
       </div>
     </div>
@@ -797,10 +799,11 @@ function ReviewDrawer({
   // The approval chain (who did each stage) is restricted: admins (entry level)
   // don't see it; coordinators see Stages 1–2; RM/global see all stages.
   const isGlobal = role ? (ROLE_DEFINITIONS[role]?.global ?? false) : false
-  const chainStages: VerificationStage[] =
-    isGlobal || can('finalize_verification') ? ['pending_documents', 'docs_verified', 'coordinator_validated']
-    : can('validate_verification') ? ['pending_documents', 'docs_verified']
-    : []
+  const chainStages: VerificationStage[] = item.document_review_only
+    ? []
+    : isGlobal || can('finalize_verification') ? ['pending_documents', 'docs_verified', 'coordinator_validated']
+      : can('validate_verification') ? ['pending_documents', 'docs_verified']
+      : []
   const [history, setHistory] = useState<VerificationHistory | null>(null)
   useEffect(() => {
     if (chainStages.length === 0) return
@@ -899,7 +902,9 @@ function ReviewDrawer({
   async function handleAdminSubmit() {
     setSubmitting(true)
     try {
-      await submitVerification(item.provider_id, providerType)
+      if (!item.document_review_only) {
+        await submitVerification(item.provider_id, providerType)
+      }
       onDone()
     } catch (err) {
       setSubmitting(false)
@@ -1000,6 +1005,7 @@ function ReviewDrawer({
                 onBack={() => setStep('docs')}
                 onSubmit={handleAdminSubmit}
                 submitting={submitting}
+                reviewOnly={item.document_review_only}
               />
             ) : (
               <FinalDecisionStep
@@ -1197,7 +1203,7 @@ export default function VerificationsPage() {
                   </TableCell>
                   <TableCell><StatusBadge status={v.provider_type} /></TableCell>
                   <TableCell className="text-xs text-gray-500">
-                    {v.verification_stage ? (STAGE_LABEL[v.verification_stage] ?? v.verification_stage) : '—'}
+                    {v.document_review_only ? 'Document review' : v.verification_stage ? (STAGE_LABEL[v.verification_stage] ?? v.verification_stage) : '—'}
                   </TableCell>
                   <TableCell>
                     <DocsProgress
