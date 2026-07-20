@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Car, CheckCircle2, ExternalLink, Loader2, Pencil, RefreshCw, Trash2, XCircle } from 'lucide-react'
 
 import { StatusBadge } from '@/components/common/status-badge'
+import { DocumentExpiryControl } from '@/components/common/document-expiry-control'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -495,8 +496,20 @@ export default function VehicleVerificationPage() {
 
               <Panel title="Vehicle documents">
                 {selected.providerDocuments.length === 0 ? <p className="text-sm text-gray-400">No current vehicle documents.</p> : selected.providerDocuments.map(doc => (
-                  <div key={doc.id} className="flex items-center justify-between py-2 border-b last:border-0"><div><p className="text-sm font-medium">{doc.documentType.replaceAll('_', ' ')}</p><p className="text-xs text-gray-400">Expires {dateTime(doc.expiresAt)}</p></div><StatusBadge status={doc.status} /></div>
+                  <div key={doc.id} className="flex items-start justify-between gap-3 py-2 border-b last:border-0">
+                    <div>
+                      <p className="text-sm font-medium">{doc.documentType.replaceAll('_', ' ')}</p>
+                      <DocumentExpiryControl
+                        documentId={doc.id}
+                        documentType={doc.documentType}
+                        expiresAt={doc.expiresAt}
+                        onStale={() => void refreshDetail(selected.id)}
+                      />
+                    </div>
+                    <StatusBadge status={doc.status} />
+                  </div>
                 ))}
+                <p className="text-[11px] text-gray-500 mt-3">An approved licence, roadworthiness certificate or insurance record without the printed expiry date remains ineligible until an authorized reviewer adds that date.</p>
               </Panel>
 
               <Panel title="Per-vehicle ride categories">
