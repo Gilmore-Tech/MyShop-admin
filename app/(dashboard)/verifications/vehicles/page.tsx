@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Car, CheckCircle2, Loader2, Pencil, RefreshCw, Trash2, XCircle } from 'lucide-react'
+import { AlertTriangle, Car, CheckCircle2, ExternalLink, Loader2, Pencil, RefreshCw, Trash2, XCircle } from 'lucide-react'
 
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
@@ -16,11 +16,14 @@ import {
   editAdminVehicle,
   finalizeAdminVehicle,
   getAdminVehicle,
+  listLegacyVehicleBackfill,
   listAdminVehicles,
+  migrateLegacyVehicle,
   retireAdminVehicle,
   reviewAdminVehicleCategory,
   type AdminVehicle,
   type AdminVehicleDetail,
+  type LegacyVehicleBackfillCandidate,
   type VehicleInput,
 } from '@/lib/vehicle-api'
 import {
@@ -65,11 +68,24 @@ function userError(error: unknown): string {
   }
 }
 
+function legacyMigrationDraft(candidate: LegacyVehicleBackfillCandidate, targetVehicleId: string | null): VehicleInput {
+  const target = candidate.explicitVehicles.find(vehicle => vehicle.id === targetVehicleId)
+  return {
+    make: target?.make ?? candidate.legacyVehicle.make ?? '',
+    model: target?.model ?? candidate.legacyVehicle.model ?? '',
+    year: target?.year ?? candidate.legacyVehicle.year ?? new Date().getUTCFullYear(),
+    plate: target?.plate ?? candidate.legacyVehicle.plate ?? '',
+    color: target?.color ?? candidate.legacyVehicle.color ?? '',
+    rideCategoryIds: target?.rideCategories.map(row => row.rideCategoryId) ?? [],
+  }
+}
+
 export default function VehicleVerificationPage() {
   const { permissions, category } = useRole()
   const granted = permissions ?? []
   const [status, setStatus] = useState<'' | VehicleApprovalStatus>('')
   const [vehicles, setVehicles] = useState<AdminVehicle[]>([])
+  const [legacyCandidates, setLegacyCandidates] = useState<LegacyVehicleBackfillCandidate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<AdminVehicleDetail | null>(null)
@@ -83,12 +99,26 @@ export default function VehicleVerificationPage() {
   const [editOpen, setEditOpen] = useState(false)
   const [editCategories, setEditCategories] = useState<RideCategory[]>([])
   const [editDraft, setEditDraft] = useState<VehicleInput | null>(null)
+  const [migrationOpen, setMigrationOpen] = useState(false)
+  const [migrationCandidate, setMigrationCandidate] = useState<LegacyVehicleBackfillCandidate | null>(null)
+  const [migrationTargetVehicleId, setMigrationTargetVehicleId] = useState<string | null>(null)
+  const [migrationDraft, setMigrationDraft] = useState<VehicleInput | null>(null)
+  const [migrationCategories, setMigrationCategories] = useState<RideCategory[]>([])
+  const [migrationDocumentIds, setMigrationDocumentIds] = useState<string[]>([])
+  const [migrationConfirmed, setMigrationConfirmed] = useState(false)
+  const [migrationError, setMigrationError] = useState('')
+  const [migrationBusy, setMigrationBusy] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      setVehicles(await listAdminVehicles(status ? { status } : {}))
+      const [vehicleRows, legacyRows] = await Promise.all([
+        listAdminVehicles(status ? { status } : {}),
+        listLegacyVehicleBackfill(),
+      ])
+      setVehicles(vehicleRows)
+      setLegacyCandidates(legacyRows)
     } catch (err) {
       setError(userError(err))
     } finally {
@@ -173,6 +203,80 @@ export default function VehicleVerificationPage() {
     setEditOpen(false)
   }
 
+  function openMigration(candidate: LegacyVehicleBackfillCandidate) {
+    const targetVehicleId = candidate.explicitVehicles.length === 1
+      ? candidate.explicitVehicles[0].id
+      : null
+    setMigrationCandidate(candidate)
+    setMigrationTargetVehicleId(targetVehicleId)
+    setMigrationDraft(legacyMigrationDraft(candidate, targetVehicleId))
+    // Documents start unchecked: the operator must open and explicitly bind
+    // every current legacy evidence row rather than inheriting a hidden default.
+    setMigrationDocumentIds([])
+    setMigrationConfirmed(false)
+    setMigrationError('')
+    setMigrationOpen(true)
+    void getRideCategories()
+      .then(setMigrationCategories)
+      .catch(() => setMigrationCategories([]))
+  }
+
+  async function submitMigration() {
+    if (!migrationCandidate || !migrationDraft) return
+    const maxVehicleYear = new Date().getUTCFullYear() + 1
+    const plate = migrationDraft.plate.trim().toUpperCase()
+    const allDocumentIds = migrationCandidate.unboundDocuments.map(document => document.id).sort()
+    const selectedDocumentIds = [...migrationDocumentIds].sort()
+    if (migrationCandidate.explicitVehicles.length > 0 && !migrationTargetVehicleId) {
+      setMigrationError('Select the exact existing vehicle that owns these retained documents.')
+      return
+    }
+    if (
+      !migrationDraft.make.trim() || !migrationDraft.model.trim() || !migrationDraft.color.trim()
+      || plate.length < 2 || plate.length > 32 || !plate.replace(/[^A-Z0-9]/g, '')
+      || !Number.isInteger(migrationDraft.year) || migrationDraft.year < 1 || migrationDraft.year > maxVehicleYear
+      || migrationDraft.rideCategoryIds.length === 0
+    ) {
+      setMigrationError(`Complete every vehicle field, use a year from 1 to ${maxVehicleYear}, and select at least one category.`)
+      return
+    }
+    if (
+      allDocumentIds.length !== selectedDocumentIds.length
+      || allDocumentIds.some((id, index) => id !== selectedDocumentIds[index])
+    ) {
+      setMigrationError('Open and confirm every listed current vehicle document before migration.')
+      return
+    }
+    if (!migrationConfirmed) {
+      setMigrationError('Confirm that the vehicle details and selected documents belong to this driver.')
+      return
+    }
+    setMigrationBusy(true)
+    setMigrationError('')
+    try {
+      await migrateLegacyVehicle(migrationCandidate.driverId, {
+        ...migrationDraft,
+        ...(migrationTargetVehicleId ? { targetVehicleId: migrationTargetVehicleId } : {}),
+        make: migrationDraft.make.trim(),
+        model: migrationDraft.model.trim(),
+        plate,
+        color: migrationDraft.color.trim(),
+        documentIds: selectedDocumentIds,
+        ownershipConfirmed: true,
+        reason: migrationTargetVehicleId
+          ? 'Admin-confirmed binding of retained documents to an existing vehicle'
+          : 'Admin-confirmed migration of existing driver vehicle data',
+      })
+      setMigrationOpen(false)
+      setMigrationCandidate(null)
+      await load()
+    } catch (err) {
+      setMigrationError(userError(err))
+    } finally {
+      setMigrationBusy(false)
+    }
+  }
+
   async function submitReasonAction() {
     if (!selected || !reasonAction) return
     if (reason.trim().length < 5) {
@@ -202,6 +306,9 @@ export default function VehicleVerificationPage() {
     rm: vehicles.filter(v => vehicleReviewTarget(v).status === 'coordinator_approved').length,
     removals: vehicles.filter(v => v.retirementRequestedAt).length,
   }), [vehicles])
+  const migrationTargetVehicle = migrationCandidate?.explicitVehicles.find(
+    vehicle => vehicle.id === migrationTargetVehicleId,
+  ) ?? null
 
   if (category === 'artisan') {
     return <div className="p-8 text-sm text-gray-500">Vehicle verification is outside your Artisan scope.</div>
@@ -219,11 +326,43 @@ export default function VehicleVerificationPage() {
         </Button>
       </div>
 
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <Summary label="Awaiting Coordinator" value={queueSummary.coordinator} />
         <Summary label="Awaiting RM" value={queueSummary.rm} />
         <Summary label="Removal requests" value={queueSummary.removals} alert={queueSummary.removals > 0} />
+        <Summary label="Legacy migrations" value={legacyCandidates.length} alert={legacyCandidates.length > 0} />
       </div>
+
+      {legacyCandidates.length > 0 && (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 overflow-hidden">
+          <div className="p-4 border-b border-amber-200">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+              <div>
+                <h2 className="font-semibold text-amber-900">Existing driver vehicles need migration</h2>
+                <p className="text-sm text-amber-800 mt-1">Compare the previous vehicle record and every document before binding them. Migration preserves each document decision; a newly created vehicle/category starts pending, while an explicitly selected existing vehicle is not changed.</p>
+              </div>
+            </div>
+          </div>
+          <div className="overflow-x-auto bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-amber-50/60 text-left text-xs uppercase tracking-wide text-amber-700">
+                <tr><th className="px-4 py-3">Driver</th><th className="px-4 py-3">Previous vehicle</th><th className="px-4 py-3">Unbound documents</th><th /></tr>
+              </thead>
+              <tbody className="divide-y divide-amber-100">
+                {legacyCandidates.map(candidate => (
+                  <tr key={candidate.driverId}>
+                    <td className="px-4 py-3"><p className="font-medium">{candidate.displayName ?? 'Unnamed driver'}</p><p className="text-xs text-gray-400">{candidate.regionId ?? 'Region not assigned'}</p></td>
+                    <td className="px-4 py-3"><p>{[candidate.legacyVehicle.make, candidate.legacyVehicle.model].filter(Boolean).join(' ') || 'Incomplete record'}</p><p className="text-xs text-gray-500">{candidate.legacyVehicle.plate ?? 'No plate'} · {candidate.legacyVehicle.year ?? 'No year'} · {candidate.legacyVehicle.color ?? 'No colour'}</p>{candidate.explicitVehicles.length > 0 && <p className="text-xs font-medium text-blue-600 mt-1">{candidate.explicitVehicles.length} existing vehicle{candidate.explicitVehicles.length === 1 ? '' : 's'} available for binding</p>}</td>
+                    <td className="px-4 py-3">{candidate.unboundDocuments.length}</td>
+                    <td className="px-4 py-3 text-right">{granted.includes('edit_provider_profile') ? <Button size="sm" onClick={() => openMigration(candidate)}>Review migration</Button> : <span className="text-xs text-gray-400">Edit permission required</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <div className="flex items-center gap-3">
         <Label htmlFor="vehicle-status">Status</Label>
@@ -269,6 +408,65 @@ export default function VehicleVerificationPage() {
           </div>
         )}
       </div>
+
+      <Dialog open={migrationOpen} onOpenChange={open => { if (!migrationBusy) setMigrationOpen(open) }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Migrate existing vehicle</DialogTitle><DialogDescription>Review and explicitly bind the previous record for {migrationCandidate?.displayName ?? 'this driver'}. This action is audited and cannot approve a vehicle or category.</DialogDescription></DialogHeader>
+          {migrationCandidate && migrationDraft && <div className="space-y-5">
+            {migrationCandidate.explicitVehicles.length > 0 && <Panel title="Target existing vehicle">
+              <Label htmlFor="legacy-target-vehicle">Vehicle that owns these documents</Label>
+              <select
+                id="legacy-target-vehicle"
+                className="mt-1.5 h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm"
+                value={migrationTargetVehicleId ?? ''}
+                onChange={event => {
+                  const targetVehicleId = event.target.value || null
+                  setMigrationTargetVehicleId(targetVehicleId)
+                  setMigrationDraft(legacyMigrationDraft(migrationCandidate, targetVehicleId))
+                  setMigrationConfirmed(false)
+                  setMigrationError('')
+                }}
+              >
+                <option value="">Select the exact vehicle</option>
+                {migrationCandidate.explicitVehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.make ?? 'Unknown make'} {vehicle.model ?? 'Unknown model'} · {vehicle.plate ?? 'No plate'} · {vehicle.approvalStatus}</option>)}
+              </select>
+              <p className="text-[11px] text-gray-500 mt-2">The vehicle and category states stay exactly as they are; this step binds only the explicitly confirmed retained documents.</p>
+            </Panel>}
+            <Panel title="Vehicle details">
+              {!migrationTargetVehicle && !migrationCandidate.hasCompleteLegacyVehicle && <p className="mb-3 text-xs text-amber-700">The previous record is incomplete. Confirm missing values against the original documents before continuing.</p>}
+              <div className="grid sm:grid-cols-2 gap-3">
+                <Field disabled={Boolean(migrationTargetVehicle)} label="Make" value={migrationDraft.make} onChange={value => setMigrationDraft({ ...migrationDraft, make: value })} />
+                <Field disabled={Boolean(migrationTargetVehicle)} label="Model" value={migrationDraft.model} onChange={value => setMigrationDraft({ ...migrationDraft, model: value })} />
+                <Field disabled={Boolean(migrationTargetVehicle)} label="Year" type="number" value={String(migrationDraft.year)} onChange={value => setMigrationDraft({ ...migrationDraft, year: Number(value) })} />
+                <Field disabled={Boolean(migrationTargetVehicle)} label="Colour" value={migrationDraft.color} onChange={value => setMigrationDraft({ ...migrationDraft, color: value })} />
+                <div className="sm:col-span-2"><Field disabled={Boolean(migrationTargetVehicle)} label="Plate" value={migrationDraft.plate} onChange={value => setMigrationDraft({ ...migrationDraft, plate: value })} /></div>
+              </div>
+            </Panel>
+
+            <Panel title="Existing vehicle documents">
+              {migrationCandidate.unboundDocuments.length === 0 ? <p className="text-sm text-amber-700">No existing roadworthiness or insurance document can be preserved. The driver must upload them against the new vehicle after migration.</p> : migrationCandidate.unboundDocuments.map(document => (
+                <label key={document.id} className="flex items-start gap-3 py-3 border-b last:border-0">
+                  <input type="checkbox" className="mt-1" checked={migrationDocumentIds.includes(document.id)} onChange={event => setMigrationDocumentIds(event.target.checked ? [...migrationDocumentIds, document.id] : migrationDocumentIds.filter(id => id !== document.id))} />
+                  <span className="flex-1"><span className="block font-medium capitalize">{document.documentType.replaceAll('_', ' ')}</span><span className="block text-xs text-gray-500">{document.status} · expires {dateTime(document.expiresAt)}</span></span>
+                  <a href={document.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-orange-600" onClick={event => event.stopPropagation()}>Open <ExternalLink className="h-3 w-3" /></a>
+                </label>
+              ))}
+              <p className="text-[11px] text-gray-500 mt-3">Checking a document confirms that it belongs to this exact physical vehicle. Its existing status and expiry date will not be changed.</p>
+            </Panel>
+
+            <Panel title="Requested ride categories">
+              {migrationCategories.length === 0 ? <p className="text-sm text-amber-700">No ride categories loaded. Reload before continuing.</p> : <div className="grid sm:grid-cols-2 gap-2">
+                {migrationCategories.filter(rideCategory => migrationTargetVehicle ? migrationDraft.rideCategoryIds.includes(rideCategory.id) : rideCategory.isActive).map(rideCategory => <label key={rideCategory.id} className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" disabled={Boolean(migrationTargetVehicle)} checked={migrationDraft.rideCategoryIds.includes(rideCategory.id)} onChange={event => setMigrationDraft({ ...migrationDraft, rideCategoryIds: event.target.checked ? [...migrationDraft.rideCategoryIds, rideCategory.id] : migrationDraft.rideCategoryIds.filter(id => id !== rideCategory.id) })} />{rideCategory.name}</label>)}
+              </div>}
+              <p className="text-[11px] text-gray-500 mt-3">{migrationTargetVehicle ? 'Existing category decisions are not changed by document binding.' : 'Every selected category starts pending and must be approved separately.'}</p>
+            </Panel>
+
+            <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><input type="checkbox" className="mt-1" checked={migrationConfirmed} onChange={event => setMigrationConfirmed(event.target.checked)} /><span>I compared the previous vehicle details and every selected document and confirm they belong to this driver and this physical vehicle.</span></label>
+            {migrationError && <p className="text-sm text-red-600">{migrationError}</p>}
+          </div>}
+          <DialogFooter><Button variant="outline" disabled={migrationBusy} onClick={() => setMigrationOpen(false)}>Cancel</Button><Button disabled={migrationBusy} onClick={() => void submitMigration()}>{migrationBusy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}{migrationTargetVehicle ? 'Bind retained documents' : 'Create pending vehicle'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -351,6 +549,6 @@ function Panel({ title, children, warning }: { title: string; children: React.Re
   return <section className={`rounded-xl border p-4 ${warning ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'}`}><h3 className="text-xs uppercase tracking-wide font-semibold text-gray-400 mb-3 flex items-center gap-2">{warning && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}{title}</h3>{children}</section>
 }
 
-function Field({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
-  return <div><Label>{label}</Label><Input className="mt-1.5" type={type} value={value} onChange={event => onChange(event.target.value)} /></div>
+function Field({ label, value, onChange, type = 'text', disabled = false }: { label: string; value: string; onChange: (value: string) => void; type?: string; disabled?: boolean }) {
+  return <div><Label>{label}</Label><Input className="mt-1.5" type={type} value={value} disabled={disabled} onChange={event => onChange(event.target.value)} /></div>
 }
