@@ -248,9 +248,9 @@ export default function AppSidebar() {
           children: [
             { title: 'Transactions',  href: '/payments/transactions', permission: 'view_payments' },
             { title: 'Revenue',       href: '/payments/revenue',      permission: 'view_payments' },
-            { title: 'Batch Payout History', href: '/payments/batch-payouts', permission: 'view_payments' },
-            { title: 'Clawbacks',     href: '/payments/clawbacks',    permission: 'view_payments' },
-            { title: 'Webhook Failures', href: '/payments/webhook-failures', permission: 'view_payments' },
+            { title: 'Bulk Payment Runs', href: '/payments/batch-payouts', permission: 'view_payments' },
+            { title: 'Provider Debts', href: '/payments/clawbacks',   permission: 'view_payments' },
+            { title: 'Unprocessed Events', href: '/payments/webhook-failures', permission: 'view_payments' },
           ],
         },
       ],

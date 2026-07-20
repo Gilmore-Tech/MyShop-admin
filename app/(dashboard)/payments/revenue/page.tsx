@@ -21,6 +21,10 @@ import {
 
 type GroupBy = 'day' | 'week' | 'month'
 
+// Display-only: the backend's groupBy value read as a plain adverb.
+const GROUP_BY_LABELS: Record<string, string> = { day: 'daily', week: 'weekly', month: 'monthly' }
+function groupByLabel(value: string) { return GROUP_BY_LABELS[value] ?? value }
+
 function formatGhs(ghs: number) {
   return 'GHS ' + ghs.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -55,7 +59,7 @@ export default function RevenuePage() {
       setReport(null)
       const raw = err instanceof ApiError ? err.message : 'Failed to load revenue report.'
       const friendly = /database operation failed/i.test(raw)
-        ? 'Backend reported a database error. Try a smaller date range, clear the date filters, or retry in a moment.'
+        ? 'The server had trouble reading this data. Try a shorter date range, clear the dates, or retry in a moment.'
         : raw
       setError(friendly)
     } finally {
@@ -90,7 +94,7 @@ export default function RevenuePage() {
   const successRate      = totalPayments > 0 ? (totalSuccessful / totalPayments) * 100 : null
 
   const pieData = [
-    { name: 'Net Payouts', value: Math.max(0, totalPayouts) },
+    { name: 'Paid to Providers', value: Math.max(0, totalPayouts) },
     { name: 'Commission',  value: Math.max(0, totalCommission) },
     { name: 'Tips',        value: Math.max(0, totalTips) },
   ].filter(p => p.value > 0)
@@ -104,9 +108,9 @@ export default function RevenuePage() {
         <TabsList className="bg-white">
           <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
           <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
-          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
+          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Bulk Payment Runs</Link></TabsTrigger>
+          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Provider Debts</Link></TabsTrigger>
+          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Unprocessed Events</Link></TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -158,7 +162,7 @@ export default function RevenuePage() {
           Refresh
         </Button>
         <div className="ml-auto text-xs text-gray-500">
-          {report ? `${periods.length} period${periods.length === 1 ? '' : 's'} | grouped by ${report.groupBy}` : '-'}
+          {report ? `${periods.length} period${periods.length === 1 ? '' : 's'} | grouped ${groupByLabel(report.groupBy)}` : '-'}
         </div>
       </div>
 
@@ -189,37 +193,37 @@ export default function RevenuePage() {
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             <Card>
               <CardContent className="p-5">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Total Collections</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Total Money In</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{formatGhs(totalCollections)}</p>
-                <p className="text-xs text-gray-500 mt-1">Money received (excl. failed)</p>
+                <p className="text-xs text-gray-500 mt-1">Money received (successful payments only)</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-5">
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Commission Earned</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{formatGhs(totalCommission)}</p>
-                <p className="text-xs text-gray-500 mt-1">Gross, before refunds</p>
+                <p className="text-xs text-gray-500 mt-1">Before refunds are taken off</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-5">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Net Revenue</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Revenue Kept</p>
                 <p className={`text-2xl font-bold mt-1 ${totalNetRevenue < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatGhs(totalNetRevenue)}</p>
-                <p className="text-xs text-emerald-600 mt-1">Commission − refunds + clawbacks</p>
+                <p className="text-xs text-emerald-600 mt-1">Commission, minus refunds, plus debts recovered</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-5">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Net Payouts</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Paid to Providers</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{formatGhs(totalPayouts)}</p>
-                <p className="text-xs text-gray-500 mt-1">Actually disbursed to providers</p>
+                <p className="text-xs text-gray-500 mt-1">Actually paid out to providers</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-5">
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Refunds</p>
                 <p className="text-2xl font-bold text-red-600 mt-1">{formatGhs(totalRefunds)}</p>
-                <p className="text-xs text-gray-500 mt-1">Returned to clients{totalClawbacks > 0 ? ` · ${formatGhs(totalClawbacks)} reclaimed` : ''}</p>
+                <p className="text-xs text-gray-500 mt-1">Returned to clients{totalClawbacks > 0 ? ` · ${formatGhs(totalClawbacks)} recovered from providers` : ''}</p>
               </CardContent>
             </Card>
             <Card>
@@ -237,7 +241,7 @@ export default function RevenuePage() {
             <Card className="xl:col-span-2">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Revenue Trend</CardTitle>
-                <p className="text-xs text-gray-400">Collections, commission, payouts and tips per {groupBy} over the selected range</p>
+                <p className="text-xs text-gray-400">Money in, commission, payouts and tips per {groupBy} over the selected range</p>
               </CardHeader>
               <CardContent>
                 {chartData.length === 0 ? (
@@ -265,9 +269,9 @@ export default function RevenuePage() {
                         contentStyle={{ fontSize: 12, borderRadius: 8 }}
                       />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Area type="monotone" dataKey="collections" stroke="#F5A623" strokeWidth={2} fill="url(#revCollections)" dot={false} name="Collections" />
+                      <Area type="monotone" dataKey="collections" stroke="#F5A623" strokeWidth={2} fill="url(#revCollections)" dot={false} name="Money In" />
                       <Line type="monotone" dataKey="commission"  stroke="#10B981" strokeWidth={2} dot={false} name="Commission" />
-                      <Line type="monotone" dataKey="payouts"     stroke="#3B82F6" strokeWidth={2} dot={false} name="Payouts" />
+                      <Line type="monotone" dataKey="payouts"     stroke="#3B82F6" strokeWidth={2} dot={false} name="Paid to Providers" />
                       <Line type="monotone" dataKey="tips"        stroke="#A855F7" strokeWidth={2} dot={false} name="Tips" />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -298,7 +302,7 @@ export default function RevenuePage() {
                 )}
                 <div className="mt-2 space-y-1.5 w-full">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Commission rate</span>
+                    <span className="text-gray-500">Our cut (% of money in)</span>
                     <span className="font-semibold">{totalCollections > 0 ? Math.round(totalCommission / totalCollections * 100) : 0}%</span>
                   </div>
                   <div className="flex justify-between text-sm">

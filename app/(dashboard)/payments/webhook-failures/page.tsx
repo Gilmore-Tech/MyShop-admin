@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ApiError } from '@/lib/api-client'
 import { listWebhookFailures, type WebhookFailure } from '@/lib/api'
+import { webhookErrorLabel } from '@/lib/payment-labels'
 
 const LIMIT = 50
 
@@ -20,10 +21,6 @@ function formatDateTime(iso: string | null) {
     hour: '2-digit', minute: '2-digit',
     timeZone: 'GMT', timeZoneName: 'short',
   })
-}
-
-function codeLabel(value: string | null) {
-  return value ? value.replaceAll('_', ' ') : 'Unknown processing failure'
 }
 
 export default function WebhookFailuresPage() {
@@ -47,7 +44,7 @@ export default function WebhookFailuresPage() {
         setItems([])
         setTotal(0)
         setTotalPages(1)
-        setError(err instanceof ApiError ? err.message : 'Failed to load webhook failures.')
+        setError(err instanceof ApiError ? err.message : 'Couldn’t load unprocessed events.')
       })
       .finally(() => setLoading(false))
   }, [page])
@@ -63,9 +60,9 @@ export default function WebhookFailuresPage() {
           <TabsList className="bg-white">
             <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
             <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-            <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
-            <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
-            <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
+            <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Bulk Payment Runs</Link></TabsTrigger>
+            <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Provider Debts</Link></TabsTrigger>
+            <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Unprocessed Events</Link></TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -73,11 +70,11 @@ export default function WebhookFailuresPage() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
             <div>
-              <p className="text-sm font-semibold">Manual reconciliation queue</p>
+              <p className="text-sm font-semibold">Needs a manual check</p>
               <p className="mt-1 text-xs leading-5 text-amber-800">
-                These signature-verified Paystack events exhausted automatic processing. This
-                page is read-only: it does not retry a charge, refund, transfer, or payout. Raw
-                webhook bodies, account destinations, and payment routing references are hidden.
+                Paystack told us about these payments, but we couldn’t process them
+                automatically. This page is read-only — nothing here charges, refunds, or pays
+                anyone. Account numbers and other sensitive payment details are hidden.
               </p>
             </div>
           </div>
@@ -97,7 +94,7 @@ export default function WebhookFailuresPage() {
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="flex-1">
-              <p className="font-medium">Couldn&apos;t load webhook failures</p>
+              <p className="font-medium">Couldn&apos;t load unprocessed events</p>
               <p className="mt-0.5 text-xs">{error}</p>
             </div>
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={load}>Retry</Button>
@@ -109,11 +106,11 @@ export default function WebhookFailuresPage() {
             <TableHeader>
               <TableRow className="bg-gray-50">
                 <TableHead>Received</TableHead>
-                <TableHead>Event</TableHead>
-                <TableHead>Reason code</TableHead>
-                <TableHead className="text-right">Processing attempts</TableHead>
-                <TableHead>Operator alert</TableHead>
-                <TableHead>Event ID</TableHead>
+                <TableHead>Payment Event</TableHead>
+                <TableHead>What Went Wrong</TableHead>
+                <TableHead className="text-right">Attempts</TableHead>
+                <TableHead>Team Notified</TableHead>
+                <TableHead>Reference</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -128,7 +125,7 @@ export default function WebhookFailuresPage() {
               ) : items.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="py-12 text-center text-sm text-gray-400">
-                    {error ? 'No events to display while the endpoint is unavailable.' : 'No webhook failures require review.'}
+                    {error ? 'Nothing to show while this list is unavailable.' : 'Nothing needs a manual check.'}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -138,14 +135,14 @@ export default function WebhookFailuresPage() {
                     <TableCell>
                       <span className="rounded-full bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-700">{item.eventType}</span>
                     </TableCell>
-                    <TableCell className="max-w-72 text-xs font-medium text-red-700">{codeLabel(item.lastErrorCode)}</TableCell>
+                    <TableCell className="max-w-72 text-xs font-medium text-red-700">{webhookErrorLabel(item.lastErrorCode)}</TableCell>
                     <TableCell className="text-right text-sm tabular-nums">{item.attemptCount}</TableCell>
                     <TableCell>
                       <div className="flex items-start gap-1.5 text-xs">
                         <BellRing className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${item.adminAlertedAt ? 'text-emerald-600' : 'text-amber-600'}`} />
                         <div>
                           <p className={item.adminAlertedAt ? 'font-medium text-emerald-700' : 'font-medium text-amber-700'}>
-                            {item.adminAlertedAt ? 'Delivered' : 'Pending retry'}
+                            {item.adminAlertedAt ? 'Notified' : 'Not notified yet'}
                           </p>
                           <p className="text-gray-500">
                             {item.adminAlertedAt
@@ -153,7 +150,7 @@ export default function WebhookFailuresPage() {
                               : `${item.adminAlertAttempts} attempt${item.adminAlertAttempts === 1 ? '' : 's'}`}
                           </p>
                           {!item.adminAlertedAt && item.adminAlertLastError && (
-                            <p className="mt-0.5 text-amber-700">{codeLabel(item.adminAlertLastError)}</p>
+                            <p className="mt-0.5 text-amber-700">{webhookErrorLabel(item.adminAlertLastError)}</p>
                           )}
                         </div>
                       </div>

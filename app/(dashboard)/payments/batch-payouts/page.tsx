@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { listBatchPayouts, type BatchPayoutRun } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { batchFailureLabel } from '@/lib/payment-labels'
 
 const LIMIT = 20
 
@@ -50,10 +51,10 @@ export default function BatchPayoutsPage() {
         setTotal(0)
         if (err instanceof ApiError) {
           setError(err.status === 404
-            ? 'Batch payouts endpoint is not yet available on the backend.'
+            ? 'This list isn’t available yet — the server hasn’t switched it on.'
             : err.message)
         } else {
-          setError('Failed to load batch payouts.')
+          setError('Couldn’t load bulk payment runs.')
         }
       })
       .finally(() => setLoading(false))
@@ -70,9 +71,9 @@ export default function BatchPayoutsPage() {
         <TabsList className="bg-white">
           <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
           <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
-          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
+          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Bulk Payment Runs</Link></TabsTrigger>
+          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Provider Debts</Link></TabsTrigger>
+          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Unprocessed Events</Link></TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -81,8 +82,8 @@ export default function BatchPayoutsPage() {
         <div className="flex items-center gap-3">
           <AlertTriangle className="h-5 w-5 text-amber-400" />
           <div>
-            <p className="font-semibold text-sm">Batch payouts are temporarily suspended</p>
-            <p className="text-slate-300 text-xs">No scheduled, retry, or forced aggregate run will execute. Existing earnings remain preserved for reviewed reconciliation.</p>
+            <p className="font-semibold text-sm">Bulk payments are paused</p>
+            <p className="text-slate-300 text-xs">No automatic or manual payout runs will happen right now. Provider earnings are safe and still recorded.</p>
           </div>
         </div>
         <Button
@@ -101,7 +102,7 @@ export default function BatchPayoutsPage() {
         <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-start gap-2">
           <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
           <div className="flex-1">
-            <p className="font-medium">Couldn&apos;t load batch payouts</p>
+            <p className="font-medium">Couldn&apos;t load bulk payment runs</p>
             <p className="text-xs mt-0.5">{error}</p>
           </div>
           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={load}>Retry</Button>
@@ -113,12 +114,12 @@ export default function BatchPayoutsPage() {
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead>Date</TableHead>
-              <TableHead>Primary Run</TableHead>
+              <TableHead>Run ID</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">Providers</TableHead>
+              <TableHead className="text-right">Providers Paid</TableHead>
               <TableHead className="text-right">Total Amount</TableHead>
-              <TableHead>Failure Reason</TableHead>
-              <TableHead>Retries</TableHead>
+              <TableHead>What Went Wrong</TableHead>
+              <TableHead>Attempts</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -133,7 +134,7 @@ export default function BatchPayoutsPage() {
             ) : batches.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-12 text-gray-400 text-sm">
-                  {error ? 'No batch payouts to display while the endpoint is unavailable.' : 'No batch payout history'}
+                  {error ? 'Nothing to show while this list is unavailable.' : 'No bulk payment runs yet'}
                 </TableCell>
               </TableRow>
             ) : (
@@ -150,7 +151,7 @@ export default function BatchPayoutsPage() {
                   <TableCell className="text-right text-sm">{batch.providerCount > 0 ? batch.providerCount : '-'}</TableCell>
                   <TableCell className="text-right text-sm font-medium">{batch.totalPesewas > 0 ? formatGhs(batch.totalPesewas) : '-'}</TableCell>
                   <TableCell className="text-sm text-red-600">
-                    {batch.failureReason ?? <span className="text-gray-500">-</span>}
+                    {batchFailureLabel(batch.failureReason) ?? <span className="text-gray-500">-</span>}
                   </TableCell>
                   <TableCell>
                     {batch.retries.length === 0

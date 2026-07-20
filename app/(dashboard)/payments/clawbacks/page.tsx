@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { PageHeader } from '@/components/common/page-header'
 import { listClawbacks, writeOffClawback, escalateClawback, type AdminClawback } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { clawbackStatusLabel, clawbackSourceLabel } from '@/lib/payment-labels'
 
 const WRITEOFF_THRESHOLD = 10000 // GHS 100 in pesewas
 const WRITEOFF_INACTIVE_DAYS = 90
@@ -22,20 +23,6 @@ function formatGhs(pesewas: number) {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function formatSource(source: string | null) {
-  if (!source) return '-'
-  return source
-    .toLowerCase()
-    .split('_')
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ')
-}
-
-function formatStatus(status: string) {
-  if (!status) return '-'
-  return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
 function statusBadgeClass(status: string) {
@@ -73,10 +60,10 @@ export default function ClawbacksPage() {
         setTotalOutstanding(0)
         if (err instanceof ApiError) {
           setError(err.status === 404
-            ? 'Clawbacks endpoint is not yet available on the backend.'
+            ? 'This list isn’t available yet — the server hasn’t switched it on.'
             : err.message)
         } else {
-          setError('Failed to load clawbacks.')
+          setError('Couldn’t load provider debts.')
         }
       })
       .finally(() => setLoading(false))
@@ -93,8 +80,8 @@ export default function ClawbacksPage() {
       setTotalOutstanding(prev => prev - clawback.outstandingPesewas)
     } catch (err) {
       setActionError(err instanceof ApiError
-        ? `Write-off failed: ${err.message}`
-        : 'Write-off failed. Please try again.')
+        ? `Couldn’t cancel this debt: ${err.message}`
+        : 'Couldn’t cancel this debt. Please try again.')
     } finally {
       setActionId(null)
     }
@@ -108,8 +95,8 @@ export default function ClawbacksPage() {
       setClawbacks(prev => prev.map(c => c.id === id ? { ...c, status: 'escalated' } : c))
     } catch (err) {
       setActionError(err instanceof ApiError
-        ? `Escalation failed: ${err.message}`
-        : 'Escalation failed. Please try again.')
+        ? `Couldn’t send this to the recovery team: ${err.message}`
+        : 'Couldn’t send this to the recovery team. Please try again.')
     } finally {
       setActionId(null)
     }
@@ -126,25 +113,26 @@ export default function ClawbacksPage() {
         <TabsList className="bg-white">
           <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
           <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
-          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
+          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Bulk Payment Runs</Link></TabsTrigger>
+          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Provider Debts</Link></TabsTrigger>
+          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Unprocessed Events</Link></TabsTrigger>
         </TabsList>
       </Tabs>
 
       <div className="bg-amber-50 rounded-lg px-4 py-3 mb-5 text-sm text-amber-800 flex items-start gap-2">
         <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
         <div>
-          <strong>Clawback rules:</strong> Amounts under GHS 100 inactive for 90+ days are eligible for write-off.
-          Amounts over GHS 100 must be escalated for manual collection.
-          Provider accounts with outstanding clawbacks cannot be deactivated.
+          <strong>How debts are handled:</strong> Debts under GHS 100 that haven’t moved in 90 days can be cancelled.
+          Anything larger must go to the recovery team.
+          Providers who still owe money can’t be deactivated.
+          <span className="block mt-1 text-amber-700">These are called <em>clawbacks</em> in finance reports and the audit log.</span>
         </div>
       </div>
 
       {eligible.length > 0 && (
         <Alert className="mb-4 bg-emerald-50">
           <AlertDescription className="text-emerald-700 text-sm">
-            <strong>{eligible.length} clawback{eligible.length > 1 ? 's' : ''}</strong> under GHS 100 are inactive for 90+ days and eligible for write-off.
+            <strong>{eligible.length} debt{eligible.length > 1 ? 's' : ''}</strong> under GHS 100 haven’t moved in 90+ days and can be cancelled.
           </AlertDescription>
         </Alert>
       )}
@@ -153,7 +141,7 @@ export default function ClawbacksPage() {
         <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-start gap-2">
           <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
           <div className="flex-1">
-            <p className="font-medium">Couldn&apos;t load clawbacks</p>
+            <p className="font-medium">Couldn&apos;t load provider debts</p>
             <p className="text-xs mt-0.5">{error}</p>
           </div>
           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={load}>Retry</Button>
@@ -169,13 +157,13 @@ export default function ClawbacksPage() {
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead>Provider</TableHead>
-              <TableHead>Source</TableHead>
-              <TableHead className="text-right">Original Amount</TableHead>
-              <TableHead className="text-right">Paid</TableHead>
-              <TableHead className="text-right">Outstanding</TableHead>
-              <TableHead>Original Dispute</TableHead>
-              <TableHead>Initiated</TableHead>
-              <TableHead className="text-right">Days Outstanding</TableHead>
+              <TableHead>Reason</TableHead>
+              <TableHead className="text-right">Amount Owed</TableHead>
+              <TableHead className="text-right">Repaid So Far</TableHead>
+              <TableHead className="text-right">Still Owed</TableHead>
+              <TableHead>Related Dispute</TableHead>
+              <TableHead>Date Raised</TableHead>
+              <TableHead className="text-right">Days Unpaid</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -192,7 +180,7 @@ export default function ClawbacksPage() {
             ) : clawbacks.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={10} className="text-center py-12 text-gray-400 text-sm">
-                  {error ? 'No clawbacks to display while the endpoint is unavailable.' : 'No outstanding clawbacks'}
+                  {error ? 'Nothing to show while this list is unavailable.' : 'No providers currently owe money'}
                 </TableCell>
               </TableRow>
             ) : (
@@ -206,7 +194,7 @@ export default function ClawbacksPage() {
                       <p className="font-medium text-sm text-gray-900">{cb.providerName ?? '-'}</p>
                       <p className="text-xs text-gray-500 font-mono">{cb.providerId.slice(-12).toUpperCase()}</p>
                     </TableCell>
-                    <TableCell className="text-sm text-gray-600">{formatSource(cb.source)}</TableCell>
+                    <TableCell className="text-sm text-gray-600">{clawbackSourceLabel(cb.source)}</TableCell>
                     <TableCell className="text-right text-sm text-gray-700">{formatGhs(cb.amountPesewas)}</TableCell>
                     <TableCell className="text-right text-sm text-emerald-600">{formatGhs(cb.paidAmountPesewas)}</TableCell>
                     <TableCell className="text-right text-sm font-semibold text-red-600">
@@ -232,7 +220,7 @@ export default function ClawbacksPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span className={statusBadgeClass(cb.status)}>{formatStatus(cb.status)}</span>
+                      <span className={statusBadgeClass(cb.status)}>{clawbackStatusLabel(cb.status)}</span>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2 justify-end">
@@ -245,7 +233,7 @@ export default function ClawbacksPage() {
                               disabled={isActing}
                               onClick={() => handleWriteOff(cb)}
                             >
-                              {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Write Off'}
+                              {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Cancel Debt'}
                             </Button>
                           </RoleGate>
                         )}
@@ -258,12 +246,12 @@ export default function ClawbacksPage() {
                               disabled={isActing}
                               onClick={() => handleEscalate(cb.id)}
                             >
-                              {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <><ArrowUpRight className="h-3.5 w-3.5" /> Escalate</>}
+                              {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <><ArrowUpRight className="h-3.5 w-3.5" /> Send to Recovery</>}
                             </Button>
                           </RoleGate>
                         )}
                         {cb.status === 'escalated' && (
-                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">Escalated</span>
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">With Recovery Team</span>
                         )}
                       </div>
                     </TableCell>
@@ -275,7 +263,7 @@ export default function ClawbacksPage() {
         </Table>
         <div className="px-4 py-3 bg-gray-50">
           <p className="text-xs text-gray-500">
-            Total outstanding: <strong className="text-red-600">
+            Total still owed: <strong className="text-red-600">
               {loading ? '—' : formatGhs(totalOutstanding || clawbacks.reduce((s, c) => s + c.outstandingPesewas, 0))}
             </strong>
           </p>

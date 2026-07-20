@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { humanizeEnum } from '@/lib/payment-labels'
 
 // Status badges are intentionally monochrome - the text label carries the meaning.
 const BADGE_STYLE = 'bg-gray-100 text-gray-600'
@@ -16,7 +17,7 @@ const labels: Record<string, string> = {
   arrived: 'Arrived', in_progress: 'In Progress', bids_received: 'Bids Received',
   confirmed: 'Confirmed', super_admin: 'Super Admin', regional_admin: 'Regional Admin',
   ops_admin: 'Ops Admin', support_agent: 'Support Agent', inactive: 'Inactive', partial: 'Partial',
-  escrowed: 'Escrowed', processing: 'Processing', failed_retrying: 'Failed (retrying)',
+  escrowed: 'Held Until Complete', processing: 'Processing', failed_retrying: 'Failed — Retrying',
   written_off: 'Written off', settled: 'Settled',
   resolved: 'Resolved', resolving: 'Securing', expired: 'Expired', client: 'Client', deleted: 'Deleted', scheduled: 'Scheduled',
   pending_admin: 'Pending Admin', open_for_bids: 'Open for Bids',
@@ -34,7 +35,7 @@ export function StatusBadge({ status, className }: { status: string | null | und
       BADGE_STYLE,
       className,
     )}>
-      {labels[status] ?? status}
+      {labels[status] ?? humanizeEnum(status)}
     </span>
   )
 }

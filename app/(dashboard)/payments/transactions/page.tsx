@@ -17,7 +17,7 @@ import { PageSizeSelect } from '@/components/common/table-controls'
 import { listTransactions, type AdminTransaction } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatTransactionAmount } from '@/lib/money'
-import { paymentMethodLabel } from '@/lib/payment-labels'
+import { paymentMethodLabel, transactionTypeLabel, transactionStatusLabel } from '@/lib/payment-labels'
 import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
 
 const txTypeColors: Record<string, string> = {
@@ -155,9 +155,9 @@ export default function TransactionsPage() {
         <TabsList className="bg-white">
           <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
           <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
-          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
+          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Bulk Payment Runs</Link></TabsTrigger>
+          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Provider Debts</Link></TabsTrigger>
+          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Unprocessed Events</Link></TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -165,7 +165,7 @@ export default function TransactionsPage() {
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
           <Input
-            placeholder="Search TX ID, party, booking…"
+            placeholder="Search transaction ID, name, or booking…"
             className="pl-9"
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
@@ -176,7 +176,7 @@ export default function TransactionsPage() {
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
             {TYPE_OPTIONS.map(t => (
-              <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
+              <SelectItem key={t} value={t}>{transactionTypeLabel(t)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -185,7 +185,7 @@ export default function TransactionsPage() {
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
             {STATUS_OPTIONS.map(s => (
-              <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
+              <SelectItem key={s} value={s}>{transactionStatusLabel(s)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -247,8 +247,8 @@ export default function TransactionsPage() {
                   <TableCell className="text-sm text-gray-500 whitespace-nowrap">{formatDateTime(tx.createdAt)}</TableCell>
                   <TableCell className="font-mono text-sm font-medium text-gray-900">{tx.id.slice(-10).toUpperCase()}</TableCell>
                   <TableCell>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${txTypeColors[tx.type] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {tx.type}
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${txTypeColors[tx.type] ?? 'bg-gray-100 text-gray-600'}`}>
+                      {transactionTypeLabel(tx.type)}
                     </span>
                   </TableCell>
                   <TableCell className={`text-sm font-semibold tabular-nums ${tx.type === 'refund' || tx.type === 'clawback' || tx.type === 'payout' ? 'text-red-600' : 'text-gray-900'}`}>
@@ -324,8 +324,8 @@ function TransactionDetailDialog({ tx, onClose }: { tx: AdminTransaction | null;
             <SheetHeader className="px-6 py-4 border-b border-gray-100">
               <SheetTitle className="text-base flex items-center gap-2">
                 Transaction
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${txTypeColors[tx.type] ?? 'bg-gray-100 text-gray-600'}`}>
-                  {tx.type}
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${txTypeColors[tx.type] ?? 'bg-gray-100 text-gray-600'}`}>
+                  {transactionTypeLabel(tx.type)}
                 </span>
               </SheetTitle>
               <p className="font-mono text-xs text-gray-400 mt-1 break-all">{tx.id}</p>
@@ -343,7 +343,7 @@ function TransactionDetailDialog({ tx, onClose }: { tx: AdminTransaction | null;
               />
               <Row label="Method" value={paymentMethodLabel(tx.method)} />
               <Row label="Created" value={formatDateTime(tx.createdAt)} />
-              <Row label="Party" value={tx.party ?? '-'} />
+              <Row label="Client / Provider" value={tx.party ?? '-'} />
               <Row
                 label="Booking"
                 value={tx.bookingId ? <BookingLink type={tx.bookingType} id={tx.bookingId} /> : '-'}
