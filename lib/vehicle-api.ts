@@ -63,6 +63,20 @@ export interface LegacyVehicleBackfillCandidate {
   unboundDocuments: LegacyVehicleDocument[]
 }
 
+export type LegacyVehicleMigrationInput =
+  | (VehicleInput & {
+      targetVehicleId?: never
+      documentIds: string[]
+      ownershipConfirmed: true
+      reason?: string
+    })
+  | {
+      targetVehicleId: string
+      documentIds: string[]
+      ownershipConfirmed: true
+      reason?: string
+    }
+
 export async function listAdminVehicles(filters: {
   status?: VehicleApprovalStatus
   driverId?: string
@@ -156,12 +170,7 @@ export async function listLegacyVehicleBackfill(): Promise<LegacyVehicleBackfill
 
 export async function migrateLegacyVehicle(
   driverId: string,
-  input: VehicleInput & {
-    targetVehicleId?: string
-    documentIds: string[]
-    ownershipConfirmed: true
-    reason?: string
-  },
+  input: LegacyVehicleMigrationInput,
 ): Promise<void> {
   await api.post(`/admin/vehicle-backfill/${driverId}`, input)
 }
