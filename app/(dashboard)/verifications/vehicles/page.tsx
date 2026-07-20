@@ -18,6 +18,7 @@ import {
   editAdminVehicle,
   finalizeAdminVehicle,
   getAdminVehicle,
+  getLegacyVehicleDocumentAccess,
   listLegacyVehicleBackfill,
   listAdminVehicles,
   migrateLegacyVehicle,
@@ -108,6 +109,7 @@ export default function VehicleVerificationPage() {
   const [migrationCategories, setMigrationCategories] = useState<RideCategory[]>([])
   const [migrationDocumentIds, setMigrationDocumentIds] = useState<string[]>([])
   const [migrationConfirmed, setMigrationConfirmed] = useState(false)
+  const [migrationDocumentOpening, setMigrationDocumentOpening] = useState('')
   const [migrationError, setMigrationError] = useState('')
   const [migrationBusy, setMigrationBusy] = useState(false)
 
@@ -285,6 +287,23 @@ export default function VehicleVerificationPage() {
     }
   }
 
+  async function openLegacyVehicleDocument(documentId: string) {
+    const popup = window.open('', '_blank')
+    if (popup) popup.opener = null
+    setMigrationDocumentOpening(documentId)
+    setMigrationError('')
+    try {
+      const fileUrl = await getLegacyVehicleDocumentAccess(documentId)
+      if (popup) popup.location.href = fileUrl
+      else window.open(fileUrl, '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      popup?.close()
+      setMigrationError(userError(err))
+    } finally {
+      setMigrationDocumentOpening('')
+    }
+  }
+
   async function submitReasonAction() {
     if (!selected || !reasonAction) return
     if (reason.trim().length < 5) {
@@ -456,7 +475,19 @@ export default function VehicleVerificationPage() {
                 <label key={document.id} className="flex items-start gap-3 py-3 border-b last:border-0">
                   <input type="checkbox" className="mt-1" checked={migrationDocumentIds.includes(document.id)} onChange={event => setMigrationDocumentIds(event.target.checked ? [...migrationDocumentIds, document.id] : migrationDocumentIds.filter(id => id !== document.id))} />
                   <span className="flex-1"><span className="block font-medium capitalize">{document.documentType.replaceAll('_', ' ')}</span><span className="block text-xs text-gray-500">{document.status} · expires {dateTime(document.expiresAt)}</span></span>
-                  <a href={document.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-orange-600" onClick={event => event.stopPropagation()}>Open <ExternalLink className="h-3 w-3" /></a>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-xs text-orange-600 disabled:opacity-50"
+                    disabled={migrationDocumentOpening === document.id}
+                    onClick={event => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      void openLegacyVehicleDocument(document.id)
+                    }}
+                  >
+                    {migrationDocumentOpening === document.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <ExternalLink className="h-3 w-3" />}
+                    Open
+                  </button>
                 </label>
               ))}
               <p className="text-[11px] text-gray-500 mt-3">Checking a document confirms that it belongs to this exact physical vehicle. Its existing status and expiry date will not be changed.</p>

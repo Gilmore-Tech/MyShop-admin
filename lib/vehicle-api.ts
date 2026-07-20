@@ -32,7 +32,6 @@ export interface LegacyVehicleDocument {
   status: string
   expiresAt: string | null
   version: number
-  fileUrl: string
 }
 
 export interface LegacyExplicitVehicle {
@@ -127,7 +126,6 @@ export async function listLegacyVehicleBackfill(): Promise<LegacyVehicleBackfill
         || typeof item.status !== 'string'
         || (item.expiresAt !== null && typeof item.expiresAt !== 'string')
         || !Number.isInteger(item.version)
-        || typeof item.fileUrl !== 'string'
       ) throw new Error('Invalid legacy vehicle document')
       return item as unknown as LegacyVehicleDocument
     })
@@ -173,6 +171,14 @@ export async function migrateLegacyVehicle(
   input: LegacyVehicleMigrationInput,
 ): Promise<void> {
   await api.post(`/admin/vehicle-backfill/${driverId}`, input)
+}
+
+export async function getLegacyVehicleDocumentAccess(documentId: string): Promise<string> {
+  const raw = await api.get<unknown>(`/admin/vehicle-backfill/documents/${documentId}/access`)
+  if (!raw || typeof raw !== 'object' || typeof (raw as Record<string, unknown>).fileUrl !== 'string') {
+    throw new Error('Invalid retained vehicle document access response')
+  }
+  return (raw as { fileUrl: string }).fileUrl
 }
 
 export async function coordinatorApproveAdminVehicle(
