@@ -105,7 +105,12 @@ function DocStatusBadge({ status }: { status: string }) {
   )
   if (status === 'confirmed') return (
     <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
-      Upload confirmed · pending review
+      Admin verified · Coordinator next
+    </span>
+  )
+  if (status === 'coordinator_validated') return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+      Coordinator validated · RM next
     </span>
   )
   return (
@@ -321,7 +326,7 @@ function DocumentStep({
             ) : null}
           </div>
         </div>
-        <DocStatusBadge status={existingReview ? (existingReview.action === 'approve' ? 'approved' : 'rejected') : doc.status} />
+        <DocStatusBadge status={existingReview ? (existingReview.action === 'approve' ? 'confirmed' : 'rejected') : doc.status} />
       </div>
 
       {/* Prior rejection warning */}
@@ -462,11 +467,13 @@ function FinalDecisionStep({
   heading?: string
   showTiers?: boolean
 }) {
-  const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded' || s === 'confirmed'
+  const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded'
+  const isVerifiedAtThisStage = (s: string) =>
+    s === 'confirmed' || s === 'coordinator_validated' || s === 'approved'
   const resolved = documents.map(d => ({
     doc: d,
     review: reviews.get(d.id) ?? (!needsReview(d.status)
-      ? { action: d.status === 'approved' ? 'approve' : 'reject' as 'approve' | 'reject', reason: d.rejection_reason ?? '' }
+      ? { action: isVerifiedAtThisStage(d.status) ? 'approve' : 'reject' as 'approve' | 'reject', reason: d.rejection_reason ?? '' }
       : null),
   }))
   const allApproved = resolved.length > 0 && resolved.every(r => r.review?.action === 'approve')
@@ -505,7 +512,7 @@ function FinalDecisionStep({
           <div key={doc.id} className="flex items-center justify-between gap-2">
             <p className="text-sm text-gray-700 truncate">{doc.label || doc.type}</p>
             {review
-              ? <DocStatusBadge status={review.action === 'approve' ? 'approved' : 'rejected'} />
+              ? <DocStatusBadge status={reviews.has(doc.id) ? (review.action === 'approve' ? 'confirmed' : 'rejected') : doc.status} />
               : <span className="text-xs text-gray-400 italic">Not reviewed</span>
             }
           </div>
@@ -631,11 +638,11 @@ function AdminSubmitStep({
   submitting: boolean
   reviewOnly?: boolean
 }) {
-  const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded' || s === 'confirmed'
+  const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded'
   const resolved = documents.map(d => ({
     doc: d,
     review: reviews.get(d.id) ?? (!needsReview(d.status)
-      ? { action: d.status === 'approved' ? 'approve' : 'reject' as 'approve' | 'reject', reason: d.rejection_reason ?? '' }
+      ? { action: ['confirmed', 'coordinator_validated', 'approved'].includes(d.status) ? 'approve' : 'reject' as 'approve' | 'reject', reason: d.rejection_reason ?? '' }
       : null),
   }))
   const allDecided = resolved.length > 0 && resolved.every(r => r.review != null)
@@ -648,16 +655,20 @@ function AdminSubmitStep({
     try {
       await onSubmit()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : reviewOnly ? 'Failed to complete document review.' : 'Failed to submit to coordinator.')
+      setError(err instanceof ApiError ? err.message : 'Failed to submit to coordinator.')
     }
   }
 
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">{reviewOnly ? 'Independent document review' : 'Stage 1 of 3 — Admin'}</p>
-        <p className="text-base font-semibold text-gray-900 mt-0.5">{reviewOnly ? 'Complete Document Review' : 'Submit to Coordinator'}</p>
-        <p className="text-xs text-gray-400 mt-0.5">{reviewOnly ? 'This vehicle evidence is reviewed independently and does not restart the approved driver account pipeline.' : 'Confirm each document is authentic, then hand off to the category coordinator.'}</p>
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Stage 1 of 3 — Admin</p>
+        <p className="text-base font-semibold text-gray-900 mt-0.5">Submit to Coordinator</p>
+        <p className="text-xs text-gray-400 mt-0.5">
+          {reviewOnly
+            ? 'The provider account remains independent, but this document is not approved until the category Coordinator and Regional Manager complete their reviews.'
+            : 'Confirm each document is authentic, then hand off to the category coordinator.'}
+        </p>
       </div>
 
       <div className="bg-gray-50 rounded-xl p-3 space-y-2 max-h-56 overflow-y-auto">
@@ -665,7 +676,7 @@ function AdminSubmitStep({
           <div key={doc.id} className="flex items-center justify-between gap-2">
             <p className="text-sm text-gray-700 truncate">{doc.label || doc.type}</p>
             {review
-              ? <DocStatusBadge status={review.action === 'approve' ? 'approved' : 'rejected'} />
+              ? <DocStatusBadge status={reviews.has(doc.id) ? (review.action === 'approve' ? 'confirmed' : 'rejected') : doc.status} />
               : <span className="text-xs text-gray-400 italic">Not reviewed</span>
             }
           </div>
@@ -696,7 +707,7 @@ function AdminSubmitStep({
           style={{ backgroundColor: '#F5A623' }}
         >
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {submitting ? 'Submitting…' : reviewOnly ? 'Complete Review' : 'Submit to Coordinator'}
+          {submitting ? 'Submitting…' : 'Submit to Coordinator'}
         </Button>
       </div>
     </div>
@@ -770,13 +781,13 @@ function ApprovalChain({ history, showStages }: { history: VerificationHistory; 
   )
 }
 
-// Sort: pending_review → uploaded → approved/rejected. Historical versions
-// (isCurrent === false) are dropped — only the current version is reviewable.
+// Sort active reviews first. A timely replacement is intentionally non-current
+// until RM approval, so keep that one review candidate while dropping history.
 const docStatusRank = (s: string) =>
-  s === 'pending_review' || s === 'confirmed' ? 0 : s === 'uploaded' ? 1 : 2
+  ['pending_review', 'confirmed', 'coordinator_validated'].includes(s) ? 0 : s === 'uploaded' ? 1 : 2
 function sortReviewDocs(docs: ProviderDocument[]): ProviderDocument[] {
   return [...docs]
-    .filter(d => d.isCurrent !== false)
+    .filter(d => d.isCurrent !== false || d.isReplacement)
     .sort((a, b) => docStatusRank(a.status) - docStatusRank(b.status))
 }
 
@@ -799,9 +810,8 @@ function ReviewDrawer({
   // The approval chain (who did each stage) is restricted: admins (entry level)
   // don't see it; coordinators see Stages 1–2; RM/global see all stages.
   const isGlobal = role ? (ROLE_DEFINITIONS[role]?.global ?? false) : false
-  const chainStages: VerificationStage[] = item.document_review_only
-    ? []
-    : isGlobal || can('finalize_verification') ? ['pending_documents', 'docs_verified', 'coordinator_validated']
+  const chainStages: VerificationStage[] =
+    isGlobal || can('finalize_verification') ? ['pending_documents', 'docs_verified', 'coordinator_validated']
       : can('validate_verification') ? ['pending_documents', 'docs_verified']
       : []
   const [history, setHistory] = useState<VerificationHistory | null>(null)
@@ -902,9 +912,7 @@ function ReviewDrawer({
   async function handleAdminSubmit() {
     setSubmitting(true)
     try {
-      if (!item.document_review_only) {
-        await submitVerification(item.provider_id, providerType)
-      }
+      await submitVerification(item.provider_id, providerType)
       onDone()
     } catch (err) {
       setSubmitting(false)
@@ -982,7 +990,7 @@ function ReviewDrawer({
               doc={currentDoc}
               index={currentIndex}
               total={documents.length}
-              pendingOnly={documents.filter(d => d.status === 'pending_review' || d.status === 'uploaded' || d.status === 'confirmed')}
+              pendingOnly={documents.filter(d => d.status === 'pending_review' || d.status === 'uploaded')}
               existingReview={reviews.get(currentDoc.id)}
               onSave={handleDocSave}
               onPrev={() => setCurrentIndex(i => Math.max(0, i - 1))}
@@ -1203,7 +1211,9 @@ export default function VerificationsPage() {
                   </TableCell>
                   <TableCell><StatusBadge status={v.provider_type} /></TableCell>
                   <TableCell className="text-xs text-gray-500">
-                    {v.document_review_only ? 'Document review' : v.verification_stage ? (STAGE_LABEL[v.verification_stage] ?? v.verification_stage) : '—'}
+                    {v.verification_stage
+                      ? `${STAGE_LABEL[v.verification_stage] ?? v.verification_stage}${v.document_review_only ? ' · Document' : ''}`
+                      : '—'}
                   </TableCell>
                   <TableCell>
                     <DocsProgress

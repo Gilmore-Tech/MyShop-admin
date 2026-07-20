@@ -107,7 +107,7 @@ test('admin API contains no legacy ambiguous account-action routes', () => {
   assert.match(source, /role: 'client'; profile: ClientRoleProfile/)
 })
 
-test('provider evidence stays private and isolated vehicle review does not restart account approval', () => {
+test('provider evidence stays private while vehicle documents complete the three-stage chain', () => {
   const api = readFileSync(new URL('../lib/api.ts', import.meta.url), 'utf8')
   const verification = readFileSync(
     new URL('../app/(dashboard)/verifications/page.tsx', import.meta.url),
@@ -120,7 +120,8 @@ test('provider evidence stays private and isolated vehicle review does not resta
   assert.doesNotMatch(api, /fileUrl:\s*resolveCloudinaryUrl\(rawFileUrl/)
   assert.match(api, /document_review_only/)
   assert.match(verification, /item\.document_review_only/)
-  assert.match(verification, /Independent document review/)
+  assert.match(verification, /not approved until the category Coordinator and Regional Manager/)
+  assert.match(verification, /await submitVerification\(item\.provider_id, providerType\)/)
   assert.match(proxy, /isSignedPrivateDownload/)
   assert.match(proxy, /\(\?:image\|raw\)\\\/download/)
 })

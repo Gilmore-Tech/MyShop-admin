@@ -386,7 +386,13 @@ export interface ProviderDocument {
   id: string
   type: string // raw document_type from DB (e.g. "national_id")
   label: string // human-readable label (e.g. "National ID")
-  status: 'uploaded' | 'pending_review' | 'approved' | 'rejected' | 'confirmed'
+  status:
+    | 'uploaded'
+    | 'pending_review'
+    | 'confirmed'
+    | 'coordinator_validated'
+    | 'approved'
+    | 'rejected'
   file_url: string // Cloudinary URL
   mime_type: string | null
   uploaded_at: string // ISO string
@@ -398,6 +404,7 @@ export interface ProviderDocument {
   // backend rejects a review of a non-current id with DOCUMENT_NOT_FOUND.
   // Defaults to true until the backend populates is_current on the queue.
   isCurrent: boolean
+  isReplacement: boolean
 }
 
 // Pipeline stage of a provider in the verification queue.
@@ -440,6 +447,9 @@ function normaliseDoc(d: any): ProviderDocument {
     version: Number(d.version ?? 1),
     rejection_reason: d.rejection_reason ?? d.rejectionReason ?? null,
     isCurrent: (d.is_current ?? d.isCurrent ?? true) !== false,
+    isReplacement: Boolean(
+      d.is_replacement ?? d.isReplacement ?? d.replaces_document_id ?? d.replacesDocumentId,
+    ),
   }
 }
 
@@ -1515,7 +1525,13 @@ export interface UserProviderDocument {
   label: string // human-readable, derived client-side
   fileUrl: string
   mimeType: string | null
-  status: 'uploaded' | 'pending_review' | 'approved' | 'rejected' | 'confirmed'
+  status:
+    | 'uploaded'
+    | 'pending_review'
+    | 'confirmed'
+    | 'coordinator_validated'
+    | 'approved'
+    | 'rejected'
   rejectionReason: string | null
   expiresAt: string | null
   version: number
