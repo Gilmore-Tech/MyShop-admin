@@ -1,9 +1,12 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'node:crypto'
 
 const UPSTREAM =
   process.env.UPSTREAM_API_URL ?? 'https://myshop-api-2hy2.onrender.com/v1'
+const SUPPORT_REFERENCE_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 async function handler(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const localSupportReference = randomUUID()
   const { path } = await params
   const url = new URL(req.url)
   const upstream = `${UPSTREAM}/${path.join('/')}${url.search}`
@@ -35,16 +38,30 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
           message: isTimeout
             ? 'The server is warming up (cold start). Please wait 30 seconds and try again.'
             : 'Unable to reach the API server. Please try again.',
+          supportReference: localSupportReference,
         },
       }),
-      { status: isTimeout ? 504 : 502, headers: { 'content-type': 'application/json' } },
+      {
+        status: isTimeout ? 504 : 502,
+        headers: {
+          'content-type': 'application/json',
+          'x-support-reference': localSupportReference,
+        },
+      },
     )
   }
 
   const resBody = await res.text()
+  const upstreamSupportReference = res.headers.get('x-support-reference')
+  const supportReference = upstreamSupportReference && SUPPORT_REFERENCE_RX.test(upstreamSupportReference)
+    ? upstreamSupportReference
+    : localSupportReference
   return new NextResponse(resBody, {
     status: res.status,
-    headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' },
+    headers: {
+      'content-type': res.headers.get('content-type') ?? 'application/json',
+      'x-support-reference': supportReference,
+    },
   })
 }
 

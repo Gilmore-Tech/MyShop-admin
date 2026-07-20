@@ -7,6 +7,7 @@ import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { getHelpCategories, type HelpCategory } from '@/lib/api'
 import { ArticleForm } from '../_components/article-form'
+import { userSafeAdminError } from '@/lib/api-client'
 
 export default function NewHelpArticlePage() {
   const [categories, setCategories] = useState<HelpCategory[]>([])
@@ -17,7 +18,7 @@ export default function NewHelpArticlePage() {
     let cancelled = false
     getHelpCategories()
       .then((cats) => { if (!cancelled) setCategories(cats) })
-      .catch((err: Error) => { if (!cancelled) setError(err.message ?? 'Failed to load categories.') })
+      .catch((err: unknown) => { if (!cancelled) setError(userSafeAdminError(err, 'Failed to load categories.')) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [])

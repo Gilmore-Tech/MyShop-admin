@@ -60,6 +60,9 @@ export type Permission =
   | 'delete_help_articles'
   | 'view_session_recovery'
   | 'resolve_session_recovery'
+  | 'view_role_account_recovery'
+  | 'intake_role_account_recovery'
+  | 'resolve_client_role_account_recovery'
   | 'view_promotions'
   | 'manage_promotions'
   | 'view_referrals'
@@ -126,6 +129,9 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'resolve_dispute', label: 'Resolve disputes', description: 'Refund, reject or clawback a dispute' },
       { key: 'view_session_recovery', label: 'View account recovery', description: 'Session/account recovery requests' },
       { key: 'resolve_session_recovery', label: 'Resolve account recovery', description: 'Approve or reject recovery requests' },
+      { key: 'view_role_account_recovery', label: 'View deleted-role recovery', description: 'View retained client/provider role recovery requests within exact scope' },
+      { key: 'intake_role_account_recovery', label: 'Accept provider recovery intake', description: 'Regional Admin only: restore one provider to pending document revalidation' },
+      { key: 'resolve_client_role_account_recovery', label: 'Approve client recovery', description: 'Global Operations only: restore one retained client role' },
     ],
   },
   {
@@ -260,9 +266,15 @@ const ADMIN_BASE: Permission[] = [
   'view_users', 'edit_provider_profile', 'view_jobs', 'view_rides', 'view_help_articles', 'edit_help_articles',
 ]
 
+// Provider recovery intake is a non-inheriting stage: the named regional
+// Admin must perform it before the existing Coordinator → RM chain.
+const ADMIN_RECOVERY_PERMISSIONS: Permission[] = [
+  'view_role_account_recovery', 'intake_role_account_recovery',
+]
+
 const BACK_OFFICER_EXTRA: Permission[] = [
-  'suspend_user', 'force_logout_user', 'unlock_payout_method', 'view_session_recovery',
-  'resolve_session_recovery', 'view_emergency', 'resolve_welfare_check', 'view_disputes',
+  'suspend_user', 'force_logout_user', 'unlock_payout_method',
+  'view_emergency', 'resolve_welfare_check', 'view_disputes',
 ]
 
 // Coordinators are view-mostly within their vertical: no Payments module, no
@@ -272,7 +284,7 @@ const COORDINATOR_SHARED: Permission[] = [
   'view_dashboard', 'view_activity', 'view_live_map', 'view_analytics', 'view_reports',
   'view_revenue_report', 'view_pilot_report', 'view_verifications', 'validate_verification',
   'view_users', 'suspend_user', 'ban_user', 'force_logout_user', 'unlock_payout_method',
-  'view_session_recovery', 'resolve_session_recovery', 'view_disputes', 'resolve_dispute',
+  'view_disputes', 'resolve_dispute',
   'view_emergency', 'resolve_welfare_check', 'send_announcement',
   'view_promotions', 'manage_promotions', 'view_referrals',
 ]
@@ -293,7 +305,13 @@ const REGIONAL_MANAGER_PERMS = dedupe([
   'run_batch_payouts', 'escalate_clawback', 'write_off_clawback', 'view_ussd', 'manage_referrals', 'view_audit_logs',
 ])
 
-const DIRECTOR_PERMS = dedupe(ALL_PERMISSIONS.filter(p => p !== 'manage_admins' && p !== 'view_config'))
+const DIRECTOR_PERMS = dedupe(ALL_PERMISSIONS.filter(
+  p => p !== 'manage_admins' && p !== 'view_config' && p !== 'intake_role_account_recovery'
+))
+
+const PRODUCT_OWNER_PERMS = dedupe(
+  ALL_PERMISSIONS.filter(p => p !== 'intake_role_account_recovery')
+)
 
 const ACCOUNTANT_PERMS: Permission[] = dedupe([
   'view_dashboard', 'view_analytics', 'view_activity', 'view_reports', 'view_rides_report',
@@ -306,7 +324,7 @@ export const ROLE_DEFINITIONS: Record<Role, RoleDef> = {
     role: 'product_owner', level: 1, label: 'Product Owner',
     description: 'Full platform access including account and configuration management.',
     requiresRegion: false, requiresCategory: false, category: null, global: true,
-    permissions: [...ALL_PERMISSIONS],
+    permissions: PRODUCT_OWNER_PERMS,
   },
   director: {
     role: 'director', level: 2, label: 'Director of Business Operations',
@@ -348,7 +366,7 @@ export const ROLE_DEFINITIONS: Record<Role, RoleDef> = {
     role: 'admin', level: 6, label: 'Admin',
     description: 'Office work within one region. Checks each document for authenticity and integrity.',
     requiresRegion: true, requiresCategory: false, category: null, global: false,
-    permissions: dedupe(ADMIN_BASE),
+    permissions: dedupe([...ADMIN_BASE, ...ADMIN_RECOVERY_PERMISSIONS]),
   },
 }
 

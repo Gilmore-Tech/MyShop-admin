@@ -18,6 +18,7 @@ import {
   type HelpAudience,
   type HelpCategory,
 } from '@/lib/api'
+import { userSafeAdminError } from '@/lib/api-client'
 
 // Disable SSR for the markdown editor - it touches `window` on mount.
 // Cast preserves prop types that next/dynamic can otherwise drop.
@@ -112,7 +113,7 @@ export function ArticleForm({ mode, article, categories }: ArticleFormProps) {
         router.refresh()
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save article.')
+      setError(userSafeAdminError(err, 'Failed to save article.'))
       setSaving(false)
     }
   }

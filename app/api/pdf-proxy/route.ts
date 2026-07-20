@@ -1,26 +1,38 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'node:crypto'
 
 // Fetches a file from Cloudinary and re-serves it with Content-Disposition: inline
 // so the browser renders it instead of downloading it (Cloudinary sends attachment by default).
 export async function GET(req: NextRequest) {
+  const supportReference = randomUUID()
+  const textError = (status: number, message: string) =>
+    new NextResponse(`${message} Reference: ${supportReference}.`, {
+      status,
+      headers: { 'x-support-reference': supportReference },
+    })
   const url = req.nextUrl.searchParams.get('url')
   if (!url) {
-    return new NextResponse('Missing url parameter', { status: 400 })
+    return textError(400, 'A document URL is required.')
   }
 
   let parsed: URL
   try {
     parsed = new URL(url)
   } catch {
-    return new NextResponse(`Invalid URL: ${url}`, { status: 400 })
+    return textError(400, 'The document URL is invalid.')
   }
 
-  // Only allow Cloudinary delivery hostnames — block api.cloudinary.com (upload endpoint)
-  if (parsed.hostname !== 'res.cloudinary.com') {
-    return new NextResponse(
-      `URL not allowed. Expected res.cloudinary.com, got: ${parsed.hostname}`,
-      { status: 403 },
-    )
+  const isCloudinaryDelivery = parsed.hostname === 'res.cloudinary.com'
+  const isSignedPrivateDownload =
+    parsed.hostname === 'api.cloudinary.com' &&
+    /^\/v1_1\/[A-Za-z0-9_-]+\/(?:image|raw)\/download$/.test(parsed.pathname) &&
+    ['timestamp', 'public_id', 'type', 'signature', 'api_key'].every(key => parsed.searchParams.has(key))
+
+  // Permit only normal Cloudinary delivery URLs or the SDK's exact signed
+  // private-download route. Other API endpoints (including uploads) remain
+  // blocked so this server-side proxy cannot be repurposed.
+  if (!isCloudinaryDelivery && !isSignedPrivateDownload) {
+    return textError(403, 'This document host is not allowed.')
   }
 
   let upstream: Response
@@ -30,17 +42,20 @@ export async function GET(req: NextRequest) {
       headers: { 'User-Agent': 'MyShopAdmin/1.0' },
     })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return new NextResponse(`Failed to reach Cloudinary: ${msg}`, { status: 502 })
+    console.error('[pdf-proxy] upstream connection failed', {
+      kind: err instanceof Error ? err.name : typeof err,
+      supportReference,
+    })
+    return textError(502, 'The private document service could not be reached.')
   }
 
   if (!upstream.ok) {
-    const body = await upstream.text().catch(() => '')
-    console.error(`[pdf-proxy] Cloudinary ${upstream.status} for ${url}: ${body}`)
-    return new NextResponse(
-      `Cloudinary returned ${upstream.status} for this file. URL: ${url}`,
-      { status: upstream.status },
-    )
+    await upstream.body?.cancel().catch(() => undefined)
+    console.error('[pdf-proxy] upstream rejected document request', {
+      status: upstream.status,
+      supportReference,
+    })
+    return textError(upstream.status, 'The private document could not be loaded.')
   }
 
   const buffer = await upstream.arrayBuffer()
@@ -53,6 +68,7 @@ export async function GET(req: NextRequest) {
       'Content-Type': 'application/pdf',
       'Content-Disposition': 'inline',
       'Cache-Control': 'private, max-age=3600',
+      'x-support-reference': supportReference,
     },
   })
 }

@@ -11,7 +11,7 @@ import { useRole } from '@/hooks/use-role'
  * vertical's provider tab (rides → Drivers, artisan → Artisans) and is
  * redirected away from the other type's page. RM/global see both.
  */
-export function UserTabs({ active }: { active: 'all' | 'drivers' | 'artisans' }) {
+export function UserTabs({ active }: { active: 'clients' | 'drivers' | 'artisans' }) {
   const { category } = useRole()
   const router = useRouter()
   const pathname = usePathname()
@@ -27,7 +27,7 @@ export function UserTabs({ active }: { active: 'all' | 'drivers' | 'artisans' })
   return (
     <Tabs value={active} className="mb-6">
       <TabsList className="bg-white">
-        <TabsTrigger value="all" asChild><Link href="/users/clients">All Users</Link></TabsTrigger>
+        <TabsTrigger value="clients" asChild><Link href="/users/clients">Clients</Link></TabsTrigger>
         {showDrivers && <TabsTrigger value="drivers" asChild><Link href="/users/drivers">Drivers</Link></TabsTrigger>}
         {showArtisans && <TabsTrigger value="artisans" asChild><Link href="/users/artisans">Artisans</Link></TabsTrigger>}
       </TabsList>

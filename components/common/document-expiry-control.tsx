@@ -6,10 +6,9 @@ import { setDocumentExpiry, documentTypeTracksExpiry } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 
-// ── Date helpers (Ghana runs GMT year-round, so date-only string maths is safe) ─
+// ── Date helpers (the document-expiry contract is explicitly GMT) ─────────────
 function todayStr(): string {
-  const n = new Date()
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+  return new Date().toISOString().slice(0, 10)
 }
 
 // The backend returns expiresAt as a full ISO datetime; slice to YYYY-MM-DD for
@@ -24,7 +23,12 @@ function isPastDate(yyyyMmDd: string): boolean {
 }
 
 function formatExpiry(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
 }
 
 /**
@@ -134,7 +138,7 @@ export function DocumentExpiryControl({
       setConfirmingPast(false)
       setSavedFlash(true)
     } catch (err) {
-      const e = err as ApiError
+      const e = err instanceof ApiError ? err : null
       if (e?.status === 404 || e?.code === 'DOCUMENT_NOT_FOUND') {
         setError('This document is no longer the current version — refresh and try again.')
         onStale?.()

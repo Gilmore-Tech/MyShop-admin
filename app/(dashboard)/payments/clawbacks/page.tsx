@@ -4,15 +4,13 @@ import { useState, useEffect, useCallback } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
-import { AlertTriangle, Phone, ArrowUpRight, Loader2, ExternalLink, MessageSquare, Send, CheckCircle2 } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Loader2, ExternalLink } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
 import { PageHeader } from '@/components/common/page-header'
-import { listClawbacks, writeOffClawback, escalateClawback, sendSmsToUser, type AdminClawback } from '@/lib/api'
+import { listClawbacks, writeOffClawback, escalateClawback, type AdminClawback } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 
 const WRITEOFF_THRESHOLD = 10000 // GHS 100 in pesewas
@@ -33,12 +31,6 @@ function formatSource(source: string | null) {
     .split('_')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
-}
-
-function defaultReminderMessage(cb: AdminClawback) {
-  const name = cb.providerName?.trim() || 'there'
-  return `Hi ${name}, you have an outstanding MyShop balance of ${formatGhs(cb.outstandingPesewas)}. `
-    + `Please settle it via the MyShop app to avoid restrictions on your account. Thank you.`
 }
 
 function formatStatus(status: string) {
@@ -67,49 +59,6 @@ export default function ClawbacksPage() {
   const [error, setError] = useState('')
   const [actionId, setActionId] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
-
-  // Reminder SMS dialog state
-  const [remindFor, setRemindFor] = useState<AdminClawback | null>(null)
-  const [remindMessage, setRemindMessage] = useState('')
-  const [remindSending, setRemindSending] = useState(false)
-  const [remindError, setRemindError] = useState('')
-  const [remindSent, setRemindSent] = useState(false)
-
-  function openReminder(cb: AdminClawback) {
-    setRemindFor(cb)
-    setRemindMessage(defaultReminderMessage(cb))
-    setRemindError('')
-    setRemindSent(false)
-  }
-
-  function closeReminder() {
-    if (remindSending) return
-    setRemindFor(null)
-  }
-
-  async function handleSendReminder() {
-    if (!remindFor || !remindMessage.trim()) return
-    // SMS must target the provider's user-account id. `providerId` is the
-    // drivers/artisans row id and is rejected by the backend user lookup (404).
-    if (!remindFor.userId) {
-      setRemindError('No user account is linked to this provider yet, so a reminder can’t be sent. Use Contact to reach them.')
-      return
-    }
-    setRemindSending(true)
-    setRemindError('')
-    try {
-      const res = await sendSmsToUser(remindFor.userId, remindMessage.trim())
-      if (res.sent > 0) {
-        setRemindSent(true)
-      } else {
-        setRemindError(res.reason ?? 'The SMS could not be delivered. Please try again.')
-      }
-    } catch (err) {
-      setRemindError(err instanceof ApiError ? err.message : 'Failed to send the reminder.')
-    } finally {
-      setRemindSending(false)
-    }
-  }
 
   const load = useCallback(() => {
     setLoading(true)
@@ -177,8 +126,9 @@ export default function ClawbacksPage() {
         <TabsList className="bg-white">
           <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
           <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payouts</Link></TabsTrigger>
+          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
           <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
+          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -315,28 +265,6 @@ export default function ClawbacksPage() {
                         {cb.status === 'escalated' && (
                           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">Escalated</span>
                         )}
-                        <RoleGate permission="send_announcement">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7 gap-1"
-                            onClick={() => openReminder(cb)}
-                            title={cb.providerName ? `Send ${cb.providerName} an SMS reminder` : 'Send an SMS reminder'}
-                          >
-                            <MessageSquare className="h-3.5 w-3.5" /> Remind
-                          </Button>
-                        </RoleGate>
-                        <Button
-                          asChild
-                          size="sm"
-                          variant="ghost"
-                          className="text-xs h-7 gap-1"
-                          title={cb.providerName ? `Open ${cb.providerName}'s profile to recover phone` : 'Open provider profile'}
-                        >
-                          <Link href={`/users/drivers?search=${encodeURIComponent(cb.providerName ?? cb.providerId)}`}>
-                            <Phone className="h-3.5 w-3.5" /> Contact
-                          </Link>
-                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -354,58 +282,6 @@ export default function ClawbacksPage() {
         </div>
       </div>
 
-      <Dialog open={remindFor !== null} onOpenChange={o => { if (!o) closeReminder() }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold text-gray-900">Send debt reminder</DialogTitle>
-            <DialogDescription className="text-xs text-gray-400">
-              Sends an SMS to {remindFor?.providerName?.trim() || 'this provider'} about their outstanding balance of{' '}
-              {remindFor ? formatGhs(remindFor.outstandingPesewas) : ''}.
-            </DialogDescription>
-          </DialogHeader>
-
-          {remindSent ? (
-            <div className="flex flex-col items-center text-center py-6 gap-2">
-              <CheckCircle2 className="h-8 w-8 text-emerald-500" />
-              <p className="text-sm font-medium text-gray-900">Reminder sent</p>
-              <p className="text-xs text-gray-500">The SMS has been delivered to the provider.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <Textarea
-                value={remindMessage}
-                onChange={e => setRemindMessage(e.target.value)}
-                rows={5}
-                maxLength={320}
-                disabled={remindSending}
-                className="resize-none text-sm"
-                placeholder="Reminder message…"
-              />
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-gray-400">{remindMessage.length}/320 characters</p>
-                <p className="text-xs text-gray-400">Sent via SMS</p>
-              </div>
-              {remindError && (
-                <div className="bg-red-50 text-red-700 text-xs rounded-lg px-3 py-2">{remindError}</div>
-              )}
-            </div>
-          )}
-
-          <DialogFooter>
-            {remindSent ? (
-              <Button size="sm" onClick={closeReminder}>Done</Button>
-            ) : (
-              <>
-                <Button size="sm" variant="outline" onClick={closeReminder} disabled={remindSending}>Cancel</Button>
-                <Button size="sm" className="gap-1" onClick={handleSendReminder} disabled={remindSending || !remindMessage.trim()}>
-                  {remindSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                  Send reminder
-                </Button>
-              </>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   </PageGuard>
   )

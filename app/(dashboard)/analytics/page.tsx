@@ -15,12 +15,13 @@ import {
  type PieLabelRenderProps,
 } from 'recharts'
 import {
- getRevenueReport, getProviderReport, getOverviewReport, listUsers,
+ getRevenueReport, getProviderReport, getOverviewReport,
  getRideStatusReport, getJobCategoryReport, getPaymentReport, getDisputeRateReport,
  type RevenueDataPoint, type ProviderReport, type OverviewReport,
  type RideStatusBreakdown, type JobCategoryCount, type PaymentReport, type DisputeRatePoint,
 } from '@/lib/api'
 import { formatDayShort } from '@/lib/format-date'
+import { safeAdminErrorDiagnostic } from '@/lib/api-client'
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 const C = {
@@ -117,7 +118,6 @@ export default function AnalyticsPage() {
  const [jobCats, setJobCats] = useState<JobCategoryCount[] | null>(null)
  const [paymentRpt, setPaymentRpt] = useState<PaymentReport | null>(null)
  const [disputeRts, setDisputeRts] = useState<DisputeRatePoint[] | null>(null)
- const [userTotal, setUserTotal] = useState<number | null>(null)
 
  useEffect(() => {
  const groupBy = range ==='3 months' ?'week' :'day'
@@ -128,8 +128,7 @@ export default function AnalyticsPage() {
 
  const trace = <T,>(label: string, p: Promise<T>) =>
  p.catch((err: unknown) => {
- const e = err as { status?: number; code?: string; message?: string }
- console.error(`[analytics] ${label} failed`, { status: e?.status, code: e?.code, message: e?.message, error: err })
+ console.error(`[analytics] ${label} failed`, safeAdminErrorDiagnostic(err))
  return null
  })
 
@@ -141,8 +140,7 @@ export default function AnalyticsPage() {
  trace('jobs/cats',     getJobCategoryReport(dateParams)),
  trace('payments',      getPaymentReport(dateParams)),
  trace('disputes/rate', getDisputeRateReport(dateParams)),
- trace('users',         listUsers({ limit: 1 })),
- ]).then(([rev, prov, ov, rs, jc, pr, dr, users]) => {
+ ]).then(([rev, prov, ov, rs, jc, pr, dr]) => {
  if (rev) setRevenue(rev.periods ?? [])
  if (prov) setProviders(prov)
  if (ov) setOverview(ov)
@@ -150,7 +148,6 @@ export default function AnalyticsPage() {
  setJobCats(Array.isArray(jc) ? jc : jc ? [] : null)
  setPaymentRpt(pr)
  setDisputeRts(Array.isArray(dr) ? dr : dr ? [] : null)
- setUserTotal(users?.total ?? null)
  })
  }, [range])
 
@@ -159,10 +156,10 @@ export default function AnalyticsPage() {
  const totalCommGhs  = revenueData.reduce((s, d) => s + d.commissionGhs, 0)
  const totalPayments = revenueData.reduce((s, d) => s + d.totalPayments, 0)
  const avgBookingGhs = totalPayments > 0 ? Math.round(totalRevGhs / totalPayments) : 0
- // Distinct account count from /admin/users. Summing role counts double-counts
- // users who hold more than one role (e.g. a client who is also a driver).
+ // Client, driver, and artisan are intentionally separate role accounts, even
+ // when they share a private phone-auth identity.
  const roleSum    = (overview?.registeredClients ?? 0) + (overview?.registeredDrivers ?? 0) + (overview?.registeredArtisans ?? 0)
- const totalUsers = userTotal ?? roleSum
+ const totalUsers = roleSum
 
  // ── Derived: Revenue area chart ────────────────────────────────────────────
  const revenueArea = revenueData.map(d => ({
@@ -370,7 +367,7 @@ export default function AnalyticsPage() {
  {/* ── KPI strip ─────────────────────────────────────────────────────── */}
  <div className="grid grid-cols-5 gap-3">
  <KpiCard label="Total Collections" value={`GHS ${totalRevGhs.toLocaleString()}`} sub="Gross collected" icon={TrendingUp} />
- <KpiCard label="Commission Earned" value={`GHS ${totalCommGhs.toLocaleString()}`} sub="20% platform cut" icon={CreditCard} />
+ <KpiCard label="Commission Earned" value={`GHS ${totalCommGhs.toLocaleString()}`} sub="Recorded across completed payments" icon={CreditCard} />
  <KpiCard label="Total Payments" value={totalPayments.toLocaleString()} sub="Payment transactions" icon={Repeat2} />
  <KpiCard label="Avg Transaction" value={`GHS ${avgBookingGhs}`} sub="Per payment" icon={TrendingUp} />
  <KpiCard label="Registered Users" value={totalUsers.toLocaleString()} sub="Distinct accounts" icon={Users} />

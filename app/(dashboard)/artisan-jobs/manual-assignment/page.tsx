@@ -21,7 +21,7 @@ import {
   getUnassignedJobs, lockJob, assignJob, deleteJob, searchArtisans, getAllConfig,
   type UnassignedJob, type ArtisanSearchResult,
 } from '@/lib/api'
-import { ApiError, FEATURES } from '@/lib/api-client'
+import { ApiError, FEATURES, safeAdminErrorDiagnostic } from '@/lib/api-client'
 import { annotateDistancesFromLiveMap } from '@/lib/distance'
 
 // Manual assignment only kicks in once the artisan bid window has elapsed without
@@ -219,13 +219,15 @@ export default function ManualAssignmentPage() {
       const dropped = res.jobs.filter(j => !isAdminAssignable(j))
       if (dropped.length > 0) {
         console.warn(
-          `[manual-assignment] backend returned ${dropped.length} job(s) that should have been filtered — dropping client-side`,
-          dropped.map(j => ({ id: j.id, status: j.status, bidCount: j.bidCount, lockedBy: j.adminLock?.lockedBy ?? null })),
+          `[manual-assignment] backend returned ${dropped.length} ineligible job(s); dropped client-side`,
         )
       }
       setAllJobs(res.jobs.filter(isAdminAssignable))
     } catch (err) {
-      console.error('[manual-assignment] getUnassignedJobs failed', err)
+      console.error(
+        '[manual-assignment] getUnassignedJobs failed',
+        safeAdminErrorDiagnostic(err),
+      )
       setAllJobs([])
     } finally {
       setLoadingJobs(false)
@@ -253,7 +255,10 @@ export default function ManualAssignmentPage() {
           setRadiusKm(radiusParsed)
         }
       })
-      .catch(err => console.warn('[manual-assignment] could not load platform config — using defaults', err))
+      .catch(err => console.warn(
+        '[manual-assignment] could not load platform config; using defaults',
+        safeAdminErrorDiagnostic(err),
+      ))
     return () => { cancelled = true }
   }, [])
 
@@ -353,8 +358,8 @@ export default function ManualAssignmentPage() {
     try {
       await lockJob(selectedJob.id)
     } catch (e: unknown) {
-      const msg = e instanceof ApiError ? e.message : ''
-      setError(msg.includes('LOCKED') ? 'Another admin locked this job. Try again.' : 'Could not lock job. Please try again.')
+      const code = e instanceof ApiError ? e.code : ''
+      setError(code === 'JOB_LOCKED_BY_ANOTHER_ADMIN' ? 'Another admin locked this job. Try again.' : 'Could not lock job. Please try again.')
       setAssigning(null)
       return
     }
@@ -369,9 +374,9 @@ export default function ManualAssignmentPage() {
       setAllJobs(prev => prev.filter(j => j.id !== selectedJob.id))
       // selectedJobId clears via the auto-select effect once `jobs` updates.
     } catch (e: unknown) {
-      const msg = e instanceof ApiError ? e.message : ''
-      if (msg.includes('LOCK_NOT_HELD')) setError('Lock expired - please try again.')
-      else if (msg.includes('ARTISAN_NOT_FOUND')) setError('Artisan is no longer eligible. Refresh and try another.')
+      const code = e instanceof ApiError ? e.code : ''
+      if (code === 'LOCK_NOT_HELD') setError('Lock expired - please try again.')
+      else if (code === 'ARTISAN_NOT_FOUND') setError('Artisan is no longer eligible. Refresh and try another.')
       else setError('Assignment failed. Please try again.')
     } finally {
       setAssigning(null)
@@ -399,10 +404,10 @@ export default function ManualAssignmentPage() {
       setAllJobs(prev => prev.filter(j => j.id !== selectedJob.id))
       setDeleteOpen(false)
     } catch (e: unknown) {
-      const msg = e instanceof ApiError ? e.message : ''
-      if (msg.includes('JOB_NOT_DELETABLE')) {
+      const code = e instanceof ApiError ? e.code : ''
+      if (code === 'JOB_NOT_DELETABLE') {
         setDeleteError('This job is active or in-progress - force-complete or cancel it first.')
-      } else if (msg.includes('JOB_NOT_FOUND')) {
+      } else if (code === 'JOB_NOT_FOUND') {
         setDeleteError('Job no longer exists. Refreshing the queue.')
         setAllJobs(prev => prev.filter(j => j.id !== selectedJob.id))
       } else {

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { getOverviewReport, getEmergencyAlerts, getClientKycQueue, getUnassignedJobs, getHighBidQueue, listSessionRecoveryRequests } from '@/lib/api'
+import { getOverviewReport, getEmergencyAlerts, getClientKycQueue, getUnassignedJobs, getHighBidQueue, listSessionRecoveryRequests, listRoleAccountRecoveryRequests } from '@/lib/api'
 import { FEATURES } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
@@ -132,6 +132,20 @@ function NavLink({ item, can, userCategory }: { item: NavItem; can: (p: Permissi
 
 export default function AppSidebar() {
   const { can, isSuperAdmin, role, region, category, permissions } = useRole()
+  const hasGlobalRecoveryRole =
+    ['product_owner', 'director', 'super_admin', 'ops_admin'].includes(String(role)) &&
+    region.id === null &&
+    category === null
+  const canViewRecovery = permissions?.includes('view_session_recovery') === true
+  const isRoleRecoveryAuthority =
+    ((['product_owner', 'director', 'super_admin', 'ops_admin'].includes(String(role)) &&
+      region.id === null &&
+      category === null &&
+      permissions?.includes('resolve_client_role_account_recovery') === true) ||
+      (role === 'admin' &&
+        region.id !== null &&
+        category === null &&
+        permissions?.includes('intake_role_account_recovery') === true))
   const [pendingVerifications, setPendingVerifications] = useState<number | null>(null)
   const [openDisputes, setOpenDisputes] = useState<number | null>(null)
   const [unacknowledgedEmergencies, setUnacknowledgedEmergencies] = useState<number | null>(null)
@@ -139,6 +153,7 @@ export default function AppSidebar() {
   const [unassignedJobsCount, setUnassignedJobsCount] = useState<number | null>(null)
   const [highBidCount, setHighBidCount] = useState<number | null>(null)
   const [pendingRecoveryCount, setPendingRecoveryCount] = useState<number | null>(null)
+  const [pendingRoleRecoveryCount, setPendingRoleRecoveryCount] = useState<number | null>(null)
 
   useEffect(() => {
     function loadCounts() {
@@ -162,15 +177,30 @@ export default function AppSidebar() {
           .then(bids => setHighBidCount(bids.length))
           .catch(() => {})
       }
-      listSessionRecoveryRequests({ status: 'pending', limit: 1 })
-        .then(res => setPendingRecoveryCount(res.total))
-        .catch(() => {})
+      if (
+        FEATURES.sessionRecovery &&
+        hasGlobalRecoveryRole &&
+        canViewRecovery
+      ) {
+        listSessionRecoveryRequests({ status: 'pending', limit: 1 })
+          .then(res => setPendingRecoveryCount(res.total))
+          .catch(() => {})
+      }
+      if (FEATURES.roleAccountRecovery && isRoleRecoveryAuthority) {
+        listRoleAccountRecoveryRequests({
+          status:
+            role === 'admin' ? 'pending_admin_intake' : 'pending_operations',
+          limit: 1,
+        })
+          .then(res => setPendingRoleRecoveryCount(res.total))
+          .catch(() => {})
+      }
     }
     loadCounts()
     if (AUTO_REFRESH_DISABLED) return
     const id = setInterval(loadCounts, 60_000)
     return () => clearInterval(id)
-  }, [])
+  }, [canViewRecovery, hasGlobalRecoveryRole, isRoleRecoveryAuthority, role])
 
   // Sidebar is organised into labelled sections; multi-page areas collapse into groups.
   const navSections: { label: string; items: NavItem[] }[] = [
@@ -218,8 +248,9 @@ export default function AppSidebar() {
           children: [
             { title: 'Transactions',  href: '/payments/transactions', permission: 'view_payments' },
             { title: 'Revenue',       href: '/payments/revenue',      permission: 'view_payments' },
-            { title: 'Batch Payouts', href: '/payments/batch-payouts', permission: 'run_batch_payouts' },
+            { title: 'Batch Payout History', href: '/payments/batch-payouts', permission: 'view_payments' },
             { title: 'Clawbacks',     href: '/payments/clawbacks',    permission: 'view_payments' },
+            { title: 'Webhook Failures', href: '/payments/webhook-failures', permission: 'view_payments' },
           ],
         },
       ],
@@ -231,9 +262,15 @@ export default function AppSidebar() {
           title: 'Verifications', href: '/verifications', icon: BadgeCheck,
           children: [
             { title: 'Verification Queue', href: '/verifications',           permission: 'view_verifications',    badge: pendingVerifications ?? undefined },
+            { title: 'Vehicle Queue',      href: '/verifications/vehicles',  permission: 'view_verifications', category: 'rides' },
             { title: 'Client KYC Queue',   href: '/users/clients/kyc-queue',  permission: 'view_verifications',    badge: pendingClientKyc ?? undefined },
             { title: 'Cancellation Suspensions', href: '/suspensions',        permission: 'view_users' },
-            { title: 'Account Recovery',   href: '/account-recovery',         permission: 'view_session_recovery', badge: pendingRecoveryCount ?? undefined },
+            ...(FEATURES.sessionRecovery && hasGlobalRecoveryRole
+              ? [{ title: 'Device Session Recovery', href: '/account-recovery', permission: 'view_session_recovery' as const, badge: pendingRecoveryCount ?? undefined }]
+              : []),
+            ...(FEATURES.roleAccountRecovery && isRoleRecoveryAuthority
+              ? [{ title: 'Deleted Role Recovery', href: '/role-account-recovery', permission: 'view_role_account_recovery' as const, badge: pendingRoleRecoveryCount ?? undefined }]
+              : []),
           ],
         },
         { title: 'Disputes & Incidents', href: '/disputes', icon: Scale, permission: 'view_disputes', badge: openDisputes ?? undefined },

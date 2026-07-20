@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'node:crypto'
 
 const ARKESEL_KEY   = process.env.ARKESEL_API_KEY!
 const ARKESEL_FROM  = process.env.ARKESEL_SENDER_ID ?? 'MyShop'
@@ -6,25 +7,40 @@ const ARKESEL_URL   = 'https://sms.arkesel.com/api/v2/sms/send'
 const BACKEND_BASE  = process.env.NEXT_PUBLIC_API_URL ?? 'https://myshop-api-2hy2.onrender.com/v1'
 
 export type SmsAudience = 'all_users' | 'clients' | 'drivers' | 'artisans'
+type RoleAccountRole = 'client' | 'driver' | 'artisan'
 
-// Maps audience label → backend role query param
-const ROLE_MAP: Record<SmsAudience, string | undefined> = {
-  all_users: undefined,
-  clients:   'client',
-  drivers:   'driver',
-  artisans:  'artisan',
+// Every list request names one exact public role. An all-user broadcast performs
+// three isolated reads and deduplicates phone numbers without loading a shared
+// identity record.
+const ROLE_MAP: Record<SmsAudience, readonly RoleAccountRole[]> = {
+  all_users: ['client', 'driver', 'artisan'],
+  clients:   ['client'],
+  drivers:   ['driver'],
+  artisans:  ['artisan'],
+}
+
+// The Arkesel route runs in Next.js, outside Nest's guards. Ask a harmless
+// backend endpoint protected by the same permission to validate both the JWT
+// and the current database-backed `send_announcement` grant before spending.
+async function authorizeAnnouncement(token: string): Promise<Response> {
+  return fetch(`${BACKEND_BASE}/admin/announcements/history`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  })
 }
 
 // ── Fetch all phone numbers from NestJS backend for a given role ──────────────
 
-async function fetchPhones(role: string | undefined, token: string): Promise<string[]> {
+async function fetchPhones(role: RoleAccountRole, token: string): Promise<string[]> {
   const phones: string[] = []
   let page = 1
   const limit = 500
 
   while (true) {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) })
-    if (role) params.set('role', role)
+    params.set('role', role)
 
     const res = await fetch(`${BACKEND_BASE}/admin/users?${params}`, {
       headers: {
@@ -54,26 +70,6 @@ async function fetchPhones(role: string | undefined, token: string): Promise<str
   return phones
 }
 
-// ── Fetch a single user's phone from the NestJS backend ───────────────────────
-
-async function fetchPhoneForUser(userId: string, token: string): Promise<string | null> {
-  const res = await fetch(`${BACKEND_BASE}/admin/users/${userId}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!res.ok) {
-    throw new Error(`Backend returned ${res.status} while fetching user`)
-  }
-
-  const body = await res.json()
-  // NestJS TransformInterceptor wraps in { success, data, meta }
-  const data = body?.data ?? body
-  return data?.phone ?? null
-}
-
 // Normalises a Ghana phone number to the format Arkesel expects: 233XXXXXXXXX
 // (international, no leading + or 0). Returns null if it can't be made valid.
 function normalisePhone(raw: string): string | null {
@@ -89,6 +85,7 @@ function normalisePhone(raw: string): string | null {
 async function sendArkeselBatch(
   recipients: string[],
   message: string,
+  supportReference: string,
 ): Promise<{ sent: number; failed: number; reason?: string }> {
   const BATCH = 100
   let sent = 0
@@ -123,8 +120,13 @@ async function sendArkeselBatch(
     })
 
     const rawBody = await res.text()
-    let result: any = null
-    try { result = JSON.parse(rawBody) } catch { /* non-JSON error page */ }
+    let result: Record<string, unknown> | null = null
+    try {
+      const parsed: unknown = JSON.parse(rawBody)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        result = parsed as Record<string, unknown>
+      }
+    } catch { /* non-JSON error page */ }
 
     // Arkesel v2 signals batch-level acceptance via top-level status/code, NOT a
     // per-recipient `status` field. Treat the batch as accepted when the API says so.
@@ -136,12 +138,12 @@ async function sendArkeselBatch(
       sent += batch.length
     } else {
       failed += batch.length
-      reason =
-        result?.message ??
-        result?.status ??
-        `Arkesel rejected the send (HTTP ${res.status}).`
-      // Surface the real reason in server logs — never logs the phone numbers.
-      console.error('[SMS route] Arkesel send failed:', res.status, rawBody.slice(0, 300))
+      reason = `The SMS provider did not accept this batch (HTTP ${res.status}).`
+      console.error('[SMS route] carrier batch rejected', {
+        status: res.status,
+        structuredResponse: result !== null,
+        supportReference,
+      })
     }
   }
 
@@ -151,65 +153,88 @@ async function sendArkeselBatch(
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  const supportReference = randomUUID()
+  const errorResponse = (status: number, code: string, message: string) =>
+    NextResponse.json(
+      { success: false, error: { code, message, supportReference } },
+      { status, headers: { 'x-support-reference': supportReference } },
+    )
   try {
-    const { audience, userId, message } = (await req.json()) as {
+    const { audience, message } = (await req.json()) as {
       audience?: SmsAudience
-      userId?: string
       message: string
     }
 
     if (!message?.trim()) {
-      return NextResponse.json({ error: 'message is required' }, { status: 400 })
+      return errorResponse(400, 'MESSAGE_REQUIRED', 'Enter an announcement message.')
     }
 
-    // Either a single-recipient send (userId) or an audience broadcast is required.
-    if (!userId && !audience) {
-      return NextResponse.json({ error: 'userId or audience is required' }, { status: 400 })
+    if (!audience) {
+      return errorResponse(400, 'AUDIENCE_REQUIRED', 'Select an announcement audience.')
     }
 
     if (audience && !Object.keys(ROLE_MAP).includes(audience)) {
-      return NextResponse.json({ error: `Invalid audience: ${audience}` }, { status: 400 })
+      return errorResponse(400, 'INVALID_AUDIENCE', 'Select a valid announcement audience.')
     }
 
     if (!ARKESEL_KEY) {
-      return NextResponse.json({ error: 'Arkesel API key not configured on server' }, { status: 500 })
+      console.error('[SMS route] carrier configuration unavailable', { supportReference })
+      return errorResponse(503, 'SMS_SERVICE_UNAVAILABLE', 'The SMS service is temporarily unavailable.')
     }
 
     // Extract admin JWT from the incoming request
     const authHeader = req.headers.get('authorization') ?? ''
     const token = authHeader.replace(/^Bearer\s+/i, '')
     if (!token) {
-      return NextResponse.json({ error: 'Unauthorized — no admin token' }, { status: 401 })
+      return errorResponse(401, 'ADMIN_SESSION_REQUIRED', 'Sign in before sending announcements.')
     }
 
-    // 1. Resolve recipient phone numbers server-side (never exposed to the browser)
-    let phones: string[]
-    if (userId) {
-      const phone = await fetchPhoneForUser(userId, token)
-      if (!phone) {
-        return NextResponse.json({ error: 'No phone number on file for this provider' }, { status: 404 })
-      }
-      phones = [phone]
-    } else {
-      phones = await fetchPhones(ROLE_MAP[audience!], token)
-      if (phones.length === 0) {
-        return NextResponse.json({ error: 'No phone numbers found for the selected audience' }, { status: 404 })
-      }
+    const authorization = await authorizeAnnouncement(token)
+    if (!authorization.ok) {
+      const status = authorization.status === 401 || authorization.status === 403
+        ? authorization.status
+        : 502
+      return errorResponse(
+        status,
+        status === 403 ? 'OUT_OF_SCOPE' : status === 401 ? 'ADMIN_SESSION_INVALID' : 'AUTHORIZATION_UNAVAILABLE',
+        status === 403
+          ? 'You do not have permission to send announcements.'
+          : status === 401
+            ? 'Admin session is no longer valid.'
+            : 'Unable to verify announcement permission with the backend.',
+      )
+    }
+
+    // Resolve recipients through exact role-account lists only. A phone number
+    // shared by multiple role accounts receives one copy of a broad broadcast.
+    const roleResults = await Promise.all(ROLE_MAP[audience].map(role => fetchPhones(role, token)))
+    const phones = [...new Set(roleResults.flat())]
+    if (phones.length === 0) {
+      return errorResponse(404, 'AUDIENCE_EMPTY', 'No valid recipients were found for this audience.')
     }
 
     // 2. Send via Arkesel
-    const { sent, failed, reason } = await sendArkeselBatch(phones, message.trim())
+    const { sent, failed, reason } = await sendArkeselBatch(
+      phones,
+      message.trim(),
+      supportReference,
+    )
 
-    return NextResponse.json({
-      success: true,
-      total: phones.length,
-      sent,
-      failed,
-      ...(failed > 0 && reason ? { reason } : {}),
-    })
+    return NextResponse.json(
+      {
+        success: true,
+        total: phones.length,
+        sent,
+        failed,
+        ...(failed > 0 && reason ? { reason } : {}),
+      },
+      { headers: { 'x-support-reference': supportReference } },
+    )
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    console.error('[SMS route]', message)
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error('[SMS route] unexpected failure', {
+      kind: err instanceof Error ? err.name : typeof err,
+      supportReference,
+    })
+    return errorResponse(500, 'SMS_SEND_FAILED', 'The announcement could not be sent. Try again.')
   }
 }

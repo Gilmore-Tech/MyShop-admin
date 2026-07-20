@@ -4,13 +4,14 @@ import { useState, useEffect, useCallback } from 'react'
 import { Loader2, AlertTriangle, Coins, UserPlus, UserCheck, Hash } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
-import { getUserReferrals, type UserReferralFunnel, type ReferralListItem } from '@/lib/api'
+import { getUserReferrals, type UserReferralFunnel, type ReferralListItem, type RoleAccountRole } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatDate } from '@/lib/format-date'
 import { ReferralStatusBadge, RoleChips, formatPoints } from './referral-shared'
 
 export interface DrilldownTarget {
-  userId: string
+  role: RoleAccountRole
+  roleAccountId: string
   name: string | null
 }
 
@@ -23,7 +24,7 @@ function PersonRow({ item, side }: { item: ReferralListItem; side: 'referrer' | 
       <div className="min-w-0">
         <p className="text-sm font-medium text-gray-900 truncate">{person.fullName ?? 'Unknown user'}</p>
         <p className="text-xs text-gray-400">{person.phone ?? '—'}</p>
-        <div className="mt-1"><RoleChips roles={person.roles} /></div>
+        <div className="mt-1"><RoleChips roles={[person.role]} /></div>
       </div>
       <div className="flex flex-col items-end gap-1 shrink-0">
         <ReferralStatusBadge awarded={item.bonusAwarded} />
@@ -45,13 +46,14 @@ export function ReferralUserSheet({ target, onClose }: { target: DrilldownTarget
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const userId = target?.userId ?? null
+  const role = target?.role ?? null
+  const roleAccountId = target?.roleAccountId ?? null
 
   const load = useCallback(() => {
-    if (!userId) return
+    if (!role || !roleAccountId) return
     setLoading(true)
     setError(null)
-    getUserReferrals(userId)
+    getUserReferrals(role, roleAccountId)
       .then(setData)
       .catch(err => {
         setData(null)
@@ -60,12 +62,12 @@ export function ReferralUserSheet({ target, onClose }: { target: DrilldownTarget
           : 'Failed to load the referral funnel.')
       })
       .finally(() => setLoading(false))
-  }, [userId])
+  }, [role, roleAccountId])
 
   useEffect(() => {
-    if (userId) load()
+    if (role && roleAccountId) load()
     else setData(null)
-  }, [userId, load])
+  }, [role, roleAccountId, load])
 
   const made = data?.referralsMade ?? []
   const awardedMade = made.filter(r => r.bonusAwarded).length
@@ -78,7 +80,7 @@ export function ReferralUserSheet({ target, onClose }: { target: DrilldownTarget
             {target?.name?.trim() || 'Referral funnel'}
           </SheetTitle>
           <SheetDescription className="text-xs text-gray-400">
-            Full referral activity for this user identity (shared across all roles).
+            Referral activity for this exact {target?.role} account only.
           </SheetDescription>
         </SheetHeader>
 
@@ -110,7 +112,7 @@ export function ReferralUserSheet({ target, onClose }: { target: DrilldownTarget
                     <Coins className="h-3 w-3" /> Points
                   </div>
                   <p className="text-sm font-semibold text-amber-700 mt-0.5">
-                    {data.loyaltyPointsBalance.toLocaleString('en-GH')}
+                    {data.loyaltyPointsBalance == null ? 'Unavailable' : data.loyaltyPointsBalance.toLocaleString('en-GH')}
                   </p>
                 </div>
               </div>

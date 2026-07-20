@@ -220,12 +220,31 @@ actions by `RoleGate`; the backend re-checks every mutating endpoint.
 | PATCH  | `/v1/admin/users/:id/suspend` | L1, L2, L3     | Suspend user with reason            | ✅     |
 | PATCH  | `/v1/admin/users/:id/ban`     | L1             | Permanent ban (soft delete)         | ✅     |
 | PATCH  | `/v1/admin/users/:id`         | L1, L2, L3     | Reinstate (status→active) / update name+email | ⬜ |
+| PATCH  | `/v1/admin/users/:id/driver-profile`  | `edit_provider_profile` | Edit driver profile — incl. **Vehicle & Licence** | ✅ |
+| PATCH  | `/v1/admin/users/:id/artisan-profile` | `edit_provider_profile` | Edit artisan profile              | ✅ |
 
 **DTOs:**
 
 - `SuspendUserDto`: `reason` (5–1000 chars, required)
 - `BanUserDto`: `reason` (5–1000 chars, required)
 - `UpdateUserDto` *(pending)*: `status` (optional, e.g. `'active'`), `fullName` (optional), `email` (optional), `reason` (optional)
+- `AdminUpdateDriverProfileDto` — all optional; send only changed fields (empty payload → `400 NO_UPDATE_FIELDS`):
+  - Profile: `legalName`, `email`, `displayName`, `profilePhotoUrl`, `serviceRadiusKm` (1–100)
+  - **Vehicle:** `vehicleMake`, `vehicleModel`, `vehicleYear` (int 1990–2100), `vehiclePlate`, `vehicleColor`
+  - **Licence:** `licenceNumber`, `licenceExpiry` (ISO date string)
+  - `reason` (optional, ≤1000 chars — recorded in the audit log)
+
+**Provider Profile Editing (Vehicle & Licence):**
+
+- UI lives in `components/users/edit-provider-profile-dialog.tsx`, opened from the driver
+  detail sheet's "Driver Details → Edit" action. Gated behind `edit_provider_profile`
+  (Regional Manager carries this); backend additionally enforces region/category scope.
+- Pre-fills from the expanded `driver` object on `GET /admin/users/:id`; submits only the
+  fields the admin actually changed. `vehicleYear` validated client-side as an integer in
+  1990–2100; `licenceExpiry` emitted as a `yyyy-MM-dd` ISO date.
+- Error codes surfaced with friendly copy: `NO_UPDATE_FIELDS`, `OUT_OF_SCOPE`
+  ("outside your region/category scope"), `EMAIL_ALREADY_EXISTS`, `PROVIDER_NOT_FOUND`.
+- On success, the sheet re-fetches `getUser(id)` and refreshes in place.
 
 **Business Rules:**
 
@@ -526,6 +545,7 @@ Engagement. Page degrades gracefully (404 → "not yet available") until the rou
 | ----------------------- | ---------------------------------------------------- |
 | `user-profile-sheet.tsx`| Slide-in panel for user detail, inline edit, actions |
 | `create-user-dialog.tsx`| Modal form to create a new platform user             |
+| `edit-provider-profile-dialog.tsx`| Edit driver/artisan profile — incl. Vehicle & Licence, `edit_provider_profile` gated |
 
 ### Proxy (`app/api/proxy/[...path]/route.ts`)
 

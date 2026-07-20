@@ -228,7 +228,7 @@ export default function SystemSettingsPage() {
       await Promise.all(
         changedKeys.map(k => {
           const val = settings[k]
-          return updateConfig(k, typeof val === 'boolean' ? (val ? '1' : '0') : String(val))
+          return updateConfig(k, String(val))
         })
       )
       setSaved({ ...settings }); setSaveSuccess(true)
