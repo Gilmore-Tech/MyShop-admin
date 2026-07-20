@@ -11,6 +11,7 @@ import {
   type VehicleLifecycleState,
 } from '../lib/vehicle-lifecycle.ts'
 import { parseAdminVehicleList } from '../lib/vehicle-contract.ts'
+import { legacyVehicleCreateValidationError } from '../lib/legacy-vehicle-migration.ts'
 
 const approvedWithRevision: VehicleLifecycleState = {
   approvalStatus: 'approved',
@@ -136,5 +137,27 @@ test('strict admin parser rejects unknown lifecycle state', () => {
   assert.throws(
     () => parseAdminVehicleList([{ ...vehicleFixture, approvalStatus: 'active' }]),
     /Invalid vehicle approval status/,
+  )
+})
+
+test('existing-target document binding ignores disabled create-only fields and categories', () => {
+  assert.equal(
+    legacyVehicleCreateValidationError(
+      { make: '', model: '', year: 0, plate: '', color: '', rideCategoryIds: [] },
+      'vehicle-1',
+      2027,
+    ),
+    null,
+  )
+})
+
+test('new vehicle migration still requires complete fields and a category', () => {
+  assert.match(
+    legacyVehicleCreateValidationError(
+      { make: 'Toyota', model: 'Corolla', year: 2024, plate: 'GR-1', color: 'Silver', rideCategoryIds: [] },
+      null,
+      2027,
+    ) ?? '',
+    /select at least one category/,
   )
 })

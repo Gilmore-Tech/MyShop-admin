@@ -202,6 +202,7 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   DOCUMENTS_NOT_APPROVED: 'Every required document must be independently approved.',
   DOCUMENT_EXPIRED: 'A required document has expired.',
   DOCUMENT_NOT_FOUND: 'This document is no longer available. Reload and try again.',
+  DOCUMENT_VEHICLE_BINDING_REQUIRED: 'Bind this retained document to the exact vehicle before setting its expiry date.',
   EXPIRY_REQUIRED: 'Enter the document expiry date.',
   INVALID_EXPIRY_DATE: 'Enter a valid document expiry date.',
   FILE_TOO_LARGE: 'The selected file is too large.',

@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { useRole } from '@/hooks/use-role'
 import { getRideCategories, type RideCategory } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { legacyVehicleCreateValidationError } from '@/lib/legacy-vehicle-migration'
 import {
   coordinatorApproveAdminVehicle,
   editAdminVehicle,
@@ -232,13 +233,13 @@ export default function VehicleVerificationPage() {
       setMigrationError('Select the exact existing vehicle that owns these retained documents.')
       return
     }
-    if (
-      !migrationDraft.make.trim() || !migrationDraft.model.trim() || !migrationDraft.color.trim()
-      || plate.length < 2 || plate.length > 32 || !plate.replace(/[^A-Z0-9]/g, '')
-      || !Number.isInteger(migrationDraft.year) || migrationDraft.year < 1 || migrationDraft.year > maxVehicleYear
-      || migrationDraft.rideCategoryIds.length === 0
-    ) {
-      setMigrationError(`Complete every vehicle field, use a year from 1 to ${maxVehicleYear}, and select at least one category.`)
+    const createValidationError = legacyVehicleCreateValidationError(
+      migrationDraft,
+      migrationTargetVehicleId,
+      maxVehicleYear,
+    )
+    if (createValidationError) {
+      setMigrationError(createValidationError)
       return
     }
     if (
@@ -255,19 +256,25 @@ export default function VehicleVerificationPage() {
     setMigrationBusy(true)
     setMigrationError('')
     try {
-      await migrateLegacyVehicle(migrationCandidate.driverId, {
-        ...migrationDraft,
-        ...(migrationTargetVehicleId ? { targetVehicleId: migrationTargetVehicleId } : {}),
-        make: migrationDraft.make.trim(),
-        model: migrationDraft.model.trim(),
-        plate,
-        color: migrationDraft.color.trim(),
-        documentIds: selectedDocumentIds,
-        ownershipConfirmed: true,
-        reason: migrationTargetVehicleId
-          ? 'Admin-confirmed binding of retained documents to an existing vehicle'
-          : 'Admin-confirmed migration of existing driver vehicle data',
-      })
+      if (migrationTargetVehicleId) {
+        await migrateLegacyVehicle(migrationCandidate.driverId, {
+          targetVehicleId: migrationTargetVehicleId,
+          documentIds: selectedDocumentIds,
+          ownershipConfirmed: true,
+          reason: 'Admin-confirmed binding of retained documents to an existing vehicle',
+        })
+      } else {
+        await migrateLegacyVehicle(migrationCandidate.driverId, {
+          ...migrationDraft,
+          make: migrationDraft.make.trim(),
+          model: migrationDraft.model.trim(),
+          plate,
+          color: migrationDraft.color.trim(),
+          documentIds: selectedDocumentIds,
+          ownershipConfirmed: true,
+          reason: 'Admin-confirmed migration of existing driver vehicle data',
+        })
+      }
       setMigrationOpen(false)
       setMigrationCandidate(null)
       await load()
