@@ -3,7 +3,13 @@
  * Base URL: https://myshop-api-2hy2.onrender.com/v1
  * Auth: Bearer JWT (admin-jwt strategy)
  */
-import type { Permission, Role, CategoryScope } from './roles'
+import {
+  effectiveAdminPermissions,
+  isSuperAdminRole,
+  type Permission,
+  type Role,
+  type CategoryScope,
+} from './roles.ts'
 
 // In the browser during local dev, route through the Next.js rewrite proxy to avoid CORS.
 
@@ -12,6 +18,7 @@ export const API_BASE = typeof window !== 'undefined' ? '/api/proxy' : (process.
 const TOKEN_KEY = 'myshop_admin_token'
 const REFRESH_KEY = 'myshop_admin_refresh'
 const ADMIN_KEY = 'myshop_admin_user'
+export const ADMIN_ACTIVITY_KEY = 'myshop_admin_last_activity'
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
 
@@ -28,12 +35,14 @@ export function getRefreshToken(): string | null {
 export function setTokens(accessToken: string, refreshToken: string) {
   localStorage.setItem(TOKEN_KEY, accessToken)
   localStorage.setItem(REFRESH_KEY, refreshToken)
+  localStorage.setItem(ADMIN_ACTIVITY_KEY, String(Date.now()))
 }
 
 export function clearTokens() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(REFRESH_KEY)
   localStorage.removeItem(ADMIN_KEY)
+  localStorage.removeItem(ADMIN_ACTIVITY_KEY)
 }
 
 export function getAdminUser(): AdminUser | null {
@@ -41,7 +50,17 @@ export function getAdminUser(): AdminUser | null {
   const raw = localStorage.getItem(ADMIN_KEY)
   if (!raw) return null
   try {
-    return JSON.parse(raw)
+    const user = JSON.parse(raw) as AdminUser
+    if (!user || typeof user !== 'object') return null
+    const isSuperAdmin = isSuperAdminRole(user.role)
+    return {
+      ...user,
+      permissions: effectiveAdminPermissions(user.role, user.permissions),
+      regionId: isSuperAdmin ? null : user.regionId,
+      regionName: isSuperAdmin ? null : user.regionName,
+      categoryScope: isSuperAdmin ? null : user.categoryScope,
+      regionScope: isSuperAdmin ? null : user.regionScope,
+    }
   } catch {
     return null
   }
@@ -49,20 +68,6 @@ export function getAdminUser(): AdminUser | null {
 
 export function setAdminUser(user: AdminUser) {
   localStorage.setItem(ADMIN_KEY, JSON.stringify(user))
-}
-
-// Returns the JWT `exp` claim (Unix seconds) for the current access token, or null if absent/unparsable.
-export function getTokenExpiresAt(): number | null {
-  const token = getToken()
-  if (!token) return null
-  const parts = token.split('.')
-  if (parts.length !== 3) return null
-  try {
-    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
-    return typeof payload.exp === 'number' ? payload.exp : null
-  } catch {
-    return null
-  }
 }
 
 export type DeployEnv = 'LOCAL' | 'STAGING' | 'PROD'

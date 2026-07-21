@@ -138,7 +138,8 @@ export default function AppSidebar() {
     category === null
   const canViewRecovery = permissions?.includes('view_session_recovery') === true
   const isRoleRecoveryAuthority =
-    ((['product_owner', 'director', 'super_admin', 'ops_admin'].includes(String(role)) &&
+    (isSuperAdmin ||
+      (['product_owner', 'director', 'super_admin', 'ops_admin'].includes(String(role)) &&
       region.id === null &&
       category === null &&
       permissions?.includes('resolve_client_role_account_recovery') === true) ||
@@ -187,20 +188,29 @@ export default function AppSidebar() {
           .catch(() => {})
       }
       if (FEATURES.roleAccountRecovery && isRoleRecoveryAuthority) {
-        listRoleAccountRecoveryRequests({
-          status:
-            role === 'admin' ? 'pending_admin_intake' : 'pending_operations',
-          limit: 1,
-        })
-          .then(res => setPendingRoleRecoveryCount(res.total))
-          .catch(() => {})
+        if (isSuperAdmin) {
+          Promise.all([
+            listRoleAccountRecoveryRequests({ status: 'pending_operations', limit: 1 }),
+            listRoleAccountRecoveryRequests({ status: 'pending_admin_intake', limit: 1 }),
+          ])
+            .then(([clients, providers]) => setPendingRoleRecoveryCount(clients.total + providers.total))
+            .catch(() => {})
+        } else {
+          listRoleAccountRecoveryRequests({
+            status:
+              role === 'admin' ? 'pending_admin_intake' : 'pending_operations',
+            limit: 1,
+          })
+            .then(res => setPendingRoleRecoveryCount(res.total))
+            .catch(() => {})
+        }
       }
     }
     loadCounts()
     if (AUTO_REFRESH_DISABLED) return
     const id = setInterval(loadCounts, 60_000)
     return () => clearInterval(id)
-  }, [canViewRecovery, hasGlobalRecoveryRole, isRoleRecoveryAuthority, role])
+  }, [canViewRecovery, hasGlobalRecoveryRole, isRoleRecoveryAuthority, isSuperAdmin, role])
 
   // Sidebar is organised into labelled sections; multi-page areas collapse into groups.
   const navSections: { label: string; items: NavItem[] }[] = [

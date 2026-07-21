@@ -106,3 +106,19 @@ test('admin recovery and dispatch decisions branch on stable codes, not prose', 
   assert.match(recovery, /code = err instanceof ApiError \? err\.code/)
   assert.match(assignment, /code = e instanceof ApiError \? e\.code/)
 })
+
+test('dashboard ends sessions only after 15 minutes of real inactivity without refresh calls', () => {
+  const client = readFileSync(new URL('../lib/api-client.ts', import.meta.url), 'utf8')
+  const header = readFileSync(new URL('../components/Header.tsx', import.meta.url), 'utf8')
+  const guard = readFileSync(new URL('../components/auth-guard.tsx', import.meta.url), 'utf8')
+
+  assert.equal(client.includes('/auth/admin/refresh'), false)
+  assert.equal(client.includes('adminRefreshInFlight'), false)
+  assert.match(guard, /ADMIN_IDLE_TIMEOUT_MS = 15 \* 60 \* 1000/)
+  assert.match(guard, /pointerdown/)
+  assert.match(guard, /mousemove/)
+  assert.match(guard, /keydown/)
+  assert.match(guard, /visibilitychange/)
+  assert.equal(header.includes('Session ends in'), false)
+  assert.equal(header.includes('useSessionExpiry'), false)
+})

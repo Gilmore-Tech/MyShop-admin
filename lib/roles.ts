@@ -1,11 +1,10 @@
 /**
  * Permission model for MyShop Admin Panel.
  *
- * Granular per-admin permissions. There is no fixed-role concept: each admin
- * holds an explicit set of permissions assigned by a super admin (= any admin
- * holding `manage_admins`). The backend carries these permissions in the JWT
- * and enforces them server-side; the helpers here drive frontend nav/button
- * visibility only.
+ * Named admin roles resolve to granular permissions. The Product Owner is the
+ * platform Super Admin and always receives the full current catalogue; a
+ * custom `manage_admins` grant alone is not root authority. The backend remains
+ * authoritative; these helpers drive frontend nav/button visibility only.
  */
 
 export type Permission =
@@ -218,6 +217,19 @@ export const PERMISSION_LABELS: Record<Permission, string> = Object.fromEntries(
 /** Every permission in the catalogue, flattened (e.g. for a "grant all" preset). */
 export const ALL_PERMISSIONS: Permission[] = PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key))
 
+/** Current root role plus the pre-named-role compatibility value. */
+export function isSuperAdminRole(role: unknown): boolean {
+  return role === 'product_owner' || role === 'super_admin'
+}
+
+/** Root sessions always expose the complete current catalogue. */
+export function effectiveAdminPermissions(
+  role: unknown,
+  permissions: Permission[] | null | undefined,
+): Permission[] {
+  return isSuperAdminRole(role) ? [...ALL_PERMISSIONS] : [...(permissions ?? [])]
+}
+
 /** Returns true if the admin's permission set includes the given permission. */
 export function can(
   permissions: Permission[] | null | undefined,
@@ -309,9 +321,7 @@ const DIRECTOR_PERMS = dedupe(ALL_PERMISSIONS.filter(
   p => p !== 'manage_admins' && p !== 'view_config' && p !== 'intake_role_account_recovery'
 ))
 
-const PRODUCT_OWNER_PERMS = dedupe(
-  ALL_PERMISSIONS.filter(p => p !== 'intake_role_account_recovery')
-)
+const PRODUCT_OWNER_PERMS = dedupe(ALL_PERMISSIONS)
 
 const ACCOUNTANT_PERMS: Permission[] = dedupe([
   'view_dashboard', 'view_analytics', 'view_activity', 'view_reports', 'view_rides_report',

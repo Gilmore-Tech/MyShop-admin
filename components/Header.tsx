@@ -1,6 +1,6 @@
 'use client'
 
-import { Bell, Search, LogOut, AlertTriangle, ShieldAlert, Flag, BadgeAlert, ServerCrash, HeartPulse, Info, CheckCheck, X, Clock, ChevronRight, UserCog } from 'lucide-react'
+import { Bell, LogOut, AlertTriangle, ShieldAlert, Flag, BadgeAlert, ServerCrash, HeartPulse, Info, CheckCheck, X, ChevronRight, UserCog } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -16,7 +16,6 @@ import {
   getAdminNotifications, markAdminNotificationRead, markAllAdminNotificationsRead,
   type AdminNotification, type AdminNotificationType,
 } from '@/lib/api'
-import { useSessionExpiry, formatSessionRemaining } from '@/hooks/use-session-expiry'
 import { ProfileDialog } from '@/components/admin/profile-dialog'
 
 // ─── Notification helpers ─────────────────────────────────────────────────────
@@ -175,7 +174,6 @@ export default function Header() {
   const [panelOpen, setPanelOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
-  const { secondsRemaining, warn: sessionWarn } = useSessionExpiry()
 
   useEffect(() => {
     setAdmin(getAdminUser())
@@ -226,15 +224,6 @@ export default function Header() {
       <div className="h-16 flex items-center px-6 gap-6">
 
       <div className="flex items-center gap-3 ml-auto">
-        {sessionWarn && secondsRemaining != null && (
-          <div
-            className="hidden md:flex items-center gap-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1"
-            title="Your access token expires soon. Sign in again to avoid a forced redirect."
-          >
-            <Clock className="h-3 w-3" />
-            Session ends in {formatSessionRemaining(secondsRemaining)}
-          </div>
-        )}
         {/* Notification bell */}
         <div className="relative" ref={bellRef}>
           <button

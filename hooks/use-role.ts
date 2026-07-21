@@ -2,16 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { getAdminUser } from '@/lib/api-client'
-import { can, type Permission, type Role, type CategoryScope } from '@/lib/roles'
-
-const SUPER_ADMIN_VERIFICATION_PERMISSIONS: ReadonlySet<Permission> = new Set([
-  'view_verifications',
-  'verify_documents',
-  'validate_verification',
-  'finalize_verification',
-  'lift_verification_suspension',
-  'upload_provider_document',
-])
+import {
+  can,
+  effectiveAdminPermissions,
+  isSuperAdminRole,
+  type Permission,
+  type Role,
+  type CategoryScope,
+} from '@/lib/roles'
 
 export function useRole() {
   const [permissions, setPermissions] = useState<Permission[] | null>(() => {
@@ -45,13 +43,10 @@ export function useRole() {
     setCategory(user?.categoryScope ?? null)
   }, [])
 
-  // `product_owner` is the current root role; manage_admins is retained as the
-  // legacy root marker. The verification override is intentionally scoped to
-  // this module until the deferred platform-wide authorization sweep is done.
-  const isSuperAdmin = role === 'product_owner' || can(permissions, 'manage_admins')
-  const effectivePermissions: Permission[] | null = isSuperAdmin
-    ? [...new Set([...(permissions ?? []), ...SUPER_ADMIN_VERIFICATION_PERMISSIONS])]
-    : permissions
+  const isSuperAdmin = isSuperAdminRole(role)
+  const effectivePermissions: Permission[] | null = permissions === null
+    ? null
+    : effectiveAdminPermissions(role, permissions)
   const canAccess = (permission: Permission) => can(effectivePermissions, permission)
 
   return {
@@ -64,9 +59,8 @@ export function useRole() {
     // Category the admin is scoped to ('rides' | 'artisan'); null = both/global.
     category,
     can: canAccess,
-    // The only account allowed to create admins and assign permissions: the
-    // Product Owner. Keyed off the role when present, falling back to the
-    // `manage_admins` permission for legacy/custom admins.
+    // The named root account. A custom `manage_admins` grant does not turn an
+    // otherwise scoped administrator into a platform-wide Super Admin.
     isSuperAdmin,
   }
 }

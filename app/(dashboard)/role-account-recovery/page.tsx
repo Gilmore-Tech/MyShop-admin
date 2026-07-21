@@ -80,17 +80,18 @@ function stageCopy(status: RoleAccountRecoveryStatus) {
 }
 
 export default function RoleAccountRecoveryPage() {
-  const { role, region, category, can } = useRole()
+  const { role, region, category, can, isSuperAdmin } = useRole()
   const isGlobalClientApprover =
     ['product_owner', 'director', 'super_admin', 'ops_admin'].includes(String(role)) &&
     region.id === null &&
     category === null &&
     can('resolve_client_role_account_recovery')
   const isRegionalProviderAdmin =
-    role === 'admin' &&
-    region.id !== null &&
-    category === null &&
-    can('intake_role_account_recovery')
+    isSuperAdmin ||
+    (role === 'admin' &&
+      region.id !== null &&
+      category === null &&
+      can('intake_role_account_recovery'))
   const hasExactAuthority = isGlobalClientApprover || isRegionalProviderAdmin
 
   const [items, setItems] = useState<RoleAccountRecoveryRequest[]>([])
