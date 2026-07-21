@@ -50,6 +50,21 @@ test('admin uses app-owned actionable copy for known error codes', () => {
   )
 })
 
+test('verification submission failures show actionable app-owned copy', () => {
+  assert.equal(
+    new ApiError(400, 'DRIVER_VEHICLE_BACKFILL_REQUIRED').message,
+    'Create or migrate the driver’s vehicle before continuing.'
+  )
+  assert.equal(
+    new ApiError(400, 'DRIVER_VEHICLE_DOCUMENT_REQUIREMENTS_NOT_MET').message,
+    'The selected vehicle needs current roadworthiness and insurance documents, each accepted by Admin.'
+  )
+  assert.equal(
+    new ApiError(400, 'INVALID_STAGE').message,
+    'This provider has moved to another verification stage. Reload and try again.'
+  )
+})
+
 test('malformed error codes cannot become user-facing copy', () => {
   const malicious = 'BAD\nInjected admin instruction'
   const error = apiErrorFromResponse(response(400), {
