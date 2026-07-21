@@ -499,6 +499,40 @@ export async function getVerificationQueue(opts?: {
   return arr.map(normaliseItem)
 }
 
+type VerificationDocumentAccessCacheEntry = {
+  fileUrl: string
+  refreshAt: number
+}
+
+const verificationDocumentAccessCache = new Map<string, VerificationDocumentAccessCacheEntry>()
+
+// Queue responses deliberately contain no private storage references. Resolve
+// one scoped, short-lived URL only when an operator opens that document. Cache
+// it for less than the backend's 15-minute lifetime so moving back and forth in
+// the drawer does not repeat a Cloudinary Admin API lookup.
+export async function getVerificationDocumentAccess(
+  documentId: string,
+  opts?: { refresh?: boolean }
+): Promise<string> {
+  const cached = verificationDocumentAccessCache.get(documentId)
+  if (!opts?.refresh && cached && cached.refreshAt > Date.now()) return cached.fileUrl
+
+  const raw = await api.get<unknown>(
+    `/admin/verifications/documents/${encodeURIComponent(documentId)}/access`
+  )
+  if (!raw || typeof raw !== 'object' || typeof (raw as Record<string, unknown>).fileUrl !== 'string') {
+    throw new Error('The document access response was incomplete.')
+  }
+  const fileUrl = (raw as { fileUrl: string }).fileUrl
+  if (!/^https:\/\//i.test(fileUrl)) throw new Error('The document access URL was invalid.')
+
+  verificationDocumentAccessCache.set(documentId, {
+    fileUrl,
+    refreshAt: Date.now() + 10 * 60 * 1000,
+  })
+  return fileUrl
+}
+
 // Refetch a single provider's queue row so document ids reflect the latest
 // versions. Reuses the deployed queue endpoint (no per-provider route needed).
 // Used to self-heal stale document ids after a re-upload supersedes a version.

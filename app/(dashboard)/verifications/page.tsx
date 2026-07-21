@@ -20,6 +20,7 @@ import { PdfViewer } from '@/components/common/pdf-viewer'
 import {
   getVerificationQueue, getVerificationItem, reviewDocument,
   submitVerification, validateVerification, finalizeVerification, getVerificationHistory,
+  getVerificationDocumentAccess,
   documentTypeTracksExpiry,
   type VerificationItem, type ProviderDocument, type VerificationStage, type VerificationHistory,
 } from '@/lib/api'
@@ -135,8 +136,48 @@ function detectFileType(doc: ProviderDocument): 'pdf' | 'video' | 'image' | 'unk
 function DocViewer({ doc }: { doc: ProviderDocument }) {
   const [imgError, setImgError] = useState(false)
   const [imgLoaded, setImgLoaded] = useState(false)
+  const [url, setUrl] = useState('')
+  const [loadingUrl, setLoadingUrl] = useState(true)
+  const [urlError, setUrlError] = useState(false)
 
-  const url: string = doc.file_url ?? ''
+  const loadDocument = useCallback(async (refresh = false) => {
+    setLoadingUrl(true)
+    setUrlError(false)
+    setImgError(false)
+    setImgLoaded(false)
+    try {
+      const resolved = await getVerificationDocumentAccess(doc.id, { refresh })
+      setUrl(resolved)
+    } catch {
+      setUrl('')
+      setUrlError(true)
+    } finally {
+      setLoadingUrl(false)
+    }
+  }, [doc.id])
+
+  useEffect(() => {
+    let active = true
+    setLoadingUrl(true)
+    setUrlError(false)
+    setImgError(false)
+    setImgLoaded(false)
+    getVerificationDocumentAccess(doc.id)
+      .then(resolved => {
+        if (active) setUrl(resolved)
+      })
+      .catch(() => {
+        if (active) {
+          setUrl('')
+          setUrlError(true)
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingUrl(false)
+      })
+    return () => { active = false }
+  }, [doc.id])
+
   const fileType = detectFileType(doc)
   const isPdf = fileType === 'pdf'
   const isVideo = fileType === 'video'
@@ -152,14 +193,24 @@ function DocViewer({ doc }: { doc: ProviderDocument }) {
     </a>
   ) : null
 
-  // fileUrl is only a real URL after confirmDocumentUpload — status 'uploaded' stores a storage key path
-  if (!url || !url.startsWith('http')) {
+  if (loadingUrl) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 h-56 bg-gray-50 rounded-xl border border-gray-100">
+        <Loader2 className="h-7 w-7 animate-spin text-orange-400" />
+        <p className="text-sm text-gray-500">Opening secure document…</p>
+      </div>
+    )
+  }
+
+  if (urlError || !url.startsWith('http')) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 h-56 bg-gray-50 rounded-xl border border-dashed border-gray-200">
         <ImageOff className="h-8 w-8 text-gray-300" />
-        <p className="text-sm text-gray-400">
-          {!url ? 'No file URL attached' : 'File not yet confirmed by the app - waiting for upload to complete'}
-        </p>
+        <p className="text-sm text-gray-500">This document could not be opened.</p>
+        <p className="text-xs text-gray-400">The verification queue remains available. Retry only this file.</p>
+        <Button size="sm" variant="outline" onClick={() => { loadDocument(true).catch(() => {}) }}>
+          Retry document
+        </Button>
       </div>
     )
   }
