@@ -4,7 +4,7 @@ import { PageGuard } from '@/components/common/page-guard'
 import { useState, useEffect, useCallback } from 'react'
 import {
   Shield, Zap, Globe, Lock, Plug, AlertTriangle,
-  Save, Loader2, RefreshCw, CheckCircle2, XCircle, Clock,
+  Save, Loader2, RefreshCw, CheckCircle2, Clock,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -27,9 +27,7 @@ const BOOL_DEFAULTS = {
   require_2fa_admins:          false,
 } as const
 
-const NUM_DEFAULTS = {
-  admin_session_timeout_mins:  480,
-} as const
+const NUM_DEFAULTS = {} as const
 
 const STR_DEFAULTS = {
   default_language:            'en',
@@ -209,10 +207,6 @@ export default function SystemSettingsPage() {
     setSettings(p => ({ ...p, [key]: value }))
     setSaveSuccess(false); setSaveError(null)
   }
-  function setNum(key: NumKey, value: string) {
-    setSettings(p => ({ ...p, [key]: Number(value) }))
-    setSaveSuccess(false); setSaveError(null)
-  }
   function setStr(key: StrKey, value: string) {
     setSettings(p => ({ ...p, [key]: value }))
     setSaveSuccess(false); setSaveError(null)
@@ -382,26 +376,10 @@ export default function SystemSettingsPage() {
             />
 
             <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
-                <Label className="text-sm font-medium text-gray-800">Admin Session Timeout (minutes)</Label>
-                {isDirty('admin_session_timeout_mins') && (
-                  <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-amber-100 text-amber-700">unsaved</span>
-                )}
-              </div>
-              <p className="text-xs text-gray-400">Idle admins are logged out after this many minutes. Min 15, max 1440 (24 hr).</p>
-              <div className="flex items-center gap-3">
-                <Input
-                  type="number"
-                  min={15}
-                  max={1440}
-                  value={settings.admin_session_timeout_mins}
-                  onChange={e => setNum('admin_session_timeout_mins', e.target.value)}
-                  className={`w-36 h-8 text-sm ${isDirty('admin_session_timeout_mins') ? 'ring-2 ring-amber-200 border-amber-300' : ''}`}
-                />
-                <span className="text-xs text-gray-400">
-                  = {(settings.admin_session_timeout_mins / 60).toFixed(1).replace(/\.0$/, '')} hr
-                </span>
-              </div>
+              <Label className="text-sm font-medium text-gray-800">Admin inactivity timeout</Label>
+              <p className="text-xs text-gray-400">
+                Fixed at 15 minutes. Keyboard, pointer, touch, scrolling and returning to the active tab reset the idle clock without making background API calls.
+              </p>
             </div>
           </Section>
 
