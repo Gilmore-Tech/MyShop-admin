@@ -3,7 +3,13 @@
  * Base URL: https://myshop-api-2hy2.onrender.com/v1
  * Auth: Bearer JWT (admin-jwt strategy)
  */
-import type { Permission, Role, CategoryScope } from './roles'
+import {
+  effectiveAdminPermissions,
+  isSuperAdminRole,
+  type Permission,
+  type Role,
+  type CategoryScope,
+} from './roles'
 
 // In the browser during local dev, route through the Next.js rewrite proxy to avoid CORS.
 
@@ -41,7 +47,17 @@ export function getAdminUser(): AdminUser | null {
   const raw = localStorage.getItem(ADMIN_KEY)
   if (!raw) return null
   try {
-    return JSON.parse(raw)
+    const user = JSON.parse(raw) as AdminUser
+    if (!user || typeof user !== 'object') return null
+    const isSuperAdmin = isSuperAdminRole(user.role)
+    return {
+      ...user,
+      permissions: effectiveAdminPermissions(user.role, user.permissions),
+      regionId: isSuperAdmin ? null : user.regionId,
+      regionName: isSuperAdmin ? null : user.regionName,
+      categoryScope: isSuperAdmin ? null : user.categoryScope,
+      regionScope: isSuperAdmin ? null : user.regionScope,
+    }
   } catch {
     return null
   }

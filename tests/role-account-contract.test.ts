@@ -3,7 +3,21 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import { assertExactRoleAccountEnvelope, roleAccountPath } from '../lib/role-account-contract.ts'
-import { ROLE_DEFINITIONS } from '../lib/roles.ts'
+import {
+  ALL_PERMISSIONS,
+  effectiveAdminPermissions,
+  isSuperAdminRole,
+  ROLE_DEFINITIONS,
+} from '../lib/roles.ts'
+
+test('Super Admin exposes the complete permission catalogue without inheriting from manage_admins', () => {
+  assert.equal(isSuperAdminRole('product_owner'), true)
+  assert.equal(isSuperAdminRole('super_admin'), true)
+  assert.equal(isSuperAdminRole('admin'), false)
+  assert.deepEqual(effectiveAdminPermissions('product_owner', []), ALL_PERMISSIONS)
+  assert.deepEqual(ROLE_DEFINITIONS.product_owner.permissions, ALL_PERMISSIONS)
+  assert.deepEqual(effectiveAdminPermissions('admin', ['manage_admins']), ['manage_admins'])
+})
 
 test('all account operations build an exact role-account route', () => {
   const id = '11111111-2222-3333-4444-555555555555'
@@ -153,12 +167,13 @@ test('session recovery UI/API remain fail-closed and exact-target aware', () => 
   assert.match(page, /reason\.trim\(\)\.length >= 5/)
 })
 
-test('deleted-role recovery mirrors the approved non-inheriting authority chain', () => {
-  for (const role of ['product_owner', 'director'] as const) {
-    assert.equal(ROLE_DEFINITIONS[role].permissions.includes('view_role_account_recovery'), true)
-    assert.equal(ROLE_DEFINITIONS[role].permissions.includes('resolve_client_role_account_recovery'), true)
-    assert.equal(ROLE_DEFINITIONS[role].permissions.includes('intake_role_account_recovery'), false)
-  }
+test('deleted-role recovery preserves its authority chain with a Super Admin override', () => {
+  assert.equal(ROLE_DEFINITIONS.product_owner.permissions.includes('view_role_account_recovery'), true)
+  assert.equal(ROLE_DEFINITIONS.product_owner.permissions.includes('resolve_client_role_account_recovery'), true)
+  assert.equal(ROLE_DEFINITIONS.product_owner.permissions.includes('intake_role_account_recovery'), true)
+  assert.equal(ROLE_DEFINITIONS.director.permissions.includes('view_role_account_recovery'), true)
+  assert.equal(ROLE_DEFINITIONS.director.permissions.includes('resolve_client_role_account_recovery'), true)
+  assert.equal(ROLE_DEFINITIONS.director.permissions.includes('intake_role_account_recovery'), false)
   assert.equal(ROLE_DEFINITIONS.admin.permissions.includes('view_role_account_recovery'), true)
   assert.equal(ROLE_DEFINITIONS.admin.permissions.includes('intake_role_account_recovery'), true)
   assert.equal(ROLE_DEFINITIONS.admin.permissions.includes('resolve_client_role_account_recovery'), false)
