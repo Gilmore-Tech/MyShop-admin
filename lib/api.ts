@@ -1666,6 +1666,153 @@ export async function getAuditLogs(params?: AuditLogParams): Promise<AuditLogRes
   return api.get<AuditLogResponse>(`/admin/audit-logs${qs}`)
 }
 
+// ── Comprehensive System Audit (exact Super Administrator only) ─────────────
+
+export interface SystemAuditEvent {
+  id: string
+  occurredAt: string
+  recordedAt: string
+  actorType: string
+  actorId: string | null
+  actorRole: string | null
+  actorLabel: string | null
+  category: string
+  action: string
+  outcome: string
+  severity: string
+  targetType: string | null
+  targetId: string | null
+  source: string
+  environment: string
+  requestReference: string | null
+  correlationId: string | null
+  ipAddressMasked: string | null
+  appVersion: string | null
+  metadata: Record<string, unknown> | null
+  eventHash: string
+  retentionUntil: string
+  legalHold: boolean
+}
+
+export interface SystemAuditPage {
+  data: SystemAuditEvent[]
+  nextCursor: string | null
+  timeZone: 'GMT'
+  timestampPrecision: 'milliseconds'
+}
+
+export interface SystemTelemetryEvent {
+  id: string
+  occurredAt: string
+  recordedAt: string
+  deviceOccurredAt: string | null
+  actorType: string
+  actorId: string | null
+  actorRole: string | null
+  category: string
+  action: string
+  outcome: string
+  source: string
+  environment: string
+  correlationId: string | null
+  appVersion: string | null
+  metadata: Record<string, unknown> | null
+  expiresAt: string
+}
+
+export interface SystemTelemetryPage {
+  data: SystemTelemetryEvent[]
+  nextCursor: string | null
+  timeZone: 'GMT'
+  timestampPrecision: 'milliseconds'
+  retentionDays: 90
+}
+
+export interface SystemAuditSummary {
+  total: number
+  telemetryTotal: number
+  failures: number
+  critical: number
+  openAlerts: number
+  categories: Array<{ category: string; _count: { _all: number } }>
+  windowFrom?: string
+  windowTo?: string
+  timeZone: 'GMT'
+}
+
+export interface SystemAuditAlert {
+  id: string
+  type: string
+  severity: string
+  title: string
+  summary: string
+  eventId: string | null
+  acknowledgedAt: string | null
+  createdAt: string
+}
+
+export interface SystemAuditFilters {
+  category?: string
+  action?: string
+  actorType?: string
+  actorRole?: string
+  actorId?: string
+  targetType?: string
+  targetId?: string
+  outcome?: string
+  severity?: string
+  source?: string
+  environment?: string
+  correlationId?: string
+  requestReference?: string
+  from?: string
+  to?: string
+  search?: string
+  cursor?: string
+  limit?: number
+}
+
+function queryString(values: object): string {
+  const params = new URLSearchParams()
+  Object.entries(values as Record<string, unknown>).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value))
+  })
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
+export function getSystemAuditEvents(filters: SystemAuditFilters = {}): Promise<SystemAuditPage> {
+  return api.get<SystemAuditPage>(`/system-audit/events${queryString(filters)}`)
+}
+
+export function getSystemTelemetryEvents(filters: SystemAuditFilters = {}): Promise<SystemTelemetryPage> {
+  return api.get<SystemTelemetryPage>(`/system-audit/telemetry${queryString(filters)}`)
+}
+
+export function getSystemAuditSummary(from?: string, to?: string): Promise<SystemAuditSummary> {
+  return api.get<SystemAuditSummary>(`/system-audit/summary${queryString({ from, to })}`)
+}
+
+export function getSystemAuditAlerts(openOnly = true): Promise<SystemAuditAlert[]> {
+  return api.get<SystemAuditAlert[]>(`/system-audit/alerts?openOnly=${openOnly}`)
+}
+
+export function acknowledgeSystemAuditAlert(id: string): Promise<{ acknowledged: true }> {
+  return api.patch<{ acknowledged: true }>(`/system-audit/alerts/${id}/acknowledge`, {})
+}
+
+export function setSystemAuditLegalHold(id: string, enabled: boolean): Promise<{ legalHold: boolean }> {
+  return api.patch<{ legalHold: boolean }>(`/system-audit/events/${id}/legal-hold`, { enabled })
+}
+
+export function verifySystemAuditIntegrity(): Promise<{ checked: number; invalid: number; valid: boolean; verifiedAt: string }> {
+  return api.post('/system-audit/integrity/verify', {})
+}
+
+export function systemAuditExportUrl(filters: SystemAuditFilters, format: 'csv' | 'json'): string {
+  return `${API_BASE}/system-audit/export${queryString({ ...filters, format })}`
+}
+
 // ── Admin Account Management ──────────────────────────────────────────────────
 
 export interface Region {

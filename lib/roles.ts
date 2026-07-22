@@ -1,9 +1,9 @@
 /**
  * Permission model for MyShop Admin Panel.
  *
- * Named admin roles resolve to granular permissions. The Product Owner is the
- * platform Super Admin and always receives the full current catalogue; a
- * custom `manage_admins` grant alone is not root authority. The backend remains
+ * Named admin roles resolve to granular permissions. Only the exact
+ * `super_admin` role is the platform security root; Product Owner remains a
+ * business role. The backend remains
  * authoritative; these helpers drive frontend nav/button visibility only.
  */
 
@@ -219,7 +219,11 @@ export const ALL_PERMISSIONS: Permission[] = PERMISSION_GROUPS.flatMap(g => g.pe
 
 /** Current root role plus the pre-named-role compatibility value. */
 export function isSuperAdminRole(role: unknown): boolean {
-  return role === 'product_owner' || role === 'super_admin'
+  return role === 'super_admin'
+}
+
+export function isGlobalAdminRole(role: unknown): boolean {
+  return role === 'super_admin' || role === 'product_owner' || role === 'director' || role === 'accountant'
 }
 
 /** Root sessions always expose the complete current catalogue. */
@@ -227,7 +231,9 @@ export function effectiveAdminPermissions(
   role: unknown,
   permissions: Permission[] | null | undefined,
 ): Permission[] {
-  return isSuperAdminRole(role) ? [...ALL_PERMISSIONS] : [...(permissions ?? [])]
+  return role === 'super_admin' || role === 'product_owner'
+    ? [...ALL_PERMISSIONS]
+    : [...(permissions ?? [])]
 }
 
 /** Returns true if the admin's permission set includes the given permission. */
@@ -250,6 +256,7 @@ export function can(
 // ════════════════════════════════════════════════════════════════════════════
 
 export type Role =
+  | 'super_admin'
   | 'product_owner'
   | 'director'
   | 'accountant'
@@ -330,6 +337,12 @@ const ACCOUNTANT_PERMS: Permission[] = dedupe([
 ])
 
 export const ROLE_DEFINITIONS: Record<Role, RoleDef> = {
+  super_admin: {
+    role: 'super_admin', level: 0, label: 'Super Administrator',
+    description: 'Security root with all platform permissions and exclusive access to the immutable audit vault.',
+    requiresRegion: false, requiresCategory: false, category: null, global: true,
+    permissions: ALL_PERMISSIONS,
+  },
   product_owner: {
     role: 'product_owner', level: 1, label: 'Product Owner',
     description: 'Full platform access including account and configuration management.',
@@ -380,7 +393,7 @@ export const ROLE_DEFINITIONS: Record<Role, RoleDef> = {
   },
 }
 
-/** All roles in hierarchy order (Accountant last as a specialist). */
+/** Assignable roles only. Super Administrator is provisioned by controlled migration. */
 export const ROLE_ORDER: Role[] = [
   'product_owner', 'director', 'regional_manager', 'coordinator_rides',
   'coordinator_artisan', 'back_officer', 'admin', 'accountant',
