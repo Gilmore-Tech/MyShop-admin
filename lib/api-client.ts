@@ -5,7 +5,7 @@
  */
 import {
   effectiveAdminPermissions,
-  isSuperAdminRole,
+  isGlobalAdminRole,
   type Permission,
   type Role,
   type CategoryScope,
@@ -52,14 +52,14 @@ export function getAdminUser(): AdminUser | null {
   try {
     const user = JSON.parse(raw) as AdminUser
     if (!user || typeof user !== 'object') return null
-    const isSuperAdmin = isSuperAdminRole(user.role)
+    const hasGlobalScope = isGlobalAdminRole(user.role)
     return {
       ...user,
       permissions: effectiveAdminPermissions(user.role, user.permissions),
-      regionId: isSuperAdmin ? null : user.regionId,
-      regionName: isSuperAdmin ? null : user.regionName,
-      categoryScope: isSuperAdmin ? null : user.categoryScope,
-      regionScope: isSuperAdmin ? null : user.regionScope,
+      regionId: hasGlobalScope ? null : user.regionId,
+      regionName: hasGlobalScope ? null : user.regionName,
+      categoryScope: hasGlobalScope ? null : user.categoryScope,
+      regionScope: hasGlobalScope ? null : user.regionScope,
     }
   } catch {
     return null
