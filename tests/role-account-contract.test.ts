@@ -11,7 +11,7 @@ import {
 } from '../lib/roles.ts'
 
 test('Super Admin exposes the complete permission catalogue without inheriting from manage_admins', () => {
-  assert.equal(isSuperAdminRole('product_owner'), false)
+  assert.equal(isSuperAdminRole('product_owner'), true)
   assert.equal(isSuperAdminRole('super_admin'), true)
   assert.equal(isSuperAdminRole('admin'), false)
   assert.deepEqual(effectiveAdminPermissions('product_owner', []), ALL_PERMISSIONS)

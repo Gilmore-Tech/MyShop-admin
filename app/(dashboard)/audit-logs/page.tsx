@@ -1,390 +1,295 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Download, RefreshCw, Search, ShieldCheck } from 'lucide-react'
-import { SuperAdminPageGuard } from '@/components/common/super-admin-page-guard'
+import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
+import { useState, useEffect, useCallback } from 'react'
+import { Search, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  acknowledgeSystemAuditAlert,
-  getSystemAuditAlerts,
-  getSystemAuditEvents,
-  getSystemAuditSummary,
-  getSystemTelemetryEvents,
-  setSystemAuditLegalHold,
-  type SystemAuditAlert,
-  type SystemAuditEvent,
-  type SystemAuditFilters,
-  type SystemAuditSummary,
-  type SystemTelemetryEvent,
-  verifySystemAuditIntegrity,
-} from '@/lib/api'
-import { API_BASE, getToken } from '@/lib/api-client'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { getAuditLogs, listAdmins, type AuditLogEntry, type AdminAccount } from '@/lib/api'
+import { ApiError } from '@/lib/api-client'
 
-const EMPTY_SUMMARY: SystemAuditSummary = {
-  total: 0, telemetryTotal: 0, failures: 0, critical: 0, openAlerts: 0, categories: [], timeZone: 'GMT',
+const ACTION_LABELS: Record<string, { label: string; color: string }> = {
+  'document.approved':  { label: 'Document Approved',  color: 'bg-gray-100 text-gray-600' },
+  'document.rejected':  { label: 'Document Rejected',  color: 'bg-gray-100 text-gray-600' },
+  'user_suspended':     { label: 'User Suspended',     color: 'bg-gray-100 text-gray-600' },
+  'user_banned':        { label: 'User Banned',        color: 'bg-gray-100 text-gray-600' },
+  'user_reinstated':    { label: 'User Reinstated',    color: 'bg-gray-100 text-gray-600' },
+  'user_updated':       { label: 'User Updated',       color: 'bg-gray-100 text-gray-600' },
+  'admin_created':      { label: 'Admin Created',      color: 'bg-gray-100 text-gray-600' },
+  'admin_deactivated':  { label: 'Admin Deactivated',  color: 'bg-gray-100 text-gray-600' },
+  'admin_reactivated':  { label: 'Admin Reactivated',  color: 'bg-gray-100 text-gray-600' },
+  'admin_role_changed': { label: 'Role Changed',       color: 'bg-gray-100 text-gray-600' },
+  'admin_permissions_changed': { label: 'Permissions Changed', color: 'bg-gray-100 text-gray-600' },
 }
 
-function gmtTimestamp(value: string): string {
-  const date = new Date(value)
-  const base = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'UTC', year: 'numeric', month: 'short', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-  }).format(date)
-  return `${base}.${String(date.getUTCMilliseconds()).padStart(3, '0')} GMT`
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
 }
 
-function title(value: string | null | undefined): string {
-  return value ? value.replace(/[._-]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase()) : '—'
+function initials(name: string) {
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
 
-function Outcome({ event }: { event: SystemAuditEvent }) {
-  const failed = event.outcome === 'failure'
+function ActionBadge({ action }: { action: string }) {
+  const meta = ACTION_LABELS[action]
+  if (meta) {
+    return (
+      <span className={`inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full ${meta.color}`}>
+        {meta.label}
+      </span>
+    )
+  }
+  const formatted = action.replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   return (
-    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-      failed ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
-    }`}>
-      {title(event.outcome)}
+    <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+      {formatted}
     </span>
   )
 }
 
-export default function SystemAuditPage() {
-  const [events, setEvents] = useState<SystemAuditEvent[]>([])
-  const [summary, setSummary] = useState<SystemAuditSummary>(EMPTY_SUMMARY)
-  const [alerts, setAlerts] = useState<SystemAuditAlert[]>([])
-  const [telemetry, setTelemetry] = useState<SystemTelemetryEvent[]>([])
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
-  const [currentCursor, setCurrentCursor] = useState<string | undefined>()
-  const [cursorHistory, setCursorHistory] = useState<Array<string | undefined>>([])
-  const [telemetryNextCursor, setTelemetryNextCursor] = useState<string | null>(null)
-  const [telemetryCursor, setTelemetryCursor] = useState<string | undefined>()
-  const [telemetryCursorHistory, setTelemetryCursorHistory] = useState<Array<string | undefined>>([])
+function DetailsCell({ entry }: { entry: AuditLogEntry }) {
+  const d = entry.details
+  if (!d) return <span className="text-gray-300">-</span>
+  const parts: string[] = []
+  if (d.documentType) parts.push(String(d.documentType).replace(/_/g, ' '))
+  if (d.providerType) parts.push(String(d.providerType))
+  if (d.reason && d.reason !== 'Approved.' && d.reason !== 'Rejected.') parts.push(`"${d.reason}"`)
+  if (parts.length === 0) parts.push(JSON.stringify(d))
+  return <span className="text-sm text-gray-500 capitalize">{parts.join(' - ')}</span>
+}
+
+const LIMIT = 20
+
+export default function AuditLogsPage() {
+  const [entries, setEntries] = useState<AuditLogEntry[]>([])
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
-  const [telemetryLoading, setTelemetryLoading] = useState(true)
   const [error, setError] = useState('')
-  const [integrity, setIntegrity] = useState<string>('Not checked this session')
-  const [filters, setFilters] = useState<SystemAuditFilters>({ limit: 50 })
-  const [searchDraft, setSearchDraft] = useState('')
 
-  const activeFilters = useMemo(() => ({ ...filters, cursor: undefined }), [filters])
+  const [admins, setAdmins] = useState<AdminAccount[]>([])
+  const [filterAdmin, setFilterAdmin] = useState('all')
+  const [filterAction, setFilterAction] = useState('all')
+  const [filterFrom, setFilterFrom] = useState('')
+  const [filterTo, setFilterTo] = useState('')
+  const [search, setSearch] = useState('')
 
-  const load = useCallback(async (cursor?: string) => {
+  useEffect(() => {
+    listAdmins().then(setAdmins).catch(() => {})
+  }, [])
+
+  const load = useCallback(async (p = page) => {
     setLoading(true)
     setError('')
     try {
-      const [page, totals, openAlerts] = await Promise.all([
-        getSystemAuditEvents({ ...activeFilters, cursor }),
-        getSystemAuditSummary(filters.from, filters.to),
-        getSystemAuditAlerts(true),
-      ])
-      setEvents(page.data)
-      setNextCursor(page.nextCursor)
-      setSummary(totals)
-      setAlerts(openAlerts)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The audit vault could not be loaded.')
+      const res = await getAuditLogs({
+        page: p,
+        limit: LIMIT,
+        adminId: filterAdmin !== 'all' ? filterAdmin : undefined,
+        action: filterAction !== 'all' ? filterAction : undefined,
+        from: filterFrom || undefined,
+        to: filterTo || undefined,
+      })
+      setEntries(res.items)
+      setTotal(res.total)
+      setTotalPages(res.totalPages)
+      setPage(p)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load audit logs.')
     } finally {
       setLoading(false)
     }
-  }, [activeFilters, filters.from, filters.to])
+  }, [page, filterAdmin, filterAction, filterFrom, filterTo])
 
-  useEffect(() => { void load(currentCursor) }, [load, currentCursor])
+  useEffect(() => { load(1) }, [filterAdmin, filterAction, filterFrom, filterTo]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadTelemetry = useCallback(async (cursor?: string) => {
-    setTelemetryLoading(true)
-    try {
-      const page = await getSystemTelemetryEvents({ ...activeFilters, cursor })
-      setTelemetry(page.data)
-      setTelemetryNextCursor(page.nextCursor)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Mobile activity could not be loaded.')
-    } finally {
-      setTelemetryLoading(false)
-    }
-  }, [activeFilters])
+  useEffect(() => { load(page) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { void loadTelemetry(telemetryCursor) }, [loadTelemetry, telemetryCursor])
-
-  function updateFilter(key: keyof SystemAuditFilters, value: string | undefined) {
-    setCursorHistory([])
-    setCurrentCursor(undefined)
-    setTelemetryCursorHistory([])
-    setTelemetryCursor(undefined)
-    setFilters(current => ({ ...current, [key]: value || undefined }))
-  }
-
-  async function exportEvents(format: 'csv' | 'json') {
-    setError('')
-    const params = new URLSearchParams()
-    Object.entries({ ...activeFilters, format }).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') params.set(key, String(value))
-    })
-    const response = await fetch(`${API_BASE}/system-audit/export?${params}`, {
-      headers: { Authorization: `Bearer ${getToken() ?? ''}` },
-    })
-    if (!response.ok) {
-      setError('The audited export could not be generated.')
-      return
-    }
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `myshop-system-audit-${new Date().toISOString()}.${format}`
-    anchor.click()
-    URL.revokeObjectURL(url)
-  }
-
-  async function exportTelemetry(format: 'csv' | 'json') {
-    setError('')
-    const params = new URLSearchParams()
-    Object.entries({ ...activeFilters, format }).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') params.set(key, String(value))
-    })
-    const response = await fetch(`${API_BASE}/system-audit/telemetry/export?${params}`, {
-      headers: { Authorization: `Bearer ${getToken() ?? ''}` },
-    })
-    if (!response.ok) {
-      setError('The audited mobile activity export could not be generated.')
-      return
-    }
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `myshop-mobile-activity-${new Date().toISOString()}.${format}`
-    anchor.click()
-    URL.revokeObjectURL(url)
-  }
-
-  async function checkIntegrity() {
-    setIntegrity('Checking…')
-    try {
-      const result = await verifySystemAuditIntegrity()
-      setIntegrity(result.valid ? `${result.checked.toLocaleString()} events verified` : `${result.invalid} invalid events detected`)
-    } catch {
-      setIntegrity('Integrity check failed')
-    }
-  }
-
-  async function acknowledge(alert: SystemAuditAlert) {
-    await acknowledgeSystemAuditAlert(alert.id)
-    setAlerts(current => current.filter(item => item.id !== alert.id))
-    setSummary(current => ({ ...current, openAlerts: Math.max(0, current.openAlerts - 1) }))
-  }
-
-  async function toggleLegalHold(event: SystemAuditEvent) {
-    setError('')
-    try {
-      const result = await setSystemAuditLegalHold(event.id, !event.legalHold)
-      setEvents(current => current.map(item => item.id === event.id ? { ...item, legalHold: result.legalHold } : item))
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The legal hold could not be changed.')
-    }
-  }
+  const filtered = search
+    ? entries.filter(e =>
+        e.admin.fullName.toLowerCase().includes(search.toLowerCase()) ||
+        e.action.toLowerCase().includes(search.toLowerCase()) ||
+        e.targetType.toLowerCase().includes(search.toLowerCase())
+      )
+    : entries
 
   return (
-    <SuperAdminPageGuard>
-      <div className="space-y-5">
+    <PageGuard permission="view_audit_logs">
+      <div>
         <PageHeader
-          title="System Audit Vault"
-          subtitle="Immutable production evidence · server-authoritative GMT timestamps · exact Super Administrator access only"
+          title="Audit Logs"
+          subtitle="Monitor all admin actions across the platform"
           actions={
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => void checkIntegrity()} className="gap-2">
-                <ShieldCheck className="h-4 w-4" /> Verify integrity
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => void load()} className="gap-2">
-                <RefreshCw className="h-4 w-4" /> Refresh
-              </Button>
-            </div>
+            <Button variant="outline" size="sm" onClick={() => load(page)} className="gap-2">
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </Button>
           }
         />
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-          {[
-            [filters.from || filters.to ? 'Events (range)' : 'Events (24h)', summary.total.toLocaleString()],
-            [filters.from || filters.to ? 'Mobile (range)' : 'Mobile (24h)', summary.telemetryTotal.toLocaleString()],
-            ['Failures', summary.failures.toLocaleString()],
-            ['Critical', summary.critical.toLocaleString()],
-            ['Open alerts', summary.openAlerts.toLocaleString()],
-            ['Tamper status', integrity],
-          ].map(([label, value]) => (
-            <Card key={label}>
-              <CardContent className="p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</p>
-                <p className="mt-1 text-lg font-semibold text-gray-900">{value}</p>
-              </CardContent>
-            </Card>
-          ))}
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-3 mb-5">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            <Input
+              placeholder="Search admin, action…"
+              className="pl-9 w-56"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          <Select value={filterAdmin} onValueChange={v => setFilterAdmin(v)}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="All admins" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All admins</SelectItem>
+              {admins.map(a => (
+                <SelectItem key={a.id} value={a.id}>{a.fullName}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={filterAction} onValueChange={v => setFilterAction(v)}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="All actions" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All actions</SelectItem>
+              {Object.entries(ACTION_LABELS).map(([key, { label }]) => (
+                <SelectItem key={key} value={key}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              className="w-36 text-sm"
+              value={filterFrom}
+              onChange={e => setFilterFrom(e.target.value)}
+              title="From date"
+            />
+            <span className="text-gray-400 text-sm">to</span>
+            <Input
+              type="date"
+              className="w-36 text-sm"
+              value={filterTo}
+              onChange={e => setFilterTo(e.target.value)}
+              title="To date"
+            />
+          </div>
+
+          <div className="ml-auto text-sm text-gray-400">{total} entries</div>
         </div>
 
-        {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+        {error && (
+          <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        )}
 
-        <Tabs defaultValue="timeline">
-          <TabsList>
-            <TabsTrigger value="timeline">Global timeline</TabsTrigger>
-            <TabsTrigger value="telemetry">Mobile activity</TabsTrigger>
-            <TabsTrigger value="alerts">Security alerts ({alerts.length})</TabsTrigger>
-          </TabsList>
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Timestamp</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Admin</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Action</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Target</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Details</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">IP Address</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <TableRow key={i}>
+                    {Array.from({ length: 6 }).map((_, j) => (
+                      <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-12 text-gray-400">
+                    No audit log entries found.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered.map(entry => (
+                  <TableRow key={entry.id} className="hover:bg-gray-50">
+                    <TableCell className="text-xs text-gray-500 whitespace-nowrap">
+                      {formatDate(entry.createdAt)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2.5">
+                        <Avatar className="h-7 w-7">
+                          <AvatarFallback className="bg-slate-700 text-white text-[10px] font-bold">
+                            {initials(entry.admin.fullName)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{entry.admin.fullName}</p>
+                          <p className="text-xs text-gray-400 truncate">{entry.admin.email}</p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <ActionBadge action={entry.action} />
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs text-gray-500 space-y-0.5">
+                        <p className="capitalize font-medium text-gray-700">{entry.targetType.replace(/_/g, ' ')}</p>
+                        <p className="font-mono text-[10px] text-gray-300 truncate max-w-[120px]" title={entry.targetId}>
+                          {entry.targetId.slice(0, 8)}…
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell><DetailsCell entry={entry} /></TableCell>
+                    <TableCell className="text-xs text-gray-400 font-mono">
+                      {entry.ipAddress ?? '-'}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
 
-          <TabsContent value="timeline" className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white p-3">
-              <div className="relative min-w-60 flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <Input
-                  value={searchDraft}
-                  onChange={event => setSearchDraft(event.target.value)}
-                  onKeyDown={event => event.key === 'Enter' && updateFilter('search', searchDraft)}
-                  placeholder="Actor, action, target, correlation or support reference"
-                  className="pl-9"
-                />
-              </div>
-              <Select value={filters.category ?? 'all'} onValueChange={value => updateFilter('category', value === 'all' ? undefined : value)}>
-                <SelectTrigger className="w-44"><SelectValue placeholder="All categories" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All categories</SelectItem>
-                  {['authentication', 'security', 'admin_operation', 'verification', 'ride', 'artisan_job', 'financial', 'configuration', 'deployment', 'audit_access'].map(value => (
-                    <SelectItem key={value} value={value}>{title(value)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={filters.actorType ?? 'all'} onValueChange={value => updateFilter('actorType', value === 'all' ? undefined : value)}>
-                <SelectTrigger className="w-40"><SelectValue placeholder="All actors" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All actors</SelectItem>
-                  {['admin', 'client', 'driver', 'artisan', 'system', 'deployment'].map(value => <SelectItem key={value} value={value}>{title(value)}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={filters.outcome ?? 'all'} onValueChange={value => updateFilter('outcome', value === 'all' ? undefined : value)}>
-                <SelectTrigger className="w-36"><SelectValue placeholder="All outcomes" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">All outcomes</SelectItem><SelectItem value="success">Success</SelectItem><SelectItem value="failure">Failure</SelectItem></SelectContent>
-              </Select>
-              <Input type="datetime-local" className="w-48" value={filters.from?.slice(0, 16) ?? ''} onChange={event => updateFilter('from', event.target.value ? new Date(event.target.value).toISOString() : undefined)} title="From" />
-              <Input type="datetime-local" className="w-48" value={filters.to?.slice(0, 16) ?? ''} onChange={event => updateFilter('to', event.target.value ? new Date(event.target.value).toISOString() : undefined)} title="To" />
-              <Button variant="outline" size="sm" onClick={() => void exportEvents('csv')} className="gap-1"><Download className="h-4 w-4" /> CSV</Button>
-              <Button variant="outline" size="sm" onClick={() => void exportEvents('json')}>JSON</Button>
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between mt-4">
+            <p className="text-sm text-gray-400">
+              Page {page} of {totalPages} - {total} total entries
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline" size="sm"
+                disabled={page <= 1 || loading}
+                onClick={() => load(page - 1)}
+                className="gap-1"
+              >
+                <ChevronLeft className="h-4 w-4" /> Previous
+              </Button>
+              <Button
+                variant="outline" size="sm"
+                disabled={page >= totalPages || loading}
+                onClick={() => load(page + 1)}
+                className="gap-1"
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
-
-            <div className="overflow-hidden rounded-xl border bg-white">
-              <Table>
-                <TableHeader><TableRow className="bg-gray-50">
-                  <TableHead>Timestamp (GMT)</TableHead><TableHead>Actor</TableHead><TableHead>Category / action</TableHead>
-                  <TableHead>Outcome</TableHead><TableHead>Target</TableHead><TableHead>Evidence</TableHead>
-                </TableRow></TableHeader>
-                <TableBody>
-                  {loading ? Array.from({ length: 8 }).map((_, index) => (
-                    <TableRow key={index}>{Array.from({ length: 6 }).map((__, cell) => <TableCell key={cell}><div className="h-4 animate-pulse rounded bg-gray-100" /></TableCell>)}</TableRow>
-                  )) : events.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="py-12 text-center text-gray-400">No evidence matches these filters.</TableCell></TableRow>
-                  ) : events.map(event => (
-                    <TableRow key={event.id} className="align-top">
-                      <TableCell className="whitespace-nowrap text-xs text-gray-500">{gmtTimestamp(event.occurredAt)}</TableCell>
-                      <TableCell><p className="text-sm font-medium">{event.actorLabel ?? title(event.actorType)}</p><p className="text-xs text-gray-400">{title(event.actorRole)} · {event.actorId?.slice(0, 12) ?? 'system'}</p></TableCell>
-                      <TableCell><p className="text-xs font-semibold uppercase text-gray-400">{title(event.category)}</p><p className="text-sm text-gray-800">{title(event.action)}</p></TableCell>
-                      <TableCell><Outcome event={event} /><p className="mt-1 text-[11px] text-gray-400">{title(event.severity)}</p></TableCell>
-                      <TableCell><p className="text-sm">{title(event.targetType)}</p><p className="max-w-36 truncate font-mono text-[10px] text-gray-400" title={event.targetId ?? ''}>{event.targetId ?? '—'}</p></TableCell>
-                      <TableCell>
-                        <details className="max-w-72 text-xs">
-                          <summary className="cursor-pointer font-medium text-orange-600">View evidence</summary>
-                          <div className="mt-2 space-y-1 break-all text-gray-500">
-                            <p>Source: {event.source} · {event.environment}</p>
-                            <p>Reference: {event.requestReference ?? '—'}</p><p>Correlation: {event.correlationId ?? '—'}</p>
-                            <p>IP: {event.ipAddressMasked ?? '—'} · App: {event.appVersion ?? '—'}</p>
-                            <p>Hash: {event.eventHash}</p><p>Retained to: {gmtTimestamp(event.retentionUntil)}{event.legalHold ? ' · LEGAL HOLD' : ''}</p>
-                            <Button variant="outline" size="sm" onClick={() => void toggleLegalHold(event)}>{event.legalHold ? 'Release legal hold' : 'Apply legal hold'}</Button>
-                            {event.metadata && <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2">{JSON.stringify(event.metadata, null, 2)}</pre>}
-                          </div>
-                        </details>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="flex justify-between">
-              <Button variant="outline" disabled={!cursorHistory.length || loading} onClick={() => {
-                const previous = cursorHistory.at(-1)
-                setCursorHistory(history => history.slice(0, -1))
-                setCurrentCursor(previous)
-              }}>Previous</Button>
-              <Button variant="outline" disabled={!nextCursor || loading} onClick={() => {
-                setCursorHistory(history => [...history, currentCursor])
-                setCurrentCursor(nextCursor ?? undefined)
-              }}>Next</Button>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="telemetry" className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-white p-3">
-              <div>
-                <p className="font-medium text-gray-900">Privacy-minimal mobile activity</p>
-                <p className="text-xs text-gray-500">Named screens, app lifecycle and meaningful actions only · retained for 90 days</p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => void exportTelemetry('csv')} className="gap-1"><Download className="h-4 w-4" /> CSV</Button>
-                <Button variant="outline" size="sm" onClick={() => void exportTelemetry('json')}>JSON</Button>
-              </div>
-            </div>
-
-            <div className="overflow-hidden rounded-xl border bg-white">
-              <Table>
-                <TableHeader><TableRow className="bg-gray-50">
-                  <TableHead>Server timestamp (GMT)</TableHead><TableHead>Actor</TableHead><TableHead>Activity</TableHead>
-                  <TableHead>Outcome</TableHead><TableHead>App</TableHead><TableHead>Details</TableHead>
-                </TableRow></TableHeader>
-                <TableBody>
-                  {telemetryLoading ? Array.from({ length: 8 }).map((_, index) => (
-                    <TableRow key={index}>{Array.from({ length: 6 }).map((__, cell) => <TableCell key={cell}><div className="h-4 animate-pulse rounded bg-gray-100" /></TableCell>)}</TableRow>
-                  )) : telemetry.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="py-12 text-center text-gray-400">No mobile activity matches these filters.</TableCell></TableRow>
-                  ) : telemetry.map(event => (
-                    <TableRow key={event.id} className="align-top">
-                      <TableCell className="whitespace-nowrap text-xs text-gray-500">{gmtTimestamp(event.occurredAt)}<p className="mt-1 text-[10px] text-gray-400">Device: {event.deviceOccurredAt ? gmtTimestamp(event.deviceOccurredAt) : 'not supplied'}</p></TableCell>
-                      <TableCell><p className="text-sm font-medium">{title(event.actorType)}</p><p className="text-xs text-gray-400">{title(event.actorRole)} · {event.actorId?.slice(0, 12) ?? 'system'}</p></TableCell>
-                      <TableCell><p className="text-xs font-semibold uppercase text-gray-400">{title(event.category)}</p><p className="text-sm text-gray-800">{title(event.action)}</p></TableCell>
-                      <TableCell><span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${event.outcome === 'failure' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{title(event.outcome)}</span></TableCell>
-                      <TableCell><p className="text-sm">{event.source}</p><p className="text-xs text-gray-400">{event.appVersion ?? 'version unavailable'}</p></TableCell>
-                      <TableCell><details className="max-w-72 text-xs"><summary className="cursor-pointer font-medium text-orange-600">View details</summary><div className="mt-2 space-y-1 break-all text-gray-500"><p>Correlation: {event.correlationId ?? '—'}</p><p>Expires: {gmtTimestamp(event.expiresAt)}</p>{event.metadata && <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2">{JSON.stringify(event.metadata, null, 2)}</pre>}</div></details></TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="flex justify-between">
-              <Button variant="outline" disabled={!telemetryCursorHistory.length || telemetryLoading} onClick={() => {
-                const previous = telemetryCursorHistory.at(-1)
-                setTelemetryCursorHistory(history => history.slice(0, -1))
-                setTelemetryCursor(previous)
-              }}>Previous</Button>
-              <Button variant="outline" disabled={!telemetryNextCursor || telemetryLoading} onClick={() => {
-                setTelemetryCursorHistory(history => [...history, telemetryCursor])
-                setTelemetryCursor(telemetryNextCursor ?? undefined)
-              }}>Next</Button>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="alerts">
-            <div className="space-y-3">
-              {alerts.length === 0 ? <div className="rounded-xl border bg-white p-10 text-center text-gray-400"><CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-emerald-500" />No open audit alerts.</div> : alerts.map(alert => (
-                <div key={alert.id} className="flex items-start gap-3 rounded-xl border bg-white p-4">
-                  <AlertTriangle className={`mt-0.5 h-5 w-5 ${alert.severity === 'critical' ? 'text-red-600' : 'text-amber-500'}`} />
-                  <div className="flex-1"><p className="font-semibold text-gray-900">{alert.title}</p><p className="text-sm text-gray-500">{alert.summary}</p><p className="mt-1 text-xs text-gray-400">{gmtTimestamp(alert.createdAt)} · {title(alert.type)} · {title(alert.severity)}</p></div>
-                  <Button variant="outline" size="sm" onClick={() => void acknowledge(alert)}>Acknowledge</Button>
-                </div>
-              ))}
-            </div>
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
       </div>
-    </SuperAdminPageGuard>
+    </PageGuard>
   )
 }

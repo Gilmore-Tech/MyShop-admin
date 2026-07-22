@@ -312,7 +312,7 @@ export default function AppSidebar() {
             { title: 'System Settings',    href: '/system-settings', permission: 'manage_admins' },
           ],
         },
-        { title: 'System Audit',    href: '/audit-logs',    icon: ClipboardList, superAdmin: true },
+        { title: 'Audit Logs',      href: '/audit-logs',    icon: ClipboardList, permission: 'view_audit_logs' },
         { title: 'Admin Accounts',  href: '/admin-accounts', icon: UserCog,      superAdmin: true },
       ],
     },
