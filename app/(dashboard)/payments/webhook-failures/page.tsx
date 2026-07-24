@@ -57,15 +57,15 @@ export default function WebhookFailuresPage() {
   return (
     <PageGuard permission="view_payments">
       <div>
-        <PageHeader title="Payments" subtitle="Financial transactions and payout management" />
+        <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
 
         <Tabs defaultValue="webhook-failures" className="mb-6">
           <TabsList className="bg-white">
-            <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
-            <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-            <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
-            <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
-            <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
+            <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Payment Activity</Link></TabsTrigger>
+            <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Money Summary</Link></TabsTrigger>
+            <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Provider Payments</Link></TabsTrigger>
+            <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Money Owed</Link></TabsTrigger>
+            <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Payment Errors</Link></TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -73,11 +73,11 @@ export default function WebhookFailuresPage() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
             <div>
-              <p className="text-sm font-semibold">Manual reconciliation queue</p>
+              <p className="text-sm font-semibold">Payment events that need a manual check</p>
               <p className="mt-1 text-xs leading-5 text-amber-800">
-                These signature-verified Paystack events exhausted automatic processing. This
-                page is read-only: it does not retry a charge, refund, transfer, or payout. Raw
-                webhook bodies, account destinations, and payment routing references are hidden.
+                These Paystack payment updates could not be completed automatically. This page
+                only shows what needs attention; it does not retry or move any money. Sensitive
+                payment details remain hidden.
               </p>
             </div>
           </div>

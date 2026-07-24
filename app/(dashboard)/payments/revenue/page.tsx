@@ -90,23 +90,23 @@ export default function RevenuePage() {
   const successRate      = totalPayments > 0 ? (totalSuccessful / totalPayments) * 100 : null
 
   const pieData = [
-    { name: 'Net Payouts', value: Math.max(0, totalPayouts) },
-    { name: 'Commission',  value: Math.max(0, totalCommission) },
+    { name: 'Paid to providers', value: Math.max(0, totalPayouts) },
+    { name: 'MyShop earnings',  value: Math.max(0, totalCommission) },
     { name: 'Tips',        value: Math.max(0, totalTips) },
   ].filter(p => p.value > 0)
 
   return (
      <PageGuard permission="view_payments">
     <div>
-      <PageHeader title="Payments" subtitle="Financial transactions and payout management" />
+      <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
 
       <Tabs defaultValue="revenue" className="mb-6">
         <TabsList className="bg-white">
-          <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
-          <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
-          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
+          <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Payment Activity</Link></TabsTrigger>
+          <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Money Summary</Link></TabsTrigger>
+          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Provider Payments</Link></TabsTrigger>
+          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Money Owed</Link></TabsTrigger>
+          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Payment Errors</Link></TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -181,7 +181,7 @@ export default function RevenuePage() {
       ) : report === null ? (
         !error && (
           <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400 text-sm">
-            Revenue data is not yet available for the selected range.
+            Payment summary is not yet available for the selected dates.
           </div>
         )
       ) : (
@@ -189,28 +189,28 @@ export default function RevenuePage() {
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             <Card>
               <CardContent className="p-5">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Total Collections</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Total money received</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{formatGhs(totalCollections)}</p>
                 <p className="text-xs text-gray-500 mt-1">Money received (excl. failed)</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-5">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Commission Earned</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">MyShop earnings</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{formatGhs(totalCommission)}</p>
-                <p className="text-xs text-gray-500 mt-1">Gross, before refunds</p>
+                <p className="text-xs text-gray-500 mt-1">Before money returned to customers</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-5">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Net Revenue</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Money MyShop keeps</p>
                 <p className={`text-2xl font-bold mt-1 ${totalNetRevenue < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatGhs(totalNetRevenue)}</p>
-                <p className="text-xs text-emerald-600 mt-1">Commission − refunds + clawbacks</p>
+                <p className="text-xs text-emerald-600 mt-1">MyShop earnings − customer refunds + debts recovered</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-5">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Net Payouts</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Paid to providers</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{formatGhs(totalPayouts)}</p>
                 <p className="text-xs text-gray-500 mt-1">Actually disbursed to providers</p>
               </CardContent>
@@ -236,8 +236,8 @@ export default function RevenuePage() {
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
             <Card className="xl:col-span-2">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Revenue Trend</CardTitle>
-                <p className="text-xs text-gray-400">Collections, commission, payouts and tips per {groupBy} over the selected range</p>
+                <CardTitle className="text-base">Money over time</CardTitle>
+                <p className="text-xs text-gray-400">Money received, MyShop earnings, provider payments, and tips per {groupBy}</p>
               </CardHeader>
               <CardContent>
                 {chartData.length === 0 ? (
@@ -265,9 +265,9 @@ export default function RevenuePage() {
                         contentStyle={{ fontSize: 12, borderRadius: 8 }}
                       />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Area type="monotone" dataKey="collections" stroke="#F5A623" strokeWidth={2} fill="url(#revCollections)" dot={false} name="Collections" />
-                      <Line type="monotone" dataKey="commission"  stroke="#10B981" strokeWidth={2} dot={false} name="Commission" />
-                      <Line type="monotone" dataKey="payouts"     stroke="#3B82F6" strokeWidth={2} dot={false} name="Payouts" />
+                      <Area type="monotone" dataKey="collections" stroke="#F5A623" strokeWidth={2} fill="url(#revCollections)" dot={false} name="Money received" />
+                      <Line type="monotone" dataKey="commission"  stroke="#10B981" strokeWidth={2} dot={false} name="MyShop earnings" />
+                      <Line type="monotone" dataKey="payouts"     stroke="#3B82F6" strokeWidth={2} dot={false} name="Paid to providers" />
                       <Line type="monotone" dataKey="tips"        stroke="#A855F7" strokeWidth={2} dot={false} name="Tips" />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -277,7 +277,7 @@ export default function RevenuePage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Revenue Mix</CardTitle>
+                <CardTitle className="text-base">Where the money went</CardTitle>
                 <p className="text-xs text-gray-400">How total revenue splits across payouts, commission and tips</p>
               </CardHeader>
               <CardContent className="flex flex-col items-center">
@@ -298,7 +298,7 @@ export default function RevenuePage() {
                 )}
                 <div className="mt-2 space-y-1.5 w-full">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Commission rate</span>
+                    <span className="text-gray-500">MyShop share</span>
                     <span className="font-semibold">{totalCollections > 0 ? Math.round(totalCommission / totalCollections * 100) : 0}%</span>
                   </div>
                   <div className="flex justify-between text-sm">

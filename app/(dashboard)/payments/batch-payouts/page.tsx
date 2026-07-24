@@ -64,15 +64,15 @@ export default function BatchPayoutsPage() {
   return (
      <PageGuard permission="view_payments">
     <div>
-      <PageHeader title="Payments" subtitle="Financial transactions and payout management" />
+      <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
 
       <Tabs defaultValue="batch-payouts" className="mb-6">
         <TabsList className="bg-white">
-          <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
-          <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
-          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
+          <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Payment Activity</Link></TabsTrigger>
+          <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Money Summary</Link></TabsTrigger>
+          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Provider Payments</Link></TabsTrigger>
+          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Money Owed</Link></TabsTrigger>
+          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Payment Errors</Link></TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -81,8 +81,8 @@ export default function BatchPayoutsPage() {
         <div className="flex items-center gap-3">
           <AlertTriangle className="h-5 w-5 text-amber-400" />
           <div>
-            <p className="font-semibold text-sm">Batch payouts are temporarily suspended</p>
-            <p className="text-slate-300 text-xs">No scheduled, retry, or forced aggregate run will execute. Existing earnings remain preserved for reviewed reconciliation.</p>
+            <p className="font-semibold text-sm">Grouped provider payments are temporarily paused</p>
+            <p className="text-slate-300 text-xs">No automatic or retried payment group will run. Existing provider earnings remain safe while the records are checked.</p>
           </div>
         </div>
         <Button
@@ -113,12 +113,12 @@ export default function BatchPayoutsPage() {
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead>Date</TableHead>
-              <TableHead>Primary Run</TableHead>
+              <TableHead>Payment group</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Providers</TableHead>
               <TableHead className="text-right">Total Amount</TableHead>
               <TableHead>Failure Reason</TableHead>
-              <TableHead>Retries</TableHead>
+              <TableHead>Retry attempts</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

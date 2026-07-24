@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, useMemo } from 'react'
+import { APIProvider, Map, AdvancedMarker, Polyline, useMap } from '@vis.gl/react-google-maps'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
@@ -16,6 +17,8 @@ import {
   CheckCircle,
   ShieldAlert,
   XCircle,
+  Route,
+  Navigation,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,7 +32,7 @@ import {
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { getRideDetail, cancelRide, forceCompleteRide, type RideDetail } from '@/lib/api'
+import { getRideDetail, cancelRide, forceCompleteRide, type RideDetail, type RideGpsPoint } from '@/lib/api'
 import { getAdminUser, ApiError } from '@/lib/api-client'
 import { can } from '@/lib/roles'
 
@@ -79,6 +82,89 @@ function TimelineRow({
       >
         {value ?? '-'}
       </span>
+    </div>
+  )
+}
+
+function FitRouteBounds({ points }: { points: RideGpsPoint[] }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!map || points.length === 0) return
+    const bounds = new google.maps.LatLngBounds()
+    points.forEach(point => bounds.extend({ lat: point.lat, lng: point.lng }))
+    map.fitBounds(bounds, 56)
+  }, [map, points])
+  return null
+}
+
+function RouteMarker({ label, color }: { label: string; color: string }) {
+  return (
+    <div
+      className="flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-white px-1 text-[10px] font-bold text-white shadow-md"
+      style={{ backgroundColor: color }}
+    >
+      {label}
+    </div>
+  )
+}
+
+function DriverRouteMap({ points, active }: { points: RideGpsPoint[]; active: boolean }) {
+  const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+  const mapsMapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? 'DEMO_MAP_ID'
+  const first = points[0]
+  const latest = points[points.length - 1]
+
+  if (!mapsApiKey) {
+    return (
+      <div className="flex h-40 items-center justify-center px-6 text-center">
+        <div>
+          <MapPin className="mx-auto h-6 w-6 text-gray-300" />
+          <p className="mt-2 text-sm text-gray-400">The route map is unavailable because the Google Maps key is not configured.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (points.length < 2) {
+    return (
+      <div className="flex h-40 items-center justify-center px-6 text-center">
+        <div>
+          <Navigation className="mx-auto h-6 w-6 text-gray-300" />
+          <p className="mt-2 text-sm text-gray-400">
+            {active ? 'Waiting for enough driver location updates to draw the route.' : 'No recorded GPS route is available for this ride.'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-80">
+      <APIProvider apiKey={mapsApiKey}>
+        <Map
+          mapId={mapsMapId}
+          defaultCenter={{ lat: first.lat, lng: first.lng }}
+          defaultZoom={13}
+          gestureHandling="greedy"
+          zoomControl
+          scaleControl
+          style={{ width: '100%', height: '100%' }}
+        >
+          <FitRouteBounds points={points} />
+          <Polyline
+            path={points.map(point => ({ lat: point.lat, lng: point.lng }))}
+            strokeColor="#2563EB"
+            strokeOpacity={0.9}
+            strokeWeight={5}
+          />
+          <AdvancedMarker position={{ lat: first.lat, lng: first.lng }} title="Route started">
+            <RouteMarker label="S" color="#16A34A" />
+          </AdvancedMarker>
+          <AdvancedMarker position={{ lat: latest.lat, lng: latest.lng }} title={active ? 'Latest driver location' : 'Route ended'}>
+            <RouteMarker label={active ? 'LIVE' : 'E'} color={active ? '#DC2626' : '#2563EB'} />
+          </AdvancedMarker>
+        </Map>
+      </APIProvider>
     </div>
   )
 }
@@ -180,6 +266,20 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
       .finally(() => setLoading(false))
   }, [rideId])
 
+  const routeTrackingActive = ride
+    ? ['accepted', 'driver_en_route', 'arrived_at_pickup', 'in_progress'].includes(ride.status)
+    : false
+
+  useEffect(() => {
+    if (!routeTrackingActive) return
+    const interval = window.setInterval(() => {
+      getRideDetail(rideId).then(setRide).catch(() => {
+        // Keep the last visible trail when a background refresh fails.
+      })
+    }, 15_000)
+    return () => window.clearInterval(interval)
+  }, [rideId, routeTrackingActive])
+
   async function handleCancel(reason: string) {
     setCancelling(true)
     setActionError(null)
@@ -221,6 +321,7 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
   const canForce = ride ? ride.status === 'in_progress' && canIntervene : false
 
   const fare = ride?.finalFarePesewas ?? ride?.estimatedFarePesewas
+  const routePoints = useMemo(() => ride?.gpsTrail ?? [], [ride?.gpsTrail])
 
   return (
     <PageGuard permission="view_rides">
@@ -385,6 +486,38 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                     {ride.cancellationReason && (
                       <div className="mt-1 text-xs text-red-600 bg-red-50 rounded px-3 py-2">
                         Cancellation reason: {ride.cancellationReason}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Recorded route */}
+                <Card className="overflow-hidden">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <CardTitle className="flex items-center gap-2 text-sm">
+                        <Route className="h-4 w-4 text-blue-600" /> Driver&apos;s Recorded Route
+                      </CardTitle>
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        {routeTrackingActive && (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2 py-1 font-medium text-red-700">
+                            <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> Live
+                          </span>
+                        )}
+                        <span>{routePoints.length} location update{routePoints.length === 1 ? '' : 's'}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      The blue line shows the path recorded from the driver&apos;s GPS updates.
+                      {routeTrackingActive ? ' It refreshes every 15 seconds.' : ''}
+                    </p>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <DriverRouteMap points={routePoints} active={routeTrackingActive} />
+                    {routePoints.length > 0 && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-gray-50 px-4 py-2 text-[11px] text-gray-500">
+                        <span>First update: {fmtDate(routePoints[0].recordedAt)}</span>
+                        <span>Latest update: {fmtDate(routePoints[routePoints.length - 1].recordedAt)}</span>
                       </div>
                     )}
                   </CardContent>

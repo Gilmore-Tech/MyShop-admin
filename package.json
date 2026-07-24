@@ -10,7 +10,8 @@
     "test:vehicle": "node --experimental-strip-types --test tests/vehicle-lifecycle.test.ts",
     "test:role-accounts": "node --experimental-strip-types --test tests/role-account-contract.test.ts",
     "test:api-errors": "node --experimental-strip-types --test tests/api-error-containment.test.ts",
-    "test:webhook-failures": "node --experimental-strip-types --test tests/webhook-failure-containment.test.ts"
+    "test:webhook-failures": "node --experimental-strip-types --test tests/webhook-failure-containment.test.ts",
+    "test:clawback-groups": "node --experimental-strip-types --test tests/clawback-groups.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
