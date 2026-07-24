@@ -3742,7 +3742,6 @@ export interface ReferralUserRef {
   role: RoleAccountRole
   roleAccountId: string
   fullName: string | null
-  phone: string | null // backend returns normalised/masked
 }
 
 export interface ReferralListItem {
@@ -3779,7 +3778,6 @@ function normaliseReferralUserRef(raw: any): ReferralUserRef {
     role,
     roleAccountId,
     fullName: r.fullName ?? r.full_name ?? r.name ?? null,
-    phone: r.phone ?? null,
   }
 }
 
