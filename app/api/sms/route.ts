@@ -232,7 +232,7 @@ export async function POST(req: NextRequest) {
     )
   } catch (err) {
     console.error('[SMS route] unexpected failure', {
-      kind: err instanceof Error ? err.name : typeof err,
+      kind: err instanceof Error ? 'Error' : typeof err,
       supportReference,
     })
     return errorResponse(500, 'SMS_SEND_FAILED', 'The announcement could not be sent. Try again.')

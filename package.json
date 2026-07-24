@@ -10,6 +10,8 @@
     "test:vehicle": "node --experimental-strip-types --test tests/vehicle-lifecycle.test.ts",
     "test:role-accounts": "node --experimental-strip-types --test tests/role-account-contract.test.ts",
     "test:api-errors": "node --experimental-strip-types --test tests/api-error-containment.test.ts",
+    "test:log-privacy": "node --experimental-strip-types --test tests/log-privacy-contract.test.ts",
+    "test:support-contacts": "node --experimental-strip-types --test tests/system-settings-support-contract.test.ts",
     "test:webhook-failures": "node --experimental-strip-types --test tests/webhook-failure-containment.test.ts"
   },
   "dependencies": {

@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     })
   } catch (err) {
     console.error('[pdf-proxy] upstream connection failed', {
-      kind: err instanceof Error ? err.name : typeof err,
+      kind: err instanceof Error ? 'Error' : typeof err,
       supportReference,
     })
     return textError(502, 'The private document service could not be reached.')

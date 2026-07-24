@@ -278,7 +278,7 @@ export function safeAdminErrorDiagnostic(error: unknown): Readonly<Record<string
       supportReference: error.supportReference,
     }
   }
-  return { kind: error instanceof Error ? error.name : typeof error }
+  return { kind: error instanceof Error ? 'Error' : typeof error }
 }
 
 export function apiErrorFromResponse(res: Response, body: unknown): ApiError {

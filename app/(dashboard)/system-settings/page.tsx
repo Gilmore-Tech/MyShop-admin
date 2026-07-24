@@ -32,8 +32,8 @@ const NUM_DEFAULTS = {} as const
 const STR_DEFAULTS = {
   default_language:            'en',
   pilot_region:                'Ashanti',
-  support_email:               'support@gilmoretechnologies.com.gh',
-  support_phone:               '+233 XX XXX XXXX',
+  support_email:               'support@gilmoretechnologiesgh.com',
+  support_phone:               '+233(0)204962227',
 } as const
 
 type BoolKey = keyof typeof BOOL_DEFAULTS
@@ -435,7 +435,7 @@ export default function SystemSettingsPage() {
                   value={settings.support_email}
                   onChange={e => setStr('support_email', e.target.value)}
                   className={`w-64 h-8 text-sm ${isDirty('support_email') ? 'ring-2 ring-amber-200 border-amber-300' : ''}`}
-                  placeholder="support@gilmoretechnologies.com.gh"
+                  placeholder="support@gilmoretechnologiesgh.com"
                 />
               </div>
 
@@ -451,7 +451,7 @@ export default function SystemSettingsPage() {
                   value={settings.support_phone}
                   onChange={e => setStr('support_phone', e.target.value)}
                   className={`w-64 h-8 text-sm ${isDirty('support_phone') ? 'ring-2 ring-amber-200 border-amber-300' : ''}`}
-                  placeholder="+233 XX XXX XXXX"
+                  placeholder="+233(0)204962227"
                 />
               </div>
             </div>
