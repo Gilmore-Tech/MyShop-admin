@@ -213,7 +213,7 @@ test('deleted-role recovery UI/API are distinct, fail-closed and expose no rejec
   assert.doesNotMatch(page, /rejectRoleAccountRecovery|dismissRoleAccountRecovery/)
 })
 
-test('user-management surfaces expose exact roles and quarantine shared referrals', () => {
+test('user-management surfaces expose exact roles and the exact-role referral ledger', () => {
   const clients = readFileSync(new URL('../app/(dashboard)/users/clients/page.tsx', import.meta.url), 'utf8')
   const profile = readFileSync(new URL('../components/users/user-profile-sheet.tsx', import.meta.url), 'utf8')
   const referrals = readFileSync(new URL('../app/(dashboard)/referrals/page.tsx', import.meta.url), 'utf8')
@@ -224,8 +224,10 @@ test('user-management surfaces expose exact roles and quarantine shared referral
   assert.equal(tabs.includes('All Users'), false)
   assert.match(profile, /sibling accounts remain untouched/)
   assert.match(profile, /u\.roleAccountId/)
-  assert.match(referrals, /legacy ledger combines roles/)
-  assert.equal(referrals.includes('listReferrals'), false)
+  assert.match(referrals, /Exact client, driver and artisan referral ownership/)
+  assert.match(referrals, /No exact-role referrals match this view/)
+  assert.equal(referrals.includes('listReferrals'), true)
+  assert.equal(referrals.includes('phone'), false)
 })
 
 test('SMS audiences use isolated exact-role lists and never a shared user lookup', () => {
