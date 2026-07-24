@@ -238,6 +238,9 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   RECOVERY_RESOLUTION_IN_PROGRESS: 'This recovery request is already being resolved.',
   RECOVERY_RESOLUTION_RETRY_QUEUED: 'The recovery action is queued for a safe retry.',
   SESSION_RECOVERY_DISABLED: 'Session recovery is currently unavailable.',
+  CONFIG_KEY_NOT_ALLOWED: 'This configuration is not supported by the deployed API version.',
+  CONFIG_KEY_NOT_FOUND: 'Deploy the required database migration before changing this setting.',
+  CONFIG_VALUE_NOT_BOOLEAN: 'This setting must be enabled or disabled.',
 }
 
 function fallbackForStatus(status: number): string {

@@ -50,6 +50,21 @@ test('admin uses app-owned actionable copy for known error codes', () => {
   )
 })
 
+test('platform configuration failures explain deployment and value problems safely', () => {
+  assert.equal(
+    new ApiError(400, 'CONFIG_KEY_NOT_ALLOWED').message,
+    'This configuration is not supported by the deployed API version.'
+  )
+  assert.equal(
+    new ApiError(404, 'CONFIG_KEY_NOT_FOUND').message,
+    'Deploy the required database migration before changing this setting.'
+  )
+  assert.equal(
+    new ApiError(400, 'CONFIG_VALUE_NOT_BOOLEAN').message,
+    'This setting must be enabled or disabled.'
+  )
+})
+
 test('verification submission failures show actionable app-owned copy', () => {
   assert.equal(
     new ApiError(400, 'DRIVER_VEHICLE_BACKFILL_REQUIRED').message,
