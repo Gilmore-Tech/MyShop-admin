@@ -37,6 +37,7 @@ import { ReferralActionDialog, type ReferralAction } from './_components/referra
 import { ReferralStatusBadge, RoleChips, formatPoints } from './_components/referral-shared'
 import { ReferralUserSheet, type DrilldownTarget } from './_components/referral-user-sheet'
 import { RewardConfigCard } from './_components/reward-config-card'
+import { ReferralAvailabilityCard } from './_components/referral-availability-card'
 
 function MetricCard({
   label,
@@ -160,7 +161,8 @@ export default function ReferralsPage() {
           />
         </div>
 
-        <div className="mb-5">
+        <div className="mb-5 grid gap-5 lg:grid-cols-2">
+          <ReferralAvailabilityCard />
           <RewardConfigCard />
         </div>
 
