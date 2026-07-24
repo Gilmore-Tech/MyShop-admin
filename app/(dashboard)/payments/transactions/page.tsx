@@ -17,7 +17,7 @@ import { PageSizeSelect } from '@/components/common/table-controls'
 import { listTransactions, type AdminTransaction } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatTransactionAmount } from '@/lib/money'
-import { paymentMethodLabel } from '@/lib/payment-labels'
+import { paymentMethodLabel, paymentStatusLabel, transactionTypeLabel } from '@/lib/payment-labels'
 import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
 
 const txTypeColors: Record<string, string> = {
@@ -149,15 +149,15 @@ export default function TransactionsPage() {
   return (
      <PageGuard permission="view_payments">
     <div>
-      <PageHeader title="Payments" subtitle="Financial transactions and payout management" />
+      <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
 
       <Tabs defaultValue="transactions" className="mb-6">
         <TabsList className="bg-white">
-          <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
-          <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
-          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
+          <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Payment Activity</Link></TabsTrigger>
+          <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Money Summary</Link></TabsTrigger>
+          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Provider Payments</Link></TabsTrigger>
+          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Money Owed</Link></TabsTrigger>
+          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Payment Errors</Link></TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -165,7 +165,7 @@ export default function TransactionsPage() {
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
           <Input
-            placeholder="Search TX ID, party, booking…"
+            placeholder="Search payment ID, person, booking…"
             className="pl-9"
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
@@ -176,7 +176,7 @@ export default function TransactionsPage() {
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
             {TYPE_OPTIONS.map(t => (
-              <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
+              <SelectItem key={t} value={t}>{transactionTypeLabel(t)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -185,7 +185,7 @@ export default function TransactionsPage() {
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
             {STATUS_OPTIONS.map(s => (
-              <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
+              <SelectItem key={s} value={s}>{paymentStatusLabel(s)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -194,7 +194,7 @@ export default function TransactionsPage() {
           Refresh
         </Button>
         <div className="ml-auto flex items-center gap-3">
-          <span className="text-sm text-gray-500">{total} transaction{total === 1 ? '' : 's'}</span>
+          <span className="text-sm text-gray-500">{total} payment record{total === 1 ? '' : 's'}</span>
           <PageSizeSelect value={limit} onChange={setLimit} />
         </div>
       </div>
@@ -215,7 +215,7 @@ export default function TransactionsPage() {
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead>Date / Time</TableHead>
-              <TableHead>Transaction ID</TableHead>
+              <TableHead>Payment ID</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Amount</TableHead>
               <TableHead>Method</TableHead>
@@ -234,7 +234,7 @@ export default function TransactionsPage() {
             ) : transactions.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-12 text-gray-400 text-sm">
-                  {error ? 'No transactions to display while the endpoint is unavailable.' : 'No transactions found'}
+                  {error ? 'No payment records to display while the service is unavailable.' : 'No payment records found'}
                 </TableCell>
               </TableRow>
             ) : (
@@ -248,14 +248,14 @@ export default function TransactionsPage() {
                   <TableCell className="font-mono text-sm font-medium text-gray-900">{tx.id.slice(-10).toUpperCase()}</TableCell>
                   <TableCell>
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${txTypeColors[tx.type] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {tx.type}
+                      {transactionTypeLabel(tx.type)}
                     </span>
                   </TableCell>
                   <TableCell className={`text-sm font-semibold tabular-nums ${tx.type === 'refund' || tx.type === 'clawback' || tx.type === 'payout' ? 'text-red-600' : 'text-gray-900'}`}>
                     {formatTransactionAmount(tx.amountPesewas, tx.type)}
                   </TableCell>
                   <TableCell className="text-sm text-gray-500">{paymentMethodLabel(tx.method)}</TableCell>
-                  <TableCell><StatusBadge status={tx.status} /></TableCell>
+                  <TableCell><StatusBadge status={paymentStatusLabel(tx.status)} /></TableCell>
                 </TableRow>
               ))
             )}
@@ -323,16 +323,16 @@ function TransactionDetailDialog({ tx, onClose }: { tx: AdminTransaction | null;
           <>
             <SheetHeader className="px-6 py-4 border-b border-gray-100">
               <SheetTitle className="text-base flex items-center gap-2">
-                Transaction
+                Payment record
                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${txTypeColors[tx.type] ?? 'bg-gray-100 text-gray-600'}`}>
-                  {tx.type}
+                  {transactionTypeLabel(tx.type)}
                 </span>
               </SheetTitle>
               <p className="font-mono text-xs text-gray-400 mt-1 break-all">{tx.id}</p>
             </SheetHeader>
 
             <div className="px-6 py-5 space-y-3 text-sm">
-              <Row label="Status" value={<StatusBadge status={tx.status} />} />
+              <Row label="Status" value={<StatusBadge status={paymentStatusLabel(tx.status)} />} />
               <Row
                 label="Amount"
                 value={
