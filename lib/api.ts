@@ -2588,6 +2588,7 @@ export interface RideDetail {
   completedAt: string | null
   createdAt: string
   stops: { stopOrder: number; addressText: string | null }[]
+  gpsTrail: RideGpsPoint[]
   client: { id: string; fullName: string; phone: string } | null
   driver: {
     id: string
@@ -2600,8 +2601,31 @@ export interface RideDetail {
   } | null
 }
 
-export function getRideDetail(rideId: string) {
-  return api.get<RideDetail>(`/admin/rides/${rideId}`)
+export interface RideGpsPoint {
+  lat: number
+  lng: number
+  recordedAt: string | null
+}
+
+function normaliseRideGpsPoint(raw: any): RideGpsPoint | null {
+  const coordinates = raw?.location?.coordinates ?? raw?.coordinates
+  const lat = Number(raw?.lat ?? raw?.latitude ?? (Array.isArray(coordinates) ? coordinates[1] : NaN))
+  const lng = Number(raw?.lng ?? raw?.longitude ?? (Array.isArray(coordinates) ? coordinates[0] : NaN))
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
+  return {
+    lat,
+    lng,
+    recordedAt: raw?.recordedAt ?? raw?.recorded_at ?? raw?.createdAt ?? raw?.timestamp ?? null,
+  }
+}
+
+export async function getRideDetail(rideId: string): Promise<RideDetail> {
+  const raw = await api.get<any>(`/admin/rides/${rideId}`)
+  const trailSource = raw?.gpsTrail ?? raw?.gps_trail ?? raw?.routeHistory ?? raw?.route_history ?? []
+  const gpsTrail = Array.isArray(trailSource)
+    ? trailSource.map(normaliseRideGpsPoint).filter((point): point is RideGpsPoint => point !== null)
+    : []
+  return { ...raw, stops: Array.isArray(raw?.stops) ? raw.stops : [], gpsTrail }
 }
 
 export function cancelRide(rideId: string, reason: string) {
@@ -3194,6 +3218,10 @@ export function sendSms(audience: SmsAudience, message: string) {
   return api.post<SmsResult>('/api/sms', { audience, message }, { localRoute: true })
 }
 
+export function sendDirectSms(recipient: string, message: string) {
+  return api.post<SmsResult>('/api/sms', { recipient, message }, { localRoute: true })
+}
+
 // ── Announcement History ──────────────────────────────────────────────────────
 
 export interface AnnouncementHistoryItem {
@@ -3742,7 +3770,6 @@ export interface ReferralUserRef {
   role: RoleAccountRole
   roleAccountId: string
   fullName: string | null
-  phone: string | null // backend returns normalised/masked
 }
 
 export interface ReferralListItem {
@@ -3779,7 +3806,6 @@ function normaliseReferralUserRef(raw: any): ReferralUserRef {
     role,
     roleAccountId,
     fullName: r.fullName ?? r.full_name ?? r.name ?? null,
-    phone: r.phone ?? null,
   }
 }
 

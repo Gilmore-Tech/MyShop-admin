@@ -18,13 +18,33 @@ export function paymentMethodLabel(method: string | null | undefined): string {
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  collection: 'Collection',
-  payout:     'Payout',
-  refund:     'Refund',
-  clawback:   'Clawback',
+  collection: 'Money received',
+  payout:     'Paid to provider',
+  refund:     'Money returned',
+  clawback:   'Debt recovery',
   tip:        'Tip',
+  remittance: 'Debt payment',
 }
 
 export function transactionTypeLabel(type: string): string {
   return TYPE_LABELS[type] ?? type
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Waiting',
+  completed: 'Completed',
+  complete: 'Completed',
+  failed: 'Failed',
+  refunded: 'Returned',
+  escrowed: 'Payment held safely',
+  partial: 'Partly paid',
+  settled: 'Fully paid',
+  outstanding: 'Amount due',
+  escalated: 'Sent for follow-up',
+  written_off: 'Cleared',
+  mixed: 'Different statuses',
+}
+
+export function paymentStatusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status.replace(/_/g, ' ')
 }

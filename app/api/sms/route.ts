@@ -160,8 +160,9 @@ export async function POST(req: NextRequest) {
       { status, headers: { 'x-support-reference': supportReference } },
     )
   try {
-    const { audience, message } = (await req.json()) as {
+    const { audience, recipient, message } = (await req.json()) as {
       audience?: SmsAudience
+      recipient?: string
       message: string
     }
 
@@ -169,8 +170,12 @@ export async function POST(req: NextRequest) {
       return errorResponse(400, 'MESSAGE_REQUIRED', 'Enter an announcement message.')
     }
 
-    if (!audience) {
-      return errorResponse(400, 'AUDIENCE_REQUIRED', 'Select an announcement audience.')
+    if (!audience && !recipient) {
+      return errorResponse(400, 'RECIPIENT_REQUIRED', 'Select an audience or enter a recipient.')
+    }
+
+    if (audience && recipient) {
+      return errorResponse(400, 'RECIPIENT_CONFLICT', 'Send to either an audience or one recipient.')
     }
 
     if (audience && !Object.keys(ROLE_MAP).includes(audience)) {
@@ -207,8 +212,9 @@ export async function POST(req: NextRequest) {
 
     // Resolve recipients through exact role-account lists only. A phone number
     // shared by multiple role accounts receives one copy of a broad broadcast.
-    const roleResults = await Promise.all(ROLE_MAP[audience].map(role => fetchPhones(role, token)))
-    const phones = [...new Set(roleResults.flat())]
+    const phones = recipient
+      ? [recipient]
+      : [...new Set((await Promise.all(ROLE_MAP[audience!].map(role => fetchPhones(role, token)))).flat())]
     if (phones.length === 0) {
       return errorResponse(404, 'AUDIENCE_EMPTY', 'No valid recipients were found for this audience.')
     }

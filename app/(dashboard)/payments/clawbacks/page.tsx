@@ -1,55 +1,55 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { AlertTriangle, ArrowUpRight, ExternalLink, Loader2, MessageSquareText, Phone } from 'lucide-react'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
-import Link from 'next/link'
-import { AlertTriangle, ArrowUpRight, Loader2, ExternalLink } from 'lucide-react'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { PageHeader } from '@/components/common/page-header'
-import { listClawbacks, writeOffClawback, escalateClawback, type AdminClawback } from '@/lib/api'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  escalateClawback,
+  listClawbacks,
+  sendDirectSms,
+  writeOffClawback,
+  type AdminClawback,
+} from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { groupClawbacksByProvider, type ProviderClawbackGroup } from '@/lib/clawback-groups'
+import { paymentStatusLabel } from '@/lib/payment-labels'
 
-const WRITEOFF_THRESHOLD = 10000 // GHS 100 in pesewas
+const WRITEOFF_THRESHOLD = 10000
 const WRITEOFF_INACTIVE_DAYS = 90
 
 function formatGhs(pesewas: number) {
-  return 'GHS ' + (pesewas / 100).toFixed(2)
+  return `GHS ${(pesewas / 100).toFixed(2)}`
 }
 
 function formatDate(iso: string) {
+  if (!iso) return '—'
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function formatSource(source: string | null) {
-  if (!source) return '-'
-  return source
-    .toLowerCase()
-    .split('_')
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ')
-}
-
-function formatStatus(status: string) {
-  if (!status) return '-'
-  return status.charAt(0).toUpperCase() + status.slice(1)
+function plainLabel(value: string | null) {
+  if (!value) return 'Not provided'
+  return value.toLowerCase().split('_').map(word => word[0]?.toUpperCase() + word.slice(1)).join(' ')
 }
 
 function statusBadgeClass(status: string) {
-  const base = 'inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium '
-  switch (status) {
-    case 'settled':
-      return base + 'bg-emerald-50 text-emerald-700'
-    case 'partial':
-      return base + 'bg-amber-50 text-amber-700'
-    case 'escalated':
-      return base + 'bg-red-50 text-red-700'
-    default:
-      return base + 'bg-gray-100 text-gray-600'
-  }
+  const base = 'inline-flex rounded-full px-2 py-0.5 text-xs font-medium '
+  if (status === 'settled') return base + 'bg-emerald-50 text-emerald-700'
+  if (status === 'partial' || status === 'mixed') return base + 'bg-amber-50 text-amber-700'
+  if (status === 'escalated') return base + 'bg-red-50 text-red-700'
+  return base + 'bg-gray-100 text-gray-600'
+}
+
+function isWriteOffEligible(debt: AdminClawback) {
+  return debt.outstandingPesewas < WRITEOFF_THRESHOLD && debt.daysOutstanding >= WRITEOFF_INACTIVE_DAYS
 }
 
 export default function ClawbacksPage() {
@@ -59,230 +59,289 @@ export default function ClawbacksPage() {
   const [error, setError] = useState('')
   const [actionId, setActionId] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
+
+  const groups = useMemo(() => groupClawbacksByProvider(clawbacks), [clawbacks])
+  const selected = groups.find(group => (group.providerId || group.clawbacks[0].id) === selectedGroupKey) ?? null
+  const eligibleCount = clawbacks.filter(isWriteOffEligible).length
 
   const load = useCallback(() => {
     setLoading(true)
     setError('')
     listClawbacks()
-      .then(res => {
-        setClawbacks(res.items)
-        setTotalOutstanding(res.totalOutstandingPesewas)
+      .then(result => {
+        setClawbacks(result.items)
+        setTotalOutstanding(result.totalOutstandingPesewas)
       })
       .catch(err => {
         setClawbacks([])
         setTotalOutstanding(0)
-        if (err instanceof ApiError) {
-          setError(err.status === 404
-            ? 'Clawbacks endpoint is not yet available on the backend.'
-            : err.message)
-        } else {
-          setError('Failed to load clawbacks.')
-        }
+        setError(err instanceof ApiError
+          ? (err.status === 404 ? 'The money-owed service is not available yet.' : err.message)
+          : 'Failed to load amounts owed.')
       })
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  async function handleWriteOff(clawback: AdminClawback) {
-    setActionId(clawback.id)
+  async function handleWriteOff(debt: AdminClawback) {
+    setActionId(debt.id)
     setActionError('')
     try {
-      await writeOffClawback(clawback.id, 'Write-off approved: under GHS 100, inactive 90+ days')
-      setClawbacks(prev => prev.filter(c => c.id !== clawback.id))
-      setTotalOutstanding(prev => prev - clawback.outstandingPesewas)
+      await writeOffClawback(debt.id, 'Approved for clearing: under GHS 100 and unpaid for at least 90 days')
+      setClawbacks(previous => previous.filter(item => item.id !== debt.id))
+      setTotalOutstanding(previous => Math.max(0, previous - debt.outstandingPesewas))
     } catch (err) {
-      setActionError(err instanceof ApiError
-        ? `Write-off failed: ${err.message}`
-        : 'Write-off failed. Please try again.')
+      setActionError(err instanceof ApiError ? `Could not clear this amount: ${err.message}` : 'Could not clear this amount. Try again.')
     } finally {
       setActionId(null)
     }
   }
 
-  async function handleEscalate(id: string) {
-    setActionId(id)
+  async function handleEscalate(debt: AdminClawback) {
+    setActionId(debt.id)
     setActionError('')
     try {
-      await escalateClawback(id)
-      setClawbacks(prev => prev.map(c => c.id === id ? { ...c, status: 'escalated' } : c))
+      await escalateClawback(debt.id)
+      setClawbacks(previous => previous.map(item => item.id === debt.id ? { ...item, status: 'escalated' } : item))
     } catch (err) {
-      setActionError(err instanceof ApiError
-        ? `Escalation failed: ${err.message}`
-        : 'Escalation failed. Please try again.')
+      setActionError(err instanceof ApiError ? `Could not send for follow-up: ${err.message}` : 'Could not send for follow-up. Try again.')
     } finally {
       setActionId(null)
     }
   }
-
-  const eligible = clawbacks.filter(c => c.outstandingPesewas < WRITEOFF_THRESHOLD && c.daysOutstanding >= WRITEOFF_INACTIVE_DAYS)
 
   return (
-     <PageGuard permission="view_payments">
-    <div>
-      <PageHeader title="Payments" subtitle="Financial transactions and payout management" />
+    <PageGuard permission="view_payments">
+      <div>
+        <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
 
-      <Tabs defaultValue="clawbacks" className="mb-6">
-        <TabsList className="bg-white">
-          <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Transactions</Link></TabsTrigger>
-          <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Revenue</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Batch Payout History</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Clawbacks</Link></TabsTrigger>
-          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Webhook Failures</Link></TabsTrigger>
-        </TabsList>
-      </Tabs>
+        <Tabs defaultValue="clawbacks" className="mb-6">
+          <TabsList className="bg-white">
+            <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Payment Activity</Link></TabsTrigger>
+            <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Money Summary</Link></TabsTrigger>
+            <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Provider Payments</Link></TabsTrigger>
+            <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Money Owed</Link></TabsTrigger>
+            <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Payment Errors</Link></TabsTrigger>
+          </TabsList>
+        </Tabs>
 
-      <div className="bg-amber-50 rounded-lg px-4 py-3 mb-5 text-sm text-amber-800 flex items-start gap-2">
-        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-        <div>
-          <strong>Clawback rules:</strong> Amounts under GHS 100 inactive for 90+ days are eligible for write-off.
-          Amounts over GHS 100 must be escalated for manual collection.
-          Provider accounts with outstanding clawbacks cannot be deactivated.
-        </div>
-      </div>
-
-      {eligible.length > 0 && (
-        <Alert className="mb-4 bg-emerald-50">
-          <AlertDescription className="text-emerald-700 text-sm">
-            <strong>{eligible.length} clawback{eligible.length > 1 ? 's' : ''}</strong> under GHS 100 are inactive for 90+ days and eligible for write-off.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-          <div className="flex-1">
-            <p className="font-medium">Couldn&apos;t load clawbacks</p>
-            <p className="text-xs mt-0.5">{error}</p>
+        <div className="mb-5 flex items-start gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <strong>How old unpaid amounts are handled:</strong> amounts below GHS 100 that have been unpaid for 90 days can be cleared.
+            Amounts of GHS 100 or more must be sent for manual follow-up.
           </div>
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={load}>Retry</Button>
         </div>
-      )}
 
-      {actionError && (
-        <div className="mb-4 bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3">{actionError}</div>
-      )}
+        {eligibleCount > 0 && (
+          <Alert className="mb-4 bg-emerald-50">
+            <AlertDescription className="text-sm text-emerald-700">
+              <strong>{eligibleCount} record{eligibleCount === 1 ? '' : 's'}</strong> can now be cleared.
+            </AlertDescription>
+          </Alert>
+        )}
 
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50">
-              <TableHead>Provider</TableHead>
-              <TableHead>Source</TableHead>
-              <TableHead className="text-right">Original Amount</TableHead>
-              <TableHead className="text-right">Paid</TableHead>
-              <TableHead className="text-right">Outstanding</TableHead>
-              <TableHead>Original Dispute</TableHead>
-              <TableHead>Initiated</TableHead>
-              <TableHead className="text-right">Days Outstanding</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              [...Array(5)].map((_, i) => (
-                <TableRow key={i}>
-                  {[...Array(10)].map((_, j) => (
-                    <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : clawbacks.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center py-12 text-gray-400 text-sm">
-                  {error ? 'No clawbacks to display while the endpoint is unavailable.' : 'No outstanding clawbacks'}
-                </TableCell>
+        {(error || actionError) && (
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium">{error ? 'Couldn’t load amounts owed' : 'Action not completed'}</p>
+              <p className="mt-0.5 text-xs">{error || actionError}</p>
+            </div>
+            {error && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={load}>Retry</Button>}
+          </div>
+        )}
+
+        <div className="overflow-hidden rounded-xl bg-white shadow-sm">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead>Person</TableHead>
+                <TableHead className="text-right">Number of records</TableHead>
+                <TableHead className="text-right">Total owed</TableHead>
+                <TableHead className="text-right">Already paid</TableHead>
+                <TableHead className="text-right">Still to pay</TableHead>
+                <TableHead>Oldest record</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Details</TableHead>
               </TableRow>
-            ) : (
-              clawbacks.map(cb => {
-                const isEligible = cb.outstandingPesewas < WRITEOFF_THRESHOLD && cb.daysOutstanding >= WRITEOFF_INACTIVE_DAYS
-                const isHighValue = cb.outstandingPesewas >= WRITEOFF_THRESHOLD
-                const isActing = actionId === cb.id
-                return (
-                  <TableRow key={cb.id} className="hover:bg-gray-50">
-                    <TableCell>
-                      <p className="font-medium text-sm text-gray-900">{cb.providerName ?? '-'}</p>
-                      <p className="text-xs text-gray-500 font-mono">{cb.providerId.slice(-12).toUpperCase()}</p>
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-600">{formatSource(cb.source)}</TableCell>
-                    <TableCell className="text-right text-sm text-gray-700">{formatGhs(cb.amountPesewas)}</TableCell>
-                    <TableCell className="text-right text-sm text-emerald-600">{formatGhs(cb.paidAmountPesewas)}</TableCell>
-                    <TableCell className="text-right text-sm font-semibold text-red-600">
-                      {formatGhs(cb.outstandingPesewas)}
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">
-                      {cb.originalDisputeId
-                        ? (
-                          <Link
-                            href={`/disputes?search=${encodeURIComponent(cb.originalDisputeId)}`}
-                            className="inline-flex items-center gap-1 text-blue-600 hover:underline"
-                          >
-                            {cb.originalDisputeId.slice(-8).toUpperCase()}
-                            <ExternalLink className="h-3 w-3" />
-                          </Link>
-                        )
-                        : <span className="text-slate-500">-</span>}
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-500">{formatDate(cb.initiatedAt)}</TableCell>
-                    <TableCell className="text-right">
-                      <span className={`text-sm font-medium ${cb.daysOutstanding >= 60 ? 'text-red-600' : cb.daysOutstanding >= 30 ? 'text-orange-500' : 'text-gray-500'}`}>
-                        {cb.daysOutstanding}d
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className={statusBadgeClass(cb.status)}>{formatStatus(cb.status)}</span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 justify-end">
-                        {isEligible && (
-                          <RoleGate permission="write_off_clawback">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-xs h-7 text-emerald-600 hover:bg-emerald-50"
-                              disabled={isActing}
-                              onClick={() => handleWriteOff(cb)}
-                            >
-                              {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Write Off'}
-                            </Button>
-                          </RoleGate>
-                        )}
-                        {isHighValue && cb.status !== 'escalated' && (
-                          <RoleGate permission="escalate_clawback">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-xs h-7 text-red-600 hover:bg-red-50 gap-1"
-                              disabled={isActing}
-                              onClick={() => handleEscalate(cb.id)}
-                            >
-                              {isActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <><ArrowUpRight className="h-3.5 w-3.5" /> Escalate</>}
-                            </Button>
-                          </RoleGate>
-                        )}
-                        {cb.status === 'escalated' && (
-                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">Escalated</span>
-                        )}
-                      </div>
-                    </TableCell>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                [...Array(5)].map((_, index) => (
+                  <TableRow key={index}>
+                    {[...Array(8)].map((__, cell) => <TableCell key={cell}><div className="h-4 animate-pulse rounded bg-gray-100" /></TableCell>)}
                   </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-        <div className="px-4 py-3 bg-gray-50">
-          <p className="text-xs text-gray-500">
-            Total outstanding: <strong className="text-red-600">
-              {loading ? '—' : formatGhs(totalOutstanding || clawbacks.reduce((s, c) => s + c.outstandingPesewas, 0))}
-            </strong>
-          </p>
+                ))
+              ) : groups.length === 0 ? (
+                <TableRow><TableCell colSpan={8} className="py-12 text-center text-sm text-gray-400">No unpaid amounts</TableCell></TableRow>
+              ) : groups.map(group => (
+                <TableRow
+                  key={group.providerId || group.clawbacks[0].id}
+                  className="cursor-pointer hover:bg-gray-50"
+                  onClick={() => setSelectedGroupKey(group.providerId || group.clawbacks[0].id)}
+                >
+                  <TableCell>
+                    <p className="text-sm font-medium text-gray-900">{group.providerName ?? 'Name not provided'}</p>
+                    <p className="text-xs text-gray-500">{group.providerPhone ?? 'Phone not provided'}</p>
+                  </TableCell>
+                  <TableCell className="text-right text-sm">{group.clawbacks.length}</TableCell>
+                  <TableCell className="text-right text-sm">{formatGhs(group.amountPesewas)}</TableCell>
+                  <TableCell className="text-right text-sm text-emerald-600">{formatGhs(group.paidAmountPesewas)}</TableCell>
+                  <TableCell className="text-right text-sm font-semibold text-red-600">{formatGhs(group.outstandingPesewas)}</TableCell>
+                  <TableCell className="text-sm text-gray-500">{formatDate(group.initiatedAt)}</TableCell>
+                  <TableCell><span className={statusBadgeClass(group.status)}>{paymentStatusLabel(group.status)}</span></TableCell>
+                  <TableCell className="text-right"><Button size="sm" variant="outline">View records</Button></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div className="bg-gray-50 px-4 py-3 text-xs text-gray-500">
+            Total still to be paid: <strong className="text-red-600">{loading ? '—' : formatGhs(totalOutstanding || groups.reduce((sum, group) => sum + group.outstandingPesewas, 0))}</strong>
+          </div>
         </div>
-      </div>
 
-    </div>
-  </PageGuard>
+        <DebtDetailsSheet
+          group={selected}
+          actionId={actionId}
+          onClose={() => setSelectedGroupKey(null)}
+          onWriteOff={handleWriteOff}
+          onEscalate={handleEscalate}
+        />
+      </div>
+    </PageGuard>
+  )
+}
+
+function DebtDetailsSheet({
+  group,
+  actionId,
+  onClose,
+  onWriteOff,
+  onEscalate,
+}: {
+  group: ProviderClawbackGroup | null
+  actionId: string | null
+  onClose: () => void
+  onWriteOff: (debt: AdminClawback) => void
+  onEscalate: (debt: AdminClawback) => void
+}) {
+  const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
+  const [smsResult, setSmsResult] = useState('')
+
+  useEffect(() => {
+    if (!group) return
+    setMessage(`Hello ${group.providerName ?? 'there'}, this is a reminder that you still owe MyShop ${formatGhs(group.outstandingPesewas)}. Please make payment as soon as possible. Thank you.`)
+    setSmsResult('')
+  }, [group])
+
+  async function sendReminder() {
+    if (!group?.providerPhone) return
+    setSending(true)
+    setSmsResult('')
+    try {
+      const result = await sendDirectSms(group.providerPhone, message.trim())
+      setSmsResult(result.sent > 0 ? 'Reminder sent successfully.' : result.reason ?? 'The reminder could not be delivered.')
+    } catch (err) {
+      setSmsResult(err instanceof ApiError ? err.message : 'The reminder could not be sent. Try again.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <Sheet open={Boolean(group)} onOpenChange={open => { if (!open) onClose() }}>
+      <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-2xl">
+        {group && (
+          <>
+            <SheetHeader className="border-b p-6">
+              <SheetTitle>Amounts owed by {group.providerName ?? 'this person'}</SheetTitle>
+              <p className="text-sm text-gray-500">{group.clawbacks.length} individual record{group.clawbacks.length === 1 ? '' : 's'}</p>
+            </SheetHeader>
+
+            <div className="space-y-6 p-6">
+              <section className="rounded-lg border bg-gray-50 p-4">
+                <h3 className="mb-3 text-sm font-semibold">Contact details</h3>
+                <div className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div><p className="text-xs text-gray-500">Name</p><p className="font-medium">{group.providerName ?? 'Not provided'}</p></div>
+                  <div><p className="text-xs text-gray-500">Phone number</p><p className="flex items-center gap-1.5 font-medium"><Phone className="h-3.5 w-3.5" />{group.providerPhone ?? 'Not provided'}</p></div>
+                  <div className="sm:col-span-2"><p className="text-xs text-gray-500">Provider ID</p><p className="break-all font-mono text-xs">{group.providerId || 'Not provided'}</p></div>
+                </div>
+              </section>
+
+              <section className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">Total owed</p><p className="mt-1 font-semibold">{formatGhs(group.amountPesewas)}</p></div>
+                <div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs text-emerald-700">Already paid</p><p className="mt-1 font-semibold text-emerald-700">{formatGhs(group.paidAmountPesewas)}</p></div>
+                <div className="rounded-lg bg-red-50 p-3"><p className="text-xs text-red-700">Still to pay</p><p className="mt-1 font-semibold text-red-700">{formatGhs(group.outstandingPesewas)}</p></div>
+              </section>
+
+              <section>
+                <h3 className="mb-3 text-sm font-semibold">Individual records</h3>
+                <div className="space-y-3">
+                  {group.clawbacks.map(debt => {
+                    const acting = actionId === debt.id
+                    return (
+                      <div key={debt.id} className="rounded-lg border p-4">
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium">{plainLabel(debt.source)}</p>
+                            <p className="text-xs text-gray-500">Started {formatDate(debt.initiatedAt)} · unpaid for {debt.daysOutstanding} days</p>
+                          </div>
+                          <span className={statusBadgeClass(debt.status)}>{paymentStatusLabel(debt.status)}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-sm">
+                          <div><p className="text-xs text-gray-500">Amount owed</p><p>{formatGhs(debt.amountPesewas)}</p></div>
+                          <div><p className="text-xs text-gray-500">Paid</p><p className="text-emerald-600">{formatGhs(debt.paidAmountPesewas)}</p></div>
+                          <div><p className="text-xs text-gray-500">Still to pay</p><p className="font-semibold text-red-600">{formatGhs(debt.outstandingPesewas)}</p></div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          {debt.originalDisputeId ? (
+                            <Link href={`/disputes?search=${encodeURIComponent(debt.originalDisputeId)}`} className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                              View related complaint <ExternalLink className="h-3 w-3" />
+                            </Link>
+                          ) : <span />}
+                          <div className="flex gap-2">
+                            {isWriteOffEligible(debt) && (
+                              <RoleGate permission="write_off_clawback">
+                                <Button size="sm" variant="outline" disabled={acting} onClick={() => onWriteOff(debt)}>
+                                  {acting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Clear amount'}
+                                </Button>
+                              </RoleGate>
+                            )}
+                            {debt.outstandingPesewas >= WRITEOFF_THRESHOLD && debt.status !== 'escalated' && (
+                              <RoleGate permission="escalate_clawback">
+                                <Button size="sm" variant="outline" className="text-red-600" disabled={acting} onClick={() => onEscalate(debt)}>
+                                  {acting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><ArrowUpRight className="mr-1 h-3.5 w-3.5" />Send for follow-up</>}
+                                </Button>
+                              </RoleGate>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-blue-950"><MessageSquareText className="h-4 w-4" />Send payment reminder by SMS</h3>
+                <Textarea className="mt-3 min-h-28 bg-white" value={message} onChange={event => setMessage(event.target.value)} maxLength={480} />
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <p className={`text-xs ${smsResult.includes('successfully') ? 'text-emerald-700' : 'text-red-600'}`}>{smsResult}</p>
+                  <Button onClick={sendReminder} disabled={sending || !group.providerPhone || !message.trim()}>
+                    {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageSquareText className="mr-2 h-4 w-4" />}
+                    Send SMS reminder
+                  </Button>
+                </div>
+                {!group.providerPhone && <p className="mt-2 text-xs text-amber-700">A phone number is required before a reminder can be sent.</p>}
+              </section>
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
   )
 }
