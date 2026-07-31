@@ -65,6 +65,21 @@ test('platform configuration failures explain deployment and value problems safe
   )
 })
 
+test('platform attribution management errors use app-owned copy only', () => {
+  assert.equal(
+    new ApiError(400, 'INVALID_PLATFORM_REFERRAL_CODE').message,
+    'Use the format MYSHOP- followed by six letters or numbers.'
+  )
+  assert.equal(
+    new ApiError(409, 'PLATFORM_REFERRAL_CODE_ALREADY_EXISTS').message,
+    'That platform promo code already exists. Choose another code.'
+  )
+  assert.equal(
+    new ApiError(400, 'INVALID_PLATFORM_REFERRAL_DEACTIVATION_REASON').message,
+    'Enter a deactivation reason between 1 and 500 characters.'
+  )
+})
+
 test('verification submission failures show actionable app-owned copy', () => {
   assert.equal(
     new ApiError(400, 'DRIVER_VEHICLE_BACKFILL_REQUIRED').message,
