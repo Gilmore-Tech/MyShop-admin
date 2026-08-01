@@ -7,6 +7,7 @@ import { RoleGate } from '@/components/common/role-gate'
 import { PageHeader } from '@/components/common/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select,
   SelectContent,
@@ -38,6 +39,7 @@ import { ReferralStatusBadge, RoleChips, formatPoints } from './_components/refe
 import { ReferralUserSheet, type DrilldownTarget } from './_components/referral-user-sheet'
 import { RewardConfigCard } from './_components/reward-config-card'
 import { ReferralAvailabilityCard } from './_components/referral-availability-card'
+import { PlatformReferralCodesPanel } from './_components/platform-referral-codes-panel'
 
 function MetricCard({
   label,
@@ -135,8 +137,16 @@ export default function ReferralsPage() {
       <div>
         <PageHeader
           title="Referrals"
-          subtitle="Exact client, driver and artisan referral ownership"
+          subtitle="Exact client, driver and artisan referral ownership, plus platform promo attribution"
         />
+
+        <Tabs defaultValue="role-referrals">
+          <TabsList variant="line" aria-label="Referral views">
+            <TabsTrigger value="role-referrals">Role referrals</TabsTrigger>
+            <TabsTrigger value="platform-codes">Platform promo codes</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="role-referrals" className="mt-4">
 
         <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <MetricCard
@@ -332,6 +342,12 @@ export default function ReferralsPage() {
           }}
         />
         <ReferralUserSheet target={drilldown} onClose={() => setDrilldown(null)} />
+          </TabsContent>
+
+          <TabsContent value="platform-codes" className="mt-4">
+            <PlatformReferralCodesPanel />
+          </TabsContent>
+        </Tabs>
       </div>
     </PageGuard>
   )

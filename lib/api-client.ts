@@ -241,6 +241,12 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   CONFIG_KEY_NOT_ALLOWED: 'This configuration is not supported by the deployed API version.',
   CONFIG_KEY_NOT_FOUND: 'Deploy the required database migration before changing this setting.',
   CONFIG_VALUE_NOT_BOOLEAN: 'This setting must be enabled or disabled.',
+  INVALID_PLATFORM_REFERRAL_CODE: 'Use the format MYSHOP- followed by six letters or numbers.',
+  INVALID_PLATFORM_REFERRAL_CAMPAIGN_NAME: 'Enter a campaign label between 1 and 120 characters.',
+  INVALID_PLATFORM_REFERRAL_DEACTIVATION_REASON: 'Enter a deactivation reason between 1 and 500 characters.',
+  PLATFORM_REFERRAL_CODE_ALREADY_EXISTS: 'That platform promo code already exists. Choose another code.',
+  PLATFORM_REFERRAL_CODE_NOT_FOUND: 'This platform promo code no longer exists. Refresh the list.',
+  PLATFORM_REFERRAL_CODE_ALREADY_INACTIVE: 'This platform promo code is already inactive.',
 }
 
 function fallbackForStatus(status: number): string {
