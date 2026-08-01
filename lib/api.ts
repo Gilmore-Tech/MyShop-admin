@@ -19,6 +19,13 @@ import {
   roleAccountPath,
   type ExactRoleAccountRole,
 } from './role-account-contract'
+import {
+  normalisePlatformReferralCodeInput,
+  normalisePlatformReferralCodeItem,
+  normalisePlatformReferralCodeListResponse,
+  type PlatformReferralCodeItem,
+  type PlatformReferralCodeListResponse,
+} from './platform-referral-code-contract'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -3952,4 +3959,48 @@ export function voidReferralBonus(referralId: string, reason: string) {
 // bypassing the first-activity check. Idempotent: 409 if already awarded.
 export function awardReferral(referralId: string) {
   return api.post<ReferralListItem>(`/admin/referrals/${referralId}/award`, {})
+}
+
+// ── Platform attribution codes ───────────────────────────────────────────────
+// Platform promo attribution is deliberately separate from the exact-role
+// referral ledger above. It records aggregate signup attribution only: no role
+// account owns a platform code and no digital reward is created.
+
+export type {
+  PlatformReferralCodeItem,
+  PlatformReferralCodeListResponse,
+} from './platform-referral-code-contract'
+
+export async function listPlatformReferralCodes(params?: {
+  page?: number
+  limit?: number
+}): Promise<PlatformReferralCodeListResponse> {
+  const query = new URLSearchParams()
+  if (params?.page !== undefined) query.set('page', String(params.page))
+  if (params?.limit !== undefined) query.set('limit', String(params.limit))
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+  const raw = await api.get<unknown>(`/admin/platform-referral-codes${suffix}`)
+  return normalisePlatformReferralCodeListResponse(raw)
+}
+
+export async function createPlatformReferralCode(input: {
+  code: string
+  campaignName: string
+}): Promise<PlatformReferralCodeItem> {
+  const raw = await api.post<unknown>('/admin/platform-referral-codes', {
+    code: normalisePlatformReferralCodeInput(input.code),
+    campaignName: input.campaignName.trim(),
+  })
+  return normalisePlatformReferralCodeItem(raw)
+}
+
+export async function deactivatePlatformReferralCode(
+  platformReferralCodeId: string,
+  reason: string,
+): Promise<PlatformReferralCodeItem> {
+  const raw = await api.patch<unknown>(
+    `/admin/platform-referral-codes/${encodeURIComponent(platformReferralCodeId)}/deactivate`,
+    { reason: reason.trim() },
+  )
+  return normalisePlatformReferralCodeItem(raw)
 }
