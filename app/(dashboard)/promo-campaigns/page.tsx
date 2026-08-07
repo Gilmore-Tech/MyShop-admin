@@ -216,7 +216,11 @@ export default function PromoCampaignsPage() {
                     ? Math.min(100, Math.round((c.budgetSpentPesewas / c.budgetCapPesewas) * 100))
                     : null
                   return (
-                    <TableRow key={c.id} className="hover:bg-gray-50">
+                    <TableRow
+                      key={c.id}
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => setOpenCampaignId(c.id)}
+                    >
                       <TableCell>
                         <div className="flex items-center gap-2.5">
                           {c.bannerUrl ? (
@@ -234,7 +238,7 @@ export default function PromoCampaignsPage() {
                           <button
                             className="max-w-[180px] truncate text-left text-sm font-semibold text-orange-600 hover:underline"
                             title={c.name}
-                            onClick={() => setOpenCampaignId(c.id)}
+                            onClick={e => { e.stopPropagation(); setOpenCampaignId(c.id) }}
                           >
                             {c.name}
                           </button>
@@ -280,7 +284,7 @@ export default function PromoCampaignsPage() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8 text-gray-400 hover:text-gray-700"
-                                onClick={() => setEditing(c)}
+                                onClick={e => { e.stopPropagation(); setEditing(c) }}
                                 title={c.status === 'pending_approval' ? 'Edit (returns to draft)' : 'Edit draft'}
                               >
                                 <Pencil className="h-3.5 w-3.5" />
@@ -292,7 +296,7 @@ export default function PromoCampaignsPage() {
                                 size="icon"
                                 className="h-8 w-8 text-gray-400 hover:text-orange-600"
                                 disabled={submittingId === c.id}
-                                onClick={() => void handleQuickSubmit(c)}
+                                onClick={e => { e.stopPropagation(); void handleQuickSubmit(c) }}
                                 title="Submit for approval"
                               >
                                 {submittingId === c.id
