@@ -8,8 +8,19 @@
 // role only). This module holds the pure types, defensive normalisers and
 // client-side validation mirrors so they stay unit-testable without a browser.
 
-export type PromoCampaignType = 'percentage_discount' | 'fixed_discount'
+// commission_relief is the provider-audience type: discountValue is the percent
+// of the platform commission forgiven (1-100), maxDiscountPesewas an optional
+// absolute cap on the forgone commission per booking.
+export type PromoCampaignType = 'percentage_discount' | 'fixed_discount' | 'commission_relief'
 export type PromoCampaignScope = 'ride' | 'artisan_job' | 'both'
+// Who the campaign pays out to. Client campaigns discount the fare; provider
+// campaigns (driver/artisan) forgive platform commission instead. Provider
+// audiences imply their scope server-side (driver→ride, artisan→artisan_job).
+export type PromoCampaignAudience = 'client' | 'driver' | 'artisan'
+
+export function isProviderAudience(audience: PromoCampaignAudience): boolean {
+  return audience === 'driver' || audience === 'artisan'
+}
 export type PromoCampaignStatus =
   | 'draft'
   | 'pending_approval'
@@ -28,6 +39,7 @@ export interface PromoCampaign {
   description: string | null
   termsText: string | null
   campaignType: PromoCampaignType
+  audience: PromoCampaignAudience
   discountValue: number
   maxDiscountPesewas: number | null
   minBookingPesewas: number | null
@@ -73,6 +85,7 @@ export interface PromoCampaignSanityLimits {
   promoMaxDiscountPercent: number
   promoMaxFixedDiscountPesewas: number
   promoMaxDurationDays: number
+  promoMaxCommissionReliefPercent: number
 }
 
 // ── Normalisers ───────────────────────────────────────────────────────────────
@@ -122,7 +135,9 @@ function statusAt(value: unknown): PromoCampaignStatus {
 }
 
 function campaignTypeAt(value: unknown): PromoCampaignType {
-  if (value === 'percentage_discount' || value === 'fixed_discount') return value
+  if (value === 'percentage_discount' || value === 'fixed_discount' || value === 'commission_relief') {
+    return value
+  }
   throw new Error('Unsafe promo campaign response: unknown campaign type.')
 }
 
@@ -131,22 +146,39 @@ function scopeAt(value: unknown): PromoCampaignScope {
   throw new Error('Unsafe promo campaign response: unknown promo scope.')
 }
 
+// Absent audience means a pre-audience backend row: those are all client
+// campaigns (the backend default). Unknown values still fail closed.
+function audienceAt(value: unknown): PromoCampaignAudience {
+  if (value == null) return 'client'
+  if (value === 'client' || value === 'driver' || value === 'artisan') return value
+  throw new Error('Unsafe promo campaign response: unknown campaign audience.')
+}
+
+// Provider audiences imply their scope server-side; tolerate the field being
+// omitted on transport by deriving the same mapping the backend applies.
+const IMPLIED_PROVIDER_SCOPE: Partial<Record<PromoCampaignAudience, PromoCampaignScope>> = {
+  driver: 'ride',
+  artisan: 'artisan_job',
+}
+
 export function normalisePromoCampaign(raw: unknown): PromoCampaign {
   const o = objectAt(raw, 'campaign')
   const id = pick(o, 'id')
   if (typeof id !== 'string' || id.length === 0) {
     throw new Error('Unsafe promo campaign response: id must be a non-empty string.')
   }
+  const audience = audienceAt(pick(o, 'audience'))
   return {
     id,
     name: typeof pick(o, 'name') === 'string' ? (pick(o, 'name') as string) : '',
     description: nullableString(pick(o, 'description')),
     termsText: nullableString(pick(o, 'termsText')),
     campaignType: campaignTypeAt(pick(o, 'campaignType')),
+    audience,
     discountValue: nullableInt(pick(o, 'discountValue')) ?? 0,
     maxDiscountPesewas: nullableInt(pick(o, 'maxDiscountPesewas')),
     minBookingPesewas: nullableInt(pick(o, 'minBookingPesewas')),
-    promoScope: scopeAt(pick(o, 'promoScope')),
+    promoScope: scopeAt(pick(o, 'promoScope') ?? IMPLIED_PROVIDER_SCOPE[audience]),
     rideCategoryIds: stringIds(pick(o, 'rideCategoryIds')),
     serviceCategoryIds: stringIds(pick(o, 'serviceCategoryIds')),
     newClientsOnly: Boolean(pick(o, 'newClientsOnly') ?? false),
@@ -214,20 +246,26 @@ export function normalisePromoCampaignSanityLimits(raw: unknown): PromoCampaignS
     promoMaxDiscountPercent: percent,
     promoMaxFixedDiscountPesewas: fixed,
     promoMaxDurationDays: days,
+    // Absent on pre-audience backends: fall back to the loosest legal bound
+    // (relief is inherently 1-100%); the backend stays authoritative on writes.
+    promoMaxCommissionReliefPercent: nullableInt(pick(o, 'promoMaxCommissionReliefPercent')) ?? 100,
   }
 }
 
 // ── Client-side validation mirrors ────────────────────────────────────────────
 // Cheap pre-checks for the friendliest failure mode; the backend remains
 // authoritative (PROMO_CAP_REQUIRED / PROMO_EXCEEDS_SANITY_LIMIT /
-// PROMO_INVALID_WINDOW map to the same rules).
+// PROMO_INVALID_WINDOW / PROMO_AUDIENCE_TYPE_MISMATCH map to the same rules).
 
 export interface PromoCampaignDraftInput {
   name: string
+  audience: PromoCampaignAudience
   campaignType: PromoCampaignType
   discountValue: number
   maxDiscountPesewas: number | null
   promoScope: PromoCampaignScope
+  rideCategoryIds: string[]
+  serviceCategoryIds: string[]
   startsAt: string // ISO
   endsAt: string // ISO
   budgetCapPesewas: number | null
@@ -238,8 +276,29 @@ export function validatePromoCampaignDraft(
   limits: PromoCampaignSanityLimits | null,
 ): string | null {
   if (input.name.trim().length === 0) return 'Enter a campaign name.'
+  // Mirrors the backend's PROMO_AUDIENCE_TYPE_MISMATCH pairing rule.
+  if (isProviderAudience(input.audience) !== (input.campaignType === 'commission_relief')) {
+    return 'Provider campaigns must use the commission-relief type (and client campaigns cannot).'
+  }
+  // Provider audiences restrict by their own vertical's categories only.
+  if (input.audience === 'driver' && input.serviceCategoryIds.length > 0) {
+    return 'Driver campaigns can only be restricted by ride tier — remove the service categories.'
+  }
+  if (input.audience === 'artisan' && input.rideCategoryIds.length > 0) {
+    return 'Artisan campaigns can only be restricted by service category — remove the ride tiers.'
+  }
   if (!Number.isFinite(input.discountValue) || input.discountValue <= 0) {
     return 'Discount value must be greater than zero.'
+  }
+  if (input.campaignType === 'commission_relief') {
+    if (input.discountValue > 100) return 'Commission relief cannot exceed 100% of the platform commission.'
+    if (limits && input.discountValue > limits.promoMaxCommissionReliefPercent) {
+      return `Commission relief cannot exceed the platform sanity limit of ${limits.promoMaxCommissionReliefPercent}%.`
+    }
+    // The relief cap is optional (uncapped = full forgone commission).
+    if (input.maxDiscountPesewas !== null && input.maxDiscountPesewas <= 0) {
+      return 'The relief cap must be greater than zero when set.'
+    }
   }
   if (input.campaignType === 'percentage_discount') {
     if (input.discountValue > 100) return 'Percentage discount cannot exceed 100.'
@@ -271,6 +330,34 @@ export function validatePromoCampaignDraft(
     return 'Budget cap must be greater than zero when set.'
   }
   return null
+}
+
+// Audience-dependent payload fields. Provider audiences must NOT send
+// promoScope (the backend implies driver→ride, artisan→artisan_job) and may
+// only restrict their own vertical's categories; client audiences keep the
+// scope-driven behaviour. Empty category arrays are omitted (= no restriction).
+export function audienceScopedPayloadFields(input: {
+  audience: PromoCampaignAudience
+  promoScope: PromoCampaignScope
+  rideCategoryIds: string[]
+  serviceCategoryIds: string[]
+}): {
+  audience: PromoCampaignAudience
+  promoScope?: PromoCampaignScope
+  rideCategoryIds?: string[]
+  serviceCategoryIds?: string[]
+} {
+  const { audience, promoScope, rideCategoryIds, serviceCategoryIds } = input
+  const sendRide = audience === 'driver'
+    || (audience === 'client' && (promoScope === 'ride' || promoScope === 'both'))
+  const sendService = audience === 'artisan'
+    || (audience === 'client' && (promoScope === 'artisan_job' || promoScope === 'both'))
+  return {
+    audience,
+    promoScope: audience === 'client' ? promoScope : undefined,
+    rideCategoryIds: sendRide && rideCategoryIds.length > 0 ? rideCategoryIds : undefined,
+    serviceCategoryIds: sendService && serviceCategoryIds.length > 0 ? serviceCategoryIds : undefined,
+  }
 }
 
 // ── Banner upload guard ───────────────────────────────────────────────────────

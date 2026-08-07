@@ -29,6 +29,7 @@ export function SanityLimitsCard({
   const [percent, setPercent] = useState('')
   const [fixedGhs, setFixedGhs] = useState('')
   const [days, setDays] = useState('')
+  const [reliefPercent, setReliefPercent] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -37,6 +38,7 @@ export function SanityLimitsCard({
     setPercent(String(limits.promoMaxDiscountPercent))
     setFixedGhs(pesewasToGhsInput(limits.promoMaxFixedDiscountPesewas))
     setDays(String(limits.promoMaxDurationDays))
+    setReliefPercent(String(limits.promoMaxCommissionReliefPercent))
     setError('')
   }, [editing, limits])
 
@@ -45,6 +47,7 @@ export function SanityLimitsCard({
     const nextPercent = Number(percent)
     const nextFixed = ghsInputToPesewas(fixedGhs)
     const nextDays = Number(days)
+    const nextRelief = Number(reliefPercent)
     if (!Number.isInteger(nextPercent) || nextPercent < 1 || nextPercent > 100) {
       setError('Max discount percent must be a whole number between 1 and 100.')
       return
@@ -57,10 +60,15 @@ export function SanityLimitsCard({
       setError('Max duration must be a whole number of days.')
       return
     }
+    if (!Number.isInteger(nextRelief) || nextRelief < 1 || nextRelief > 100) {
+      setError('Max commission relief must be a whole number between 1 and 100.')
+      return
+    }
     const patch: Partial<PromoCampaignSanityLimits> = {}
     if (nextPercent !== limits.promoMaxDiscountPercent) patch.promoMaxDiscountPercent = nextPercent
     if (nextFixed !== limits.promoMaxFixedDiscountPesewas) patch.promoMaxFixedDiscountPesewas = nextFixed
     if (nextDays !== limits.promoMaxDurationDays) patch.promoMaxDurationDays = nextDays
+    if (nextRelief !== limits.promoMaxCommissionReliefPercent) patch.promoMaxCommissionReliefPercent = nextRelief
     if (Object.keys(patch).length === 0) { setEditing(false); return }
 
     setSaving(true)
@@ -103,7 +111,7 @@ export function SanityLimitsCard({
         <p className="mt-3 text-sm text-gray-400">Sanity limits are unavailable right now.</p>
       ) : editing ? (
         <div className="mt-3 space-y-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Max discount (%)</Label>
               <Input type="number" min={1} max={100} step={1} value={percent} onChange={e => setPercent(e.target.value)} disabled={saving} />
@@ -115,6 +123,10 @@ export function SanityLimitsCard({
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Max duration (days)</Label>
               <Input type="number" min={1} step={1} value={days} onChange={e => setDays(e.target.value)} disabled={saving} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Max commission relief (%)</Label>
+              <Input type="number" min={1} max={100} step={1} value={reliefPercent} onChange={e => setReliefPercent(e.target.value)} disabled={saving} />
             </div>
           </div>
           {error && (
@@ -131,10 +143,11 @@ export function SanityLimitsCard({
           </div>
         </div>
       ) : (
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <LimitStat label="Max discount" value={`${limits.promoMaxDiscountPercent}%`} />
           <LimitStat label="Max fixed discount" value={formatGhs(limits.promoMaxFixedDiscountPesewas)} />
           <LimitStat label="Max duration" value={`${limits.promoMaxDurationDays} days`} />
+          <LimitStat label="Max commission relief" value={`${limits.promoMaxCommissionReliefPercent}%`} />
         </div>
       )}
     </div>

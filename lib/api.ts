@@ -33,6 +33,7 @@ import {
   normalisePromoCampaignSanityLimits,
   validatePromoBannerFile,
   type PromoCampaign,
+  type PromoCampaignAudience,
   type PromoCampaignDetail,
   type PromoCampaignListResponse,
   type PromoCampaignSanityLimits,
@@ -3772,6 +3773,7 @@ export function listPromoRedemptions(promoId: string, params?: { page?: number; 
 
 export type {
   PromoCampaign,
+  PromoCampaignAudience,
   PromoCampaignDetail,
   PromoCampaignListResponse,
   PromoCampaignSanityLimits,
@@ -3782,6 +3784,7 @@ export type {
 
 export async function listPromoCampaigns(params?: {
   status?: PromoCampaignStatus
+  audience?: PromoCampaignAudience
   page?: number
   limit?: number
 }): Promise<PromoCampaignListResponse> {
@@ -3808,14 +3811,31 @@ export interface CreatePromoCampaignInput {
   name: string
   description?: string
   termsText?: string
+  /**
+   * commission_relief is ONLY valid for driver/artisan audiences; client
+   * campaigns keep percentage_discount/fixed_discount (the backend answers
+   * PROMO_AUDIENCE_TYPE_MISMATCH for any other pairing).
+   */
   campaignType: PromoCampaignType
+  /** Defaults to 'client' on the backend when omitted. */
+  audience?: PromoCampaignAudience
   discountValue: number
-  /** REQUIRED by the backend for percentage_discount (PROMO_CAP_REQUIRED). */
+  /**
+   * REQUIRED by the backend for percentage_discount (PROMO_CAP_REQUIRED).
+   * Optional for commission_relief: absolute cap on forgone commission per booking.
+   */
   maxDiscountPesewas?: number
   minBookingPesewas?: number
-  promoScope: PromoCampaignScope
+  /**
+   * Client audience only. Provider audiences derive their scope server-side
+   * (driver→ride, artisan→artisan_job) — do NOT send promoScope for them.
+   */
+  promoScope?: PromoCampaignScope
+  /** Driver or ride-scoped client campaigns only — never with an artisan audience. */
   rideCategoryIds?: string[]
+  /** Artisan or job-scoped client campaigns only — never with a driver audience. */
   serviceCategoryIds?: string[]
+  /** For provider audiences this means "new providers only". */
   newClientsOnly?: boolean
   maxUsesPerUser?: number
   maxUsesPerUserPerDay?: number

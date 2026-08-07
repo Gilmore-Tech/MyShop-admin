@@ -24,16 +24,24 @@ import { ApiError } from '@/lib/api-client'
 import { formatDateTime } from '@/lib/format-date'
 import { formatGhs } from '@/lib/money'
 import {
-  ghsInputToPesewas, pesewasToGhsInput, validatePromoBannerFile,
+  ghsInputToPesewas, isProviderAudience, pesewasToGhsInput, validatePromoBannerFile,
   PROMO_BANNER_ACCEPTED_TYPES,
 } from '@/lib/promo-campaign-contract'
+import { CampaignAudienceBadge } from './campaign-audience-badge'
 import { CampaignStatusBadge } from './campaign-status-badge'
 import type { CategoryOption } from './campaign-form-dialog'
 
-const TYPE_LABELS = { percentage_discount: '% off', fixed_discount: 'Flat off' } as const
+const TYPE_LABELS = {
+  percentage_discount: '% off', fixed_discount: 'Flat off', commission_relief: 'Commission relief',
+} as const
 const SCOPE_LABELS = { ride: 'Rides', artisan_job: 'Artisan jobs', both: 'Rides & artisan jobs' } as const
 
 function describeCampaignDiscount(c: PromoCampaign): string {
+  if (c.campaignType === 'commission_relief') {
+    return c.maxDiscountPesewas != null
+      ? `Forgives ${c.discountValue}% of platform commission, up to ${formatGhs(c.maxDiscountPesewas)} per booking`
+      : `Forgives ${c.discountValue}% of platform commission`
+  }
   if (c.campaignType === 'percentage_discount') {
     return c.maxDiscountPesewas != null
       ? `${c.discountValue}% off - max ${formatGhs(c.maxDiscountPesewas)}`
@@ -129,6 +137,8 @@ export function CampaignDetailSheet({
   if (!campaignId) return null
 
   const busy = pendingAction !== null || uploadingBanner
+  const isProvider = detail != null && isProviderAudience(detail.audience)
+  const audienceWord = isProvider ? 'provider' : 'client'
   const budgetPct = detail?.budgetCapPesewas != null && detail.budgetCapPesewas > 0
     ? Math.min(100, Math.round((detail.stats.budgetSpentPesewas / detail.budgetCapPesewas) * 100))
     : null
@@ -140,7 +150,12 @@ export function CampaignDetailSheet({
           <SheetTitle className="flex items-center gap-2 text-base">
             <Megaphone className="h-4 w-4 text-gray-600" />
             <span className="truncate">{detail?.name ?? 'Campaign'}</span>
-            {detail && <span className="ml-auto"><CampaignStatusBadge status={detail.status} /></span>}
+            {detail && (
+              <span className="ml-auto flex items-center gap-1.5">
+                <CampaignAudienceBadge audience={detail.audience} />
+                <CampaignStatusBadge status={detail.status} />
+              </span>
+            )}
           </SheetTitle>
         </SheetHeader>
 
@@ -169,7 +184,7 @@ export function CampaignDetailSheet({
               <div className="grid grid-cols-2 gap-3">
                 <Stat label="Reserved redemptions" value={String(detail.stats.reservedRedemptions)} />
                 <Stat label="Settled redemptions" value={String(detail.stats.settledRedemptions)} />
-                <Stat label="Unique clients" value={String(detail.stats.uniqueClients)} />
+                <Stat label={isProvider ? 'Unique providers' : 'Unique clients'} value={String(detail.stats.uniqueClients)} />
                 <Stat
                   label="Budget spent"
                   value={`${formatGhs(detail.stats.budgetSpentPesewas)}${detail.budgetCapPesewas != null ? ` / ${formatGhs(detail.budgetCapPesewas)}` : ''}`}
@@ -199,13 +214,19 @@ export function CampaignDetailSheet({
                 )}
                 <p className="text-gray-500">
                   Min booking: {detail.minBookingPesewas != null ? formatGhs(detail.minBookingPesewas) : 'none'}
-                  {' - '}Per client: {detail.maxUsesPerUser ?? 'unlimited'}
-                  {' - '}Per client/day: {detail.maxUsesPerUserPerDay ?? 'unlimited'}
+                  {' - '}Per {audienceWord}: {detail.maxUsesPerUser ?? 'unlimited'}
+                  {' - '}Per {audienceWord}/day: {detail.maxUsesPerUserPerDay ?? 'unlimited'}
                 </p>
-                <p className="text-gray-500">{detail.newClientsOnly ? 'New clients only' : 'All clients'}</p>
+                <p className="text-gray-500">
+                  {detail.newClientsOnly ? `New ${audienceWord}s only` : `All ${audienceWord}s`}
+                </p>
                 <p className="text-gray-500">{formatDateTime(detail.startsAt)} -&gt; {formatDateTime(detail.endsAt)}</p>
                 {detail.description && <p className="pt-1 text-gray-500">{detail.description}</p>}
-                {detail.termsText && <p className="italic text-gray-400">Client terms: {detail.termsText}</p>}
+                {detail.termsText && (
+                  <p className="italic text-gray-400">
+                    {isProvider ? 'Provider terms' : 'Client terms'}: {detail.termsText}
+                  </p>
+                )}
                 <p className="pt-1 text-gray-400">
                   Created {formatDateTime(detail.createdAt)}
                   {detail.approvedAt ? ` - approved ${formatDateTime(detail.approvedAt)}` : ''}
