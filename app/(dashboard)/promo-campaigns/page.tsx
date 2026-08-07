@@ -18,11 +18,14 @@ import {
 import {
   getCategories, getPromoCampaignSanityLimits, getRideCategories, listPromoCampaigns,
   submitPromoCampaign,
-  type PromoCampaign, type PromoCampaignSanityLimits, type PromoCampaignStatus,
+  type PromoCampaign, type PromoCampaignAudience, type PromoCampaignSanityLimits,
+  type PromoCampaignStatus,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatDate } from '@/lib/format-date'
 import { formatGhs } from '@/lib/money'
+import { isProviderAudience } from '@/lib/promo-campaign-contract'
+import { CampaignAudienceBadge } from './_components/campaign-audience-badge'
 import { CampaignDetailSheet } from './_components/campaign-detail-sheet'
 import { CampaignFormDialog, type CategoryOption } from './_components/campaign-form-dialog'
 import { CampaignStatusBadge } from './_components/campaign-status-badge'
@@ -38,10 +41,22 @@ const STATUS_OPTIONS: Array<{ value: 'all' | PromoCampaignStatus; label: string 
   { value: 'budget_exhausted', label: 'Budget Exhausted' },
 ]
 
-const TYPE_LABELS = { percentage_discount: '% off', fixed_discount: 'Flat off' } as const
+const AUDIENCE_OPTIONS: Array<{ value: 'all' | PromoCampaignAudience; label: string }> = [
+  { value: 'all',     label: 'All audiences' },
+  { value: 'client',  label: 'Client' },
+  { value: 'driver',  label: 'Drivers' },
+  { value: 'artisan', label: 'Artisans' },
+]
+
+const TYPE_LABELS = {
+  percentage_discount: '% off', fixed_discount: 'Flat off', commission_relief: 'Commission relief',
+} as const
 const SCOPE_LABELS = { ride: 'Rides', artisan_job: 'Artisan jobs', both: 'Rides & jobs' } as const
 
 function describeValue(c: PromoCampaign): string {
+  if (c.campaignType === 'commission_relief') {
+    return `${c.discountValue}% commission relief${c.maxDiscountPesewas != null ? ` (max ${formatGhs(c.maxDiscountPesewas)})` : ''}`
+  }
   return c.campaignType === 'percentage_discount'
     ? `${c.discountValue}%${c.maxDiscountPesewas != null ? ` (max ${formatGhs(c.maxDiscountPesewas)})` : ''}`
     : formatGhs(c.discountValue)
@@ -52,6 +67,7 @@ export default function PromoCampaignsPage() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<'all' | PromoCampaignStatus>('all')
+  const [audienceFilter, setAudienceFilter] = useState<'all' | PromoCampaignAudience>('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const LIMIT = 20
@@ -68,7 +84,7 @@ export default function PromoCampaignsPage() {
   const [submittingId, setSubmittingId] = useState<string | null>(null)
   const [rowError, setRowError] = useState('')
 
-  useEffect(() => { setPage(1) }, [statusFilter])
+  useEffect(() => { setPage(1) }, [statusFilter, audienceFilter])
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -76,6 +92,7 @@ export default function PromoCampaignsPage() {
     try {
       const res = await listPromoCampaigns({
         status: statusFilter === 'all' ? undefined : statusFilter,
+        audience: audienceFilter === 'all' ? undefined : audienceFilter,
         page,
         limit: LIMIT,
       })
@@ -92,7 +109,7 @@ export default function PromoCampaignsPage() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [statusFilter, page])
+  }, [statusFilter, audienceFilter, page])
 
   useEffect(() => { void load() }, [load])
   useAutoRefresh(() => void load(true))
@@ -169,6 +186,14 @@ export default function PromoCampaignsPage() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={audienceFilter} onValueChange={v => setAudienceFilter(v as typeof audienceFilter)}>
+            <SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {AUDIENCE_OPTIONS.map(o => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="ml-auto text-sm text-gray-500">{total} campaign{total === 1 ? '' : 's'}</div>
         </div>
 
@@ -184,6 +209,7 @@ export default function PromoCampaignsPage() {
             <TableHeader>
               <TableRow className="bg-gray-50">
                 <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Campaign</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Audience</TableHead>
                 <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Discount</TableHead>
                 <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scope</TableHead>
                 <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Window</TableHead>
@@ -196,17 +222,19 @@ export default function PromoCampaignsPage() {
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 7 }).map((_, j) => (
+                    {Array.from({ length: 8 }).map((_, j) => (
                       <TableCell key={j}><div className="h-4 animate-pulse rounded bg-gray-100" /></TableCell>
                     ))}
                   </TableRow>
                 ))
               ) : campaigns.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-14 text-center text-gray-400">
+                  <TableCell colSpan={8} className="py-14 text-center text-gray-400">
                     <Megaphone className="mx-auto mb-2 h-8 w-8 text-gray-200" />
                     <p className="text-sm">
-                      {statusFilter !== 'all' ? 'No campaigns match this status.' : 'No promo campaigns yet.'}
+                      {statusFilter !== 'all' || audienceFilter !== 'all'
+                        ? 'No campaigns match these filters.'
+                        : 'No promo campaigns yet.'}
                     </p>
                   </TableCell>
                 </TableRow>
@@ -245,9 +273,13 @@ export default function PromoCampaignsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
+                        <CampaignAudienceBadge audience={c.audience} />
+                      </TableCell>
+                      <TableCell>
                         <p className="text-sm text-gray-800">{describeValue(c)}</p>
                         <p className="mt-0.5 text-[10px] text-gray-400">
-                          {TYPE_LABELS[c.campaignType]}{c.newClientsOnly ? ' - new clients' : ''}
+                          {TYPE_LABELS[c.campaignType]}
+                          {c.newClientsOnly ? (isProviderAudience(c.audience) ? ' - new providers' : ' - new clients') : ''}
                         </p>
                       </TableCell>
                       <TableCell>

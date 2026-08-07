@@ -255,6 +255,7 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   PROMO_BUDGET_CANNOT_SHRINK: 'The budget cap can only be raised, never lowered.',
   PROMO_END_CANNOT_SHRINK: 'The end date can only be extended, never brought forward.',
   PROMO_CAMPAIGN_STATE_CHANGED: 'This campaign changed state in the meantime. Reload and try again.',
+  PROMO_AUDIENCE_TYPE_MISMATCH: 'Provider campaigns must use the commission-relief type (and client campaigns cannot).',
   SUPER_ADMIN_REQUIRED: 'Only the Super Administrator can change the platform sanity limits.',
 }
 

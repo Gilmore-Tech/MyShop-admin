@@ -15,13 +15,14 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import {
   createPromoCampaign, updatePromoCampaign,
-  type CreatePromoCampaignInput, type PromoCampaign, type PromoCampaignSanityLimits,
-  type PromoCampaignScope, type PromoCampaignType,
+  type CreatePromoCampaignInput, type PromoCampaign, type PromoCampaignAudience,
+  type PromoCampaignSanityLimits, type PromoCampaignScope, type PromoCampaignType,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatGhs } from '@/lib/money'
 import {
-  ghsInputToPesewas, pesewasToGhsInput, validatePromoCampaignDraft,
+  audienceScopedPayloadFields, ghsInputToPesewas, isProviderAudience,
+  pesewasToGhsInput, validatePromoCampaignDraft,
 } from '@/lib/promo-campaign-contract'
 
 export interface CategoryOption {
@@ -33,8 +34,9 @@ interface FormState {
   name: string
   description: string
   termsText: string
+  audience: PromoCampaignAudience
   campaignType: PromoCampaignType
-  discountValue: string // percent for percentage_discount, GHS for fixed_discount
+  discountValue: string // percent for percentage_discount/commission_relief, GHS for fixed_discount
   maxDiscountGhs: string
   minBookingGhs: string
   promoScope: PromoCampaignScope
@@ -53,6 +55,7 @@ const EMPTY_FORM: FormState = {
   name: '',
   description: '',
   termsText: '',
+  audience: 'client',
   campaignType: 'percentage_discount',
   discountValue: '10',
   maxDiscountGhs: '50.00',
@@ -106,6 +109,7 @@ export function CampaignFormDialog({
         name: existing.name,
         description: existing.description ?? '',
         termsText: existing.termsText ?? '',
+        audience: existing.audience,
         campaignType: existing.campaignType,
         discountValue: existing.campaignType === 'fixed_discount'
           ? pesewasToGhsInput(existing.discountValue)
@@ -133,20 +137,43 @@ export function CampaignFormDialog({
     setForm(f => ({ ...f, [key]: value }))
   }
 
+  const isProvider = isProviderAudience(form.audience)
   const isPercent = form.campaignType === 'percentage_discount'
-  const showRideCategories = form.promoScope === 'ride' || form.promoScope === 'both'
-  const showServiceCategories = form.promoScope === 'artisan_job' || form.promoScope === 'both'
+  const isRelief = form.campaignType === 'commission_relief'
+  const showRideCategories = form.audience === 'driver'
+    || (!isProvider && (form.promoScope === 'ride' || form.promoScope === 'both'))
+  const showServiceCategories = form.audience === 'artisan'
+    || (!isProvider && (form.promoScope === 'artisan_job' || form.promoScope === 'both'))
+
+  // Provider audiences are locked to commission relief; switching back to
+  // client restores a discount type. Categories that no longer apply are
+  // dropped so a stale selection can never reach the payload.
+  function setAudience(audience: PromoCampaignAudience) {
+    setForm(f => ({
+      ...f,
+      audience,
+      campaignType: isProviderAudience(audience)
+        ? 'commission_relief'
+        : f.campaignType === 'commission_relief' ? 'percentage_discount' : f.campaignType,
+      rideCategoryIds: audience === 'artisan' ? [] : f.rideCategoryIds,
+      serviceCategoryIds: audience === 'driver' ? [] : f.serviceCategoryIds,
+    }))
+  }
 
   const previewText = useMemo(() => {
     const dv = Number(form.discountValue)
     if (!Number.isFinite(dv) || dv <= 0) return null
+    if (isRelief) {
+      const cap = ghsInputToPesewas(form.maxDiscountGhs)
+      return `Forgives ${dv}% of the platform commission${Number.isFinite(cap) && cap > 0 ? `, up to ${formatGhs(cap)} per booking` : ''}.`
+    }
     if (isPercent) {
       const cap = ghsInputToPesewas(form.maxDiscountGhs)
       return `${dv}% off automatically at checkout${Number.isFinite(cap) && cap > 0 ? `, capped at ${formatGhs(cap)}` : ''}.`
     }
     const pesewas = ghsInputToPesewas(form.discountValue)
     return Number.isFinite(pesewas) ? `${formatGhs(pesewas)} off automatically at checkout.` : null
-  }, [form.discountValue, form.maxDiscountGhs, isPercent])
+  }, [form.discountValue, form.maxDiscountGhs, isPercent, isRelief])
 
   function toggleCategory(key: 'rideCategoryIds' | 'serviceCategoryIds', id: string) {
     setForm(f => ({
@@ -159,9 +186,11 @@ export function CampaignFormDialog({
     e.preventDefault()
     setError('')
 
-    const discountValue = isPercent
-      ? Number(form.discountValue)
-      : ghsInputToPesewas(form.discountValue)
+    // Percent semantics (percentage_discount + commission_relief) stay raw;
+    // only fixed_discount is a GHS amount that crosses the API in pesewas.
+    const discountValue = form.campaignType === 'fixed_discount'
+      ? ghsInputToPesewas(form.discountValue)
+      : Number(form.discountValue)
     const maxDiscountPesewas = form.maxDiscountGhs.trim() ? ghsInputToPesewas(form.maxDiscountGhs) : NaN
     const minBookingPesewas = form.minBookingGhs.trim() ? ghsInputToPesewas(form.minBookingGhs) : NaN
     const budgetCapPesewas = form.budgetCapGhs.trim() ? ghsInputToPesewas(form.budgetCapGhs) : NaN
@@ -171,10 +200,13 @@ export function CampaignFormDialog({
     const validationError = validatePromoCampaignDraft(
       {
         name: form.name,
+        audience: form.audience,
         campaignType: form.campaignType,
         discountValue,
         maxDiscountPesewas: Number.isFinite(maxDiscountPesewas) ? maxDiscountPesewas : null,
         promoScope: form.promoScope,
+        rideCategoryIds: showRideCategories ? form.rideCategoryIds : [],
+        serviceCategoryIds: showServiceCategories ? form.serviceCategoryIds : [],
         startsAt: startsAtIso,
         endsAt: endsAtIso,
         budgetCapPesewas: Number.isFinite(budgetCapPesewas) ? budgetCapPesewas : null,
@@ -185,12 +217,13 @@ export function CampaignFormDialog({
 
     const maxUsesPerUser = form.maxUsesPerUser.trim() ? Number(form.maxUsesPerUser) : undefined
     const maxUsesPerUserPerDay = form.maxUsesPerUserPerDay.trim() ? Number(form.maxUsesPerUserPerDay) : undefined
+    const audienceWord = isProvider ? 'provider' : 'client'
     if (maxUsesPerUser !== undefined && (!Number.isInteger(maxUsesPerUser) || maxUsesPerUser < 1)) {
-      setError('Max uses per client must be a whole number of at least 1.')
+      setError(`Max uses per ${audienceWord} must be a whole number of at least 1.`)
       return
     }
     if (maxUsesPerUserPerDay !== undefined && (!Number.isInteger(maxUsesPerUserPerDay) || maxUsesPerUserPerDay < 1)) {
-      setError('Max daily uses per client must be a whole number of at least 1.')
+      setError(`Max daily uses per ${audienceWord} must be a whole number of at least 1.`)
       return
     }
 
@@ -202,9 +235,14 @@ export function CampaignFormDialog({
       discountValue,
       maxDiscountPesewas: Number.isFinite(maxDiscountPesewas) ? maxDiscountPesewas : undefined,
       minBookingPesewas: Number.isFinite(minBookingPesewas) ? minBookingPesewas : undefined,
-      promoScope: form.promoScope,
-      rideCategoryIds: showRideCategories && form.rideCategoryIds.length > 0 ? form.rideCategoryIds : undefined,
-      serviceCategoryIds: showServiceCategories && form.serviceCategoryIds.length > 0 ? form.serviceCategoryIds : undefined,
+      // audience + promoScope + category restrictions move together: provider
+      // audiences never send promoScope and only their vertical's categories.
+      ...audienceScopedPayloadFields({
+        audience: form.audience,
+        promoScope: form.promoScope,
+        rideCategoryIds: form.rideCategoryIds,
+        serviceCategoryIds: form.serviceCategoryIds,
+      }),
       newClientsOnly: form.newClientsOnly,
       maxUsesPerUser,
       maxUsesPerUserPerDay,
@@ -242,6 +280,24 @@ export function CampaignFormDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+          {/* Audience */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Audience</Label>
+            <Select value={form.audience} onValueChange={v => setAudience(v as PromoCampaignAudience)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="client">Client</SelectItem>
+                <SelectItem value="driver">Drivers</SelectItem>
+                <SelectItem value="artisan">Artisans</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-gray-400">
+              {isProvider
+                ? 'Provider campaigns forgive a share of the platform commission instead of discounting the fare.'
+                : 'Client campaigns discount the fare at checkout.'}
+            </p>
+          </div>
+
           {/* Name */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</Label>
@@ -265,12 +321,16 @@ export function CampaignFormDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Terms shown to clients</Label>
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Terms shown to {isProvider ? 'providers' : 'clients'}
+              </Label>
               <Textarea
                 rows={2}
                 value={form.termsText}
                 onChange={e => set('termsText', e.target.value)}
-                placeholder="e.g. Discount applies to the pre-promo fare."
+                placeholder={isProvider
+                  ? 'e.g. Relief applies to the platform commission only.'
+                  : 'e.g. Discount applies to the pre-promo fare.'}
               />
             </div>
           </div>
@@ -279,55 +339,77 @@ export function CampaignFormDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</Label>
-              <Select value={form.campaignType} onValueChange={v => set('campaignType', v as PromoCampaignType)}>
+              <Select
+                value={form.campaignType}
+                onValueChange={v => set('campaignType', v as PromoCampaignType)}
+                disabled={isProvider}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="percentage_discount">% off</SelectItem>
-                  <SelectItem value="fixed_discount">Flat amount off</SelectItem>
+                  {isProvider ? (
+                    <SelectItem value="commission_relief">Commission relief</SelectItem>
+                  ) : (
+                    <>
+                      <SelectItem value="percentage_discount">% off</SelectItem>
+                      <SelectItem value="fixed_discount">Flat amount off</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
+              {isProvider && (
+                <p className="text-[10px] text-gray-400">Provider campaigns always forgive commission.</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                {isPercent ? 'Percent off (1-100)' : 'Amount off (GHS)'}
+                {isRelief ? 'Commission relief % (1-100)' : isPercent ? 'Percent off (1-100)' : 'Amount off (GHS)'}
               </Label>
               <Input
                 type="number"
-                min={isPercent ? 1 : 0.01}
-                max={isPercent ? 100 : undefined}
-                step={isPercent ? 1 : 0.01}
+                min={form.campaignType === 'fixed_discount' ? 0.01 : 1}
+                max={form.campaignType === 'fixed_discount' ? undefined : 100}
+                step={form.campaignType === 'fixed_discount' ? 0.01 : 1}
                 value={form.discountValue}
                 onChange={e => set('discountValue', e.target.value)}
               />
             </div>
-            {isPercent && (
+            {(isPercent || isRelief) && (
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Max discount (GHS)</Label>
+                <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  {isRelief ? 'Relief cap (GHS)' : 'Max discount (GHS)'}
+                </Label>
                 <Input
                   type="number"
                   min={0.01}
                   step={0.01}
+                  placeholder={isRelief ? 'Uncapped' : undefined}
                   value={form.maxDiscountGhs}
                   onChange={e => set('maxDiscountGhs', e.target.value)}
                 />
-                <p className="text-[10px] text-gray-400">Required for % campaigns.</p>
+                <p className="text-[10px] text-gray-400">
+                  {isRelief ? 'Optional cap on forgone commission per booking.' : 'Required for % campaigns.'}
+                </p>
               </div>
             )}
           </div>
 
-          {/* Scope + min booking */}
+          {/* Scope + min booking. Provider audiences imply their scope
+              server-side (driver -> ride, artisan -> artisan_job), so the
+              selector is hidden and promoScope is never sent for them. */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scope</Label>
-              <Select value={form.promoScope} onValueChange={v => set('promoScope', v as PromoCampaignScope)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="both">Rides & artisan jobs</SelectItem>
-                  <SelectItem value="ride">Rides only</SelectItem>
-                  <SelectItem value="artisan_job">Artisan jobs only</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {!isProvider && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scope</Label>
+                <Select value={form.promoScope} onValueChange={v => set('promoScope', v as PromoCampaignScope)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="both">Rides & artisan jobs</SelectItem>
+                    <SelectItem value="ride">Rides only</SelectItem>
+                    <SelectItem value="artisan_job">Artisan jobs only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Min booking (GHS)</Label>
               <Input
@@ -368,7 +450,9 @@ export function CampaignFormDialog({
           {/* Targeting + usage caps */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Max uses / client</Label>
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Max uses / {isProvider ? 'provider' : 'client'}
+              </Label>
               <Input
                 type="number"
                 min={1}
@@ -378,7 +462,9 @@ export function CampaignFormDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Max daily uses / client</Label>
+              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Max daily uses / {isProvider ? 'provider' : 'client'}
+              </Label>
               <Input
                 type="number"
                 min={1}
@@ -393,7 +479,7 @@ export function CampaignFormDialog({
                   checked={form.newClientsOnly}
                   onCheckedChange={checked => set('newClientsOnly', checked === true)}
                 />
-                New clients only
+                {isProvider ? 'New providers only' : 'New clients only'}
               </label>
             </div>
           </div>
@@ -421,7 +507,9 @@ export function CampaignFormDialog({
                 value={form.bannerPriority}
                 onChange={e => set('bannerPriority', e.target.value)}
               />
-              <p className="text-[10px] text-gray-400">Higher shows first in the client app carousel.</p>
+              <p className="text-[10px] text-gray-400">
+                Higher shows first in the {isProvider ? 'provider' : 'client'} app carousel.
+              </p>
             </div>
           </div>
 
