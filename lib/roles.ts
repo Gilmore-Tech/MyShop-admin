@@ -64,6 +64,7 @@ export type Permission =
   | 'resolve_client_role_account_recovery'
   | 'view_promotions'
   | 'manage_promotions'
+  | 'approve_promotions'
   | 'view_referrals'
   | 'manage_referrals'
 
@@ -186,8 +187,9 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     group: 'Comms & Help',
     permissions: [
       { key: 'send_announcement', label: 'Send announcements', description: 'Broadcast push announcements' },
-      { key: 'view_promotions', label: 'View promotions', description: 'Browse promo codes' },
-      { key: 'manage_promotions', label: 'Manage promotions', description: 'Create and edit promo codes' },
+      { key: 'view_promotions', label: 'View promotions', description: 'Browse promo codes and campaigns' },
+      { key: 'manage_promotions', label: 'Manage promotions', description: 'Create and edit promo codes and campaigns' },
+      { key: 'approve_promotions', label: 'Approve promo campaigns', description: 'Maker-checker approval of promo campaigns (never one\'s own)' },
       { key: 'view_help_articles', label: 'View help articles', description: 'Browse the help centre' },
       { key: 'edit_help_articles', label: 'Edit help articles', description: 'Create and edit help articles' },
       { key: 'delete_help_articles', label: 'Delete help articles', description: 'Delete help articles' },

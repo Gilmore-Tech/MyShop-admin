@@ -247,6 +247,15 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   PLATFORM_REFERRAL_CODE_ALREADY_EXISTS: 'That platform promo code already exists. Choose another code.',
   PLATFORM_REFERRAL_CODE_NOT_FOUND: 'This platform promo code no longer exists. Refresh the list.',
   PLATFORM_REFERRAL_CODE_ALREADY_INACTIVE: 'This platform promo code is already inactive.',
+  PROMO_CAP_REQUIRED: 'Percentage campaigns need a max-discount cap in GHS.',
+  PROMO_EXCEEDS_SANITY_LIMIT: 'The discount exceeds the platform sanity limits. Lower it or ask the Super Admin to raise the limits.',
+  PROMO_INVALID_WINDOW: 'The campaign window is invalid. The end date must be after the start date and within the maximum duration.',
+  PROMO_MAKER_CHECKER_VIOLATION: 'You created this campaign, so a different authorised admin must approve it.',
+  PROMO_CAMPAIGN_TERMS_LOCKED: 'Approved campaigns are locked. Only raising the budget, extending the end date, or changing the banner priority is allowed.',
+  PROMO_BUDGET_CANNOT_SHRINK: 'The budget cap can only be raised, never lowered.',
+  PROMO_END_CANNOT_SHRINK: 'The end date can only be extended, never brought forward.',
+  PROMO_CAMPAIGN_STATE_CHANGED: 'This campaign changed state in the meantime. Reload and try again.',
+  SUPER_ADMIN_REQUIRED: 'Only the Super Administrator can change the platform sanity limits.',
 }
 
 function fallbackForStatus(status: number): string {
