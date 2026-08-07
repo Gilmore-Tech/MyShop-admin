@@ -26,6 +26,20 @@ import {
   type PlatformReferralCodeItem,
   type PlatformReferralCodeListResponse,
 } from './platform-referral-code-contract'
+import {
+  normalisePromoCampaign,
+  normalisePromoCampaignDetail,
+  normalisePromoCampaignListResponse,
+  normalisePromoCampaignSanityLimits,
+  validatePromoBannerFile,
+  type PromoCampaign,
+  type PromoCampaignDetail,
+  type PromoCampaignListResponse,
+  type PromoCampaignSanityLimits,
+  type PromoCampaignScope,
+  type PromoCampaignStatus,
+  type PromoCampaignType,
+} from './promo-campaign-contract'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -3747,6 +3761,199 @@ export function listPromoRedemptions(promoId: string, params?: { page?: number; 
       ).toString()
     : ''
   return api.get<PromoRedemptionListResponse>(`/admin/promos/${promoId}/redemptions${qs}`)
+}
+
+// ── Promo campaigns ───────────────────────────────────────────────────────────
+// Admin-managed auto-apply campaigns — distinct from the typed promo codes
+// above. Backend: /admin/promo-campaigns* with a maker-checker approval flow
+// (approve_promotions may never approve the creator's own campaign) and
+// super_admin-only sanity-limit writes. Types + normalisers live in
+// lib/promo-campaign-contract.ts so they stay unit-testable.
+
+export type {
+  PromoCampaign,
+  PromoCampaignDetail,
+  PromoCampaignListResponse,
+  PromoCampaignSanityLimits,
+  PromoCampaignScope,
+  PromoCampaignStatus,
+  PromoCampaignType,
+} from './promo-campaign-contract'
+
+export async function listPromoCampaigns(params?: {
+  status?: PromoCampaignStatus
+  page?: number
+  limit?: number
+}): Promise<PromoCampaignListResponse> {
+  const qs = params
+    ? '?' +
+      new URLSearchParams(
+        Object.fromEntries(
+          Object.entries(params)
+            .filter(([, v]) => v != null)
+            .map(([k, v]) => [k, String(v)])
+        )
+      ).toString()
+    : ''
+  const raw = await api.get<unknown>(`/admin/promo-campaigns${qs}`)
+  return normalisePromoCampaignListResponse(raw, params)
+}
+
+export async function getPromoCampaign(campaignId: string): Promise<PromoCampaignDetail> {
+  const raw = await api.get<unknown>(`/admin/promo-campaigns/${encodeURIComponent(campaignId)}`)
+  return normalisePromoCampaignDetail(raw)
+}
+
+export interface CreatePromoCampaignInput {
+  name: string
+  description?: string
+  termsText?: string
+  campaignType: PromoCampaignType
+  discountValue: number
+  /** REQUIRED by the backend for percentage_discount (PROMO_CAP_REQUIRED). */
+  maxDiscountPesewas?: number
+  minBookingPesewas?: number
+  promoScope: PromoCampaignScope
+  rideCategoryIds?: string[]
+  serviceCategoryIds?: string[]
+  newClientsOnly?: boolean
+  maxUsesPerUser?: number
+  maxUsesPerUserPerDay?: number
+  budgetCapPesewas?: number
+  startsAt: string // ISO
+  endsAt: string // ISO
+  bannerPriority?: number
+}
+
+export async function createPromoCampaign(data: CreatePromoCampaignInput): Promise<PromoCampaign> {
+  const raw = await api.post<unknown>('/admin/promo-campaigns', data)
+  return normalisePromoCampaign(raw)
+}
+
+// Full edit is allowed while draft/pending_approval (editing a pending campaign
+// returns it to draft). Once approved/paused only budgetCapPesewas (raise only),
+// endsAt (extend only) and bannerPriority may change — anything else is a 409
+// PROMO_CAMPAIGN_TERMS_LOCKED.
+export type UpdatePromoCampaignInput = Partial<CreatePromoCampaignInput>
+
+export async function updatePromoCampaign(
+  campaignId: string,
+  data: UpdatePromoCampaignInput,
+): Promise<PromoCampaign> {
+  const raw = await api.patch<unknown>(
+    `/admin/promo-campaigns/${encodeURIComponent(campaignId)}`,
+    data,
+  )
+  return normalisePromoCampaign(raw)
+}
+
+export async function submitPromoCampaign(campaignId: string): Promise<PromoCampaign> {
+  const raw = await api.post<unknown>(
+    `/admin/promo-campaigns/${encodeURIComponent(campaignId)}/submit`,
+    {},
+  )
+  return normalisePromoCampaign(raw)
+}
+
+// 403 PROMO_MAKER_CHECKER_VIOLATION when the approver is the campaign creator.
+export async function approvePromoCampaign(campaignId: string): Promise<PromoCampaign> {
+  const raw = await api.post<unknown>(
+    `/admin/promo-campaigns/${encodeURIComponent(campaignId)}/approve`,
+    {},
+  )
+  return normalisePromoCampaign(raw)
+}
+
+export async function rejectPromoCampaign(
+  campaignId: string,
+  reason: string,
+): Promise<PromoCampaign> {
+  const raw = await api.post<unknown>(
+    `/admin/promo-campaigns/${encodeURIComponent(campaignId)}/reject`,
+    { reason: reason.trim() },
+  )
+  return normalisePromoCampaign(raw)
+}
+
+export async function pausePromoCampaign(campaignId: string): Promise<PromoCampaign> {
+  const raw = await api.post<unknown>(
+    `/admin/promo-campaigns/${encodeURIComponent(campaignId)}/pause`,
+    {},
+  )
+  return normalisePromoCampaign(raw)
+}
+
+export async function resumePromoCampaign(campaignId: string): Promise<PromoCampaign> {
+  const raw = await api.post<unknown>(
+    `/admin/promo-campaigns/${encodeURIComponent(campaignId)}/resume`,
+    {},
+  )
+  return normalisePromoCampaign(raw)
+}
+
+export async function endPromoCampaign(campaignId: string): Promise<PromoCampaign> {
+  const raw = await api.post<unknown>(
+    `/admin/promo-campaigns/${encodeURIComponent(campaignId)}/end`,
+    {},
+  )
+  return normalisePromoCampaign(raw)
+}
+
+// Multipart banner upload (JPEG/PNG/WebP ≤ 5MB, recommended 1200×480). Like
+// uploadProviderPhoto above, this cannot use the typed `api` helper — for
+// multipart we must NOT set Content-Type (the browser adds the boundary), so we
+// call fetch directly while reusing the same base URL + bearer token.
+export async function uploadPromoCampaignBanner(
+  campaignId: string,
+  file: File,
+): Promise<{ campaignId: string; bannerUrl: string }> {
+  const clientError = validatePromoBannerFile(file)
+  if (clientError) throw new Error(clientError)
+
+  const body = new FormData()
+  body.append('file', file)
+
+  const headers = new Headers()
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  // Intentionally no Content-Type — the browser sets the multipart boundary.
+
+  const res = await fetch(
+    `${API_BASE}/admin/promo-campaigns/${encodeURIComponent(campaignId)}/banner`,
+    { method: 'POST', headers, body },
+  )
+
+  let json: any = null
+  try {
+    json = await res.json()
+  } catch {
+    /* non-JSON response */
+  }
+
+  if (!res.ok) {
+    throw apiErrorFromResponse(res, json)
+  }
+
+  // NestJS TransformInterceptor wraps successful bodies in { success, data }.
+  const payload = json?.data ?? json
+  if (payload?.campaignId !== campaignId || typeof payload?.bannerUrl !== 'string') {
+    throw new Error('Banner upload returned an unexpected response.')
+  }
+  return { campaignId: payload.campaignId, bannerUrl: payload.bannerUrl }
+}
+
+export async function getPromoCampaignSanityLimits(): Promise<PromoCampaignSanityLimits> {
+  const raw = await api.get<unknown>('/admin/promo-campaigns/sanity-limits')
+  return normalisePromoCampaignSanityLimits(raw)
+}
+
+// super_admin role only — the backend answers 403 SUPER_ADMIN_REQUIRED for
+// everyone else, including admins holding manage_promotions.
+export async function updatePromoCampaignSanityLimits(
+  data: Partial<PromoCampaignSanityLimits>,
+): Promise<PromoCampaignSanityLimits> {
+  const raw = await api.patch<unknown>('/admin/promo-campaigns/sanity-limits', data)
+  return normalisePromoCampaignSanityLimits(raw)
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────

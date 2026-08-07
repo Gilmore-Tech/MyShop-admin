@@ -295,6 +295,7 @@ export default function AppSidebar() {
           title: 'Growth', href: '/promotions', icon: Gift,
           children: [
             { title: 'Promotions', href: '/promotions', permission: 'view_promotions' },
+            { title: 'Promo Campaigns', href: '/promo-campaigns', permission: 'view_promotions' },
             { title: 'Referrals',  href: '/referrals',  permission: 'view_referrals' },
           ],
         },
