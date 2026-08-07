@@ -24,6 +24,8 @@ const labels: Record<string, string> = {
   pending_coordinator: 'Awaiting Coordinator',
   coordinator_approved: 'Awaiting Regional Manager',
   retired: 'Retired',
+  draft: 'Draft', pending_approval: 'Pending Approval', paused: 'Paused',
+  ended: 'Ended', budget_exhausted: 'Budget Exhausted',
 }
 
 export function StatusBadge({ status, className }: { status: string | null | undefined; className?: string }) {
