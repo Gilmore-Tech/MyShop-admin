@@ -21,6 +21,22 @@ export type PromoCampaignAudience = 'client' | 'driver' | 'artisan'
 export function isProviderAudience(audience: PromoCampaignAudience): boolean {
   return audience === 'driver' || audience === 'artisan'
 }
+
+/**
+ * The only campaign type legal for an audience, regardless of what UI state
+ * claims. Provider audiences are always commission relief; a client audience
+ * never is (stale relief values fall back to percentage). Using this at the
+ * validation/payload boundary makes the PROMO_AUDIENCE_TYPE_MISMATCH pairing
+ * structurally impossible to violate from the dashboard, whatever interim
+ * states a controlled Select emits while its item list is being swapped.
+ */
+export function effectiveCampaignType(
+  audience: PromoCampaignAudience,
+  requested: PromoCampaignType,
+): PromoCampaignType {
+  if (isProviderAudience(audience)) return 'commission_relief'
+  return requested === 'commission_relief' ? 'percentage_discount' : requested
+}
 export type PromoCampaignStatus =
   | 'draft'
   | 'pending_approval'

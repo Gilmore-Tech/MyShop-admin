@@ -21,8 +21,8 @@ import {
 import { ApiError } from '@/lib/api-client'
 import { formatGhs } from '@/lib/money'
 import {
-  audienceScopedPayloadFields, ghsInputToPesewas, isProviderAudience,
-  pesewasToGhsInput, validatePromoCampaignDraft,
+  audienceScopedPayloadFields, effectiveCampaignType, ghsInputToPesewas,
+  isProviderAudience, pesewasToGhsInput, validatePromoCampaignDraft,
 } from '@/lib/promo-campaign-contract'
 
 export interface CategoryOption {
@@ -186,9 +186,13 @@ export function CampaignFormDialog({
     e.preventDefault()
     setError('')
 
+    // The audience is authoritative over the type — stale Select emissions can
+    // never produce an illegal pair (see effectiveCampaignType).
+    const campaignType = effectiveCampaignType(form.audience, form.campaignType)
+
     // Percent semantics (percentage_discount + commission_relief) stay raw;
     // only fixed_discount is a GHS amount that crosses the API in pesewas.
-    const discountValue = form.campaignType === 'fixed_discount'
+    const discountValue = campaignType === 'fixed_discount'
       ? ghsInputToPesewas(form.discountValue)
       : Number(form.discountValue)
     const maxDiscountPesewas = form.maxDiscountGhs.trim() ? ghsInputToPesewas(form.maxDiscountGhs) : NaN
@@ -201,7 +205,7 @@ export function CampaignFormDialog({
       {
         name: form.name,
         audience: form.audience,
-        campaignType: form.campaignType,
+        campaignType,
         discountValue,
         maxDiscountPesewas: Number.isFinite(maxDiscountPesewas) ? maxDiscountPesewas : null,
         promoScope: form.promoScope,
@@ -231,7 +235,7 @@ export function CampaignFormDialog({
       name: form.name.trim(),
       description: form.description.trim() || undefined,
       termsText: form.termsText.trim() || undefined,
-      campaignType: form.campaignType,
+      campaignType,
       discountValue,
       maxDiscountPesewas: Number.isFinite(maxDiscountPesewas) ? maxDiscountPesewas : undefined,
       minBookingPesewas: Number.isFinite(minBookingPesewas) ? minBookingPesewas : undefined,
@@ -339,23 +343,27 @@ export function CampaignFormDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</Label>
-              <Select
-                value={form.campaignType}
-                onValueChange={v => set('campaignType', v as PromoCampaignType)}
-                disabled={isProvider}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {isProvider ? (
-                    <SelectItem value="commission_relief">Commission relief</SelectItem>
-                  ) : (
-                    <>
-                      <SelectItem value="percentage_discount">% off</SelectItem>
-                      <SelectItem value="fixed_discount">Flat amount off</SelectItem>
-                    </>
-                  )}
-                </SelectContent>
-              </Select>
+              {isProvider ? (
+                // Static field, deliberately not a Select: swapping a Radix
+                // Select's item list mid-render can re-emit the previous
+                // value and overwrite the commission_relief that
+                // setAudience() just wrote (seen as PROMO_AUDIENCE_TYPE_MISMATCH
+                // when switching Client -> Drivers).
+                <div className="flex h-9 items-center rounded-md border border-gray-200 bg-gray-50 px-3 text-sm text-gray-600">
+                  Commission relief
+                </div>
+              ) : (
+                <Select
+                  value={form.campaignType === 'commission_relief' ? 'percentage_discount' : form.campaignType}
+                  onValueChange={v => set('campaignType', v as PromoCampaignType)}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="percentage_discount">% off</SelectItem>
+                    <SelectItem value="fixed_discount">Flat amount off</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
               {isProvider && (
                 <p className="text-[10px] text-gray-400">Provider campaigns always forgive commission.</p>
               )}

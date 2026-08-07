@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  effectiveCampaignType,
   audienceScopedPayloadFields,
   ghsInputToPesewas,
   normalisePromoCampaign,
@@ -405,4 +406,14 @@ test('GHS input converts to integer pesewas at the API boundary', () => {
   assert.ok(Number.isNaN(ghsInputToPesewas('abc')))
   assert.equal(pesewasToGhsInput(4730), '47.30')
   assert.equal(pesewasToGhsInput(null), '')
+})
+
+test('effectiveCampaignType makes the audience authoritative over stale UI state', () => {
+  // The regression: Radix Select re-emitted percentage_discount after a
+  // Client -> Drivers switch, producing PROMO_AUDIENCE_TYPE_MISMATCH.
+  assert.equal(effectiveCampaignType('driver', 'percentage_discount'), 'commission_relief')
+  assert.equal(effectiveCampaignType('artisan', 'fixed_discount'), 'commission_relief')
+  assert.equal(effectiveCampaignType('client', 'commission_relief'), 'percentage_discount')
+  assert.equal(effectiveCampaignType('client', 'fixed_discount'), 'fixed_discount')
+  assert.equal(effectiveCampaignType('driver', 'commission_relief'), 'commission_relief')
 })
