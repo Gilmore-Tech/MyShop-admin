@@ -16,6 +16,8 @@ import {
   type OverviewReport, type RevenueDataPoint, type ActivityItem, type EmergencyAlert,
 } from '@/lib/api'
 import { formatDayShort } from '@/lib/format-date'
+import { useDateRange } from '@/components/common/date-range-filter'
+import { dateRangeLabel } from '@/lib/date-range'
 
 // ─── Activity helpers ─────────────────────────────────────────────────────────
 
@@ -139,6 +141,7 @@ function AttentionCard({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
+  const { from, to, preset, control: dateControl } = useDateRange('today', { includeAll: false })
   const [overview, setOverview] = useState<OverviewReport | null>(null)
   const [revenueData, setRevenueData] = useState<RevenueDataPoint[]>([])
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
@@ -148,20 +151,33 @@ export default function DashboardPage() {
   const [loadingEmergencies, setLoadingEmergencies] = useState(true)
 
   useEffect(() => {
-    Promise.allSettled([getOverviewReport(), getRevenueReport({ groupBy: 'day' })])
+    let cancelled = false
+    setLoadingKpis(true)
+    setOverview(null)
+    setRevenueData([])
+    Promise.allSettled([
+      getOverviewReport({ from, to }),
+      getRevenueReport({ groupBy: 'day', from, to }),
+    ])
       .then(([ovResult, revResult]) => {
+        if (cancelled) return
         if (ovResult.status === 'fulfilled') setOverview(ovResult.value)
         if (revResult.status === 'fulfilled') setRevenueData(revResult.value.periods ?? [])
       })
-      .finally(() => setLoadingKpis(false))
-  }, [])
+      .finally(() => { if (!cancelled) setLoadingKpis(false) })
+    return () => { cancelled = true }
+  }, [from, to])
 
   useEffect(() => {
-    getRecentActivity(10)
-      .then(setActivity)
-      .catch(() => setActivity(null))
-      .finally(() => setLoadingActivity(false))
-  }, [])
+    let cancelled = false
+    setLoadingActivity(true)
+    setActivity(null)
+    getRecentActivity({ limit: 10, from, to })
+      .then(data => { if (!cancelled) setActivity(data) })
+      .catch(() => { if (!cancelled) setActivity(null) })
+      .finally(() => { if (!cancelled) setLoadingActivity(false) })
+    return () => { cancelled = true }
+  }, [from, to])
 
   useEffect(() => {
     getEmergencyAlerts()
@@ -182,7 +198,7 @@ export default function DashboardPage() {
   function fmtGhs(ghs: number) {
     if (ghs >= 1_000_000) return 'GHS ' + (ghs / 1_000_000).toFixed(1) + 'M'
     if (ghs >= 1_000)     return 'GHS ' + (ghs / 1_000).toFixed(1) + 'k'
-    return 'GHS ' + ghs.toFixed(0)
+    return 'GHS ' + ghs.toFixed(2)
   }
 
   // Actionable items — surfaced first so admins see what needs doing.
@@ -191,12 +207,15 @@ export default function DashboardPage() {
     { label: 'Open disputes',       value: overview?.openDisputes ?? 0,         href: '/disputes',      icon: Scale,         accent: 'red'   as const, cta: 'Resolve' },
   ]
 
-  // The live pulse of the platform — 4 metrics that matter most right now.
+  const rangeLabel = dateRangeLabel(preset)
+
+  // Historical activity uses the selected range; live workload remains visible
+  // in the supporting labels and is never hidden by the date filter.
   const primaryKpis = [
-    { label: 'Active trips',   value: overview ? overview.activeRides.toString()             : '-', sub: null, icon: Navigation,   color: 'text-gray-600', bg: 'bg-gray-100' },
-    { label: 'Active jobs',    value: overview ? overview.activeJobs.toString()              : '-', sub: null, icon: UserCheck,    color: 'text-gray-600', bg: 'bg-gray-100' },
-    { label: 'Commission (month)', value: overview ? fmtGhs(overview.commissionRevenue.monthGhs) : '-', sub: overview ? `${fmtGhs(overview.commissionRevenue.weekGhs)} this week` : null, icon: TrendingUp, color: 'text-gray-600', bg: 'bg-gray-100' },
-    { label: 'Payment success', value: overview?.paymentSuccessRatePct != null ? overview.paymentSuccessRatePct + '%' : '-', sub: null, icon: CheckCircle2, color: 'text-gray-600', bg: 'bg-gray-100' },
+    { label: 'Ride requests', value: overview?.period ? overview.period.ridesCreated.toString() : '-', sub: overview ? `${overview.activeRides} active now` : null, icon: Navigation, color: 'text-gray-600', bg: 'bg-gray-100' },
+    { label: 'Job requests', value: overview?.period ? overview.period.jobsCreated.toString() : '-', sub: overview ? `${overview.activeJobs} active now` : null, icon: UserCheck, color: 'text-gray-600', bg: 'bg-gray-100' },
+    { label: 'Commission recorded', value: overview?.period ? fmtGhs(overview.period.commissionRevenueGhs) : '-', sub: rangeLabel, icon: TrendingUp, color: 'text-gray-600', bg: 'bg-gray-100' },
+    { label: 'Payment success', value: overview?.period?.paymentSuccessRatePct != null ? overview.period.paymentSuccessRatePct + '%' : '-', sub: overview?.period ? `${overview.period.successfulPayments} of ${overview.period.totalPayments} payments` : rangeLabel, icon: CheckCircle2, color: 'text-gray-600', bg: 'bg-gray-100' },
   ]
 
   // Secondary context — registration scale, lower visual weight.
@@ -205,12 +224,17 @@ export default function DashboardPage() {
     { label: 'Drivers',  value: overview ? overview.registeredDrivers.toLocaleString()  : '-', icon: Car,    color: 'text-gray-600', bg: 'bg-gray-100' },
     { label: 'Artisans', value: overview ? overview.registeredArtisans.toLocaleString() : '-', icon: Wrench, color: 'text-gray-600', bg: 'bg-gray-100' },
   ]
+  const activeEmergencies = (emergencies ?? []).filter(alert =>
+    alert.type === 'sos'
+      ? !alert.acknowledgedAt
+      : alert.welfareCheck?.status === 'escalated',
+  )
 
-  const growthData = revenueData.slice(-14).map(d => ({
+  const growthData = revenueData.map(d => ({
     date: formatDayShort(d.period),
-    'Collections (GHS)': Math.round(d.collectionsGhs),
-    'Commission (GHS)':  Math.round(d.commissionGhs),
-    'Payouts (GHS)':     Math.round(d.payoutsGhs),
+    'Collections (GHS)': d.collectionsGhs,
+    'Commission (GHS)':  d.commissionGhs,
+    'Payouts (GHS)':     d.payoutsGhs,
   }))
 
   const totalProviders = (overview?.registeredDrivers ?? 0) + (overview?.registeredArtisans ?? 0)
@@ -227,9 +251,15 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-6 pb-0 -mb-6">
 
       {/* ── Page title ───────────────────────────────────────────────────── */}
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Operations Overview</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Real-time snapshot - Ashanti Region pilot</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Operations Overview</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Daily performance and live operations - Ashanti Region pilot</p>
+        </div>
+        <div>
+          {dateControl}
+          <p className="text-[11px] text-gray-400 mt-1 text-right">Calendar dates use GMT (Africa/Accra)</p>
+        </div>
       </div>
 
       {/* ── Needs attention — actionable items first ─────────────────────── */}
@@ -246,9 +276,9 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ── Today at a glance — live pulse ───────────────────────────────── */}
+      {/* ── Selected-period performance with live workload context ───────── */}
       <section className="space-y-2.5">
-        <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Today at a glance</h2>
+        <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">{rangeLabel} at a glance</h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {primaryKpis.map(kpi => (
             <StatCard
@@ -282,18 +312,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-1">
             <div>
               <h2 className="text-sm font-semibold text-gray-800">Growth Trends</h2>
-              <p className="text-xs text-gray-400">Riding volume in Ashanti (all requests)</p>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {['7 days', '30 days'].map((t, i) => (
-                <button
-                  key={t}
-                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${i === 0 ? 'text-white' : 'text-gray-400 hover:bg-gray-50'}`}
-                  style={i === 0 ? { backgroundColor: '#F5A623' } : {}}
-                >
-                  {t}
-                </button>
-              ))}
+              <p className="text-xs text-gray-400">Collections, commission and payouts · {rangeLabel}</p>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={200}>
@@ -301,11 +320,11 @@ export default function DashboardPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} interval={2} />
               <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+              <Tooltip formatter={value => [`GHS ${Number(value).toFixed(2)}`, undefined]} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="Collections (GHS)" stroke="#F5A623" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Commission (GHS)"  stroke="#10B981" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Payouts (GHS)"     stroke="#3B82F6" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Collections (GHS)" stroke="#F5A623" strokeWidth={2} dot={growthData.length === 1 ? { r: 3 } : false} />
+              <Line type="monotone" dataKey="Commission (GHS)"  stroke="#10B981" strokeWidth={2} dot={growthData.length === 1 ? { r: 3 } : false} />
+              <Line type="monotone" dataKey="Payouts (GHS)"     stroke="#3B82F6" strokeWidth={2} dot={growthData.length === 1 ? { r: 3 } : false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -363,9 +382,9 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between px-5 py-3.5">
             <div>
               <h2 className="text-sm font-semibold text-gray-800">Recent Platform Activity</h2>
-              <p className="text-xs text-gray-400">Real-time events across Ashanti region</p>
+              <p className="text-xs text-gray-400">Platform events · {rangeLabel}</p>
             </div>
-            <Link href="/rides" className="text-xs font-medium" style={{ color: '#F5A623' }}>View Full Logs</Link>
+            <Link href="/activity" className="text-xs font-medium" style={{ color: '#F5A623' }}>View Full Logs</Link>
           </div>
 
           <div className="overflow-x-auto">
@@ -480,7 +499,7 @@ export default function DashboardPage() {
               <div className="px-4 py-8 text-center">
                 <p className="text-sm text-gray-400">Safety feed not yet available</p>
               </div>
-            ) : emergencies.filter(e => !e.acknowledgedAt).length === 0 ? (
+            ) : activeEmergencies.length === 0 ? (
               <div className="px-4 py-8 text-center">
                 <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-2">
                   <CheckCircle2 className="h-5 w-5 text-emerald-500" />
@@ -489,8 +508,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-gray-400 mt-0.5">No active emergencies</p>
               </div>
             ) : (
-              emergencies
-                .filter(e => !e.acknowledgedAt)
+              activeEmergencies
                 .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
                 .slice(0, 6)
                 .map(alert => {
@@ -514,16 +532,21 @@ export default function DashboardPage() {
                           {sos ? 'SOS' : 'Welfare check'} - {timeAgo(alert.occurredAt)}
                         </p>
                       </div>
-                      <button
-                        onClick={() => handleAcknowledge(alert.id)}
-                        className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${
-                          sos
-                            ? 'bg-red-500 text-white hover:bg-red-600'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
-                      >
-                        {sos ? 'Respond' : 'Ack'}
-                      </button>
+                      {sos ? (
+                        <button
+                          onClick={() => handleAcknowledge(alert.id)}
+                          className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors bg-red-500 text-white hover:bg-red-600"
+                        >
+                          Respond
+                        </button>
+                      ) : (
+                        <Link
+                          href="/emergency"
+                          className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        >
+                          Resolve
+                        </Link>
+                      )}
                     </div>
                   )
                 })
@@ -531,7 +554,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="px-5 py-3">
-            <Link href="/disputes" className="flex items-center gap-1 text-xs font-medium" style={{ color: '#F5A623' }}>
+            <Link href="/emergency" className="flex items-center gap-1 text-xs font-medium" style={{ color: '#F5A623' }}>
               View all Safety Logs <ChevronRight className="h-3.5 w-3.5" />
             </Link>
           </div>

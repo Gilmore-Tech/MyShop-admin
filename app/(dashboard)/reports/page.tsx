@@ -17,6 +17,7 @@ import {
   exportOverviewCsv, exportRevenueCsv, exportRidesCsv, exportArtisansCsv, exportPilotCsv,
 } from '@/lib/report-export'
 import { formatDate } from '@/lib/format-date'
+import { useDateRange } from '@/components/common/date-range-filter'
 import { userSafeAdminError } from '@/lib/api-client'
 
 // Shared pagination control.
@@ -318,6 +319,7 @@ type ReportTab = 'overview' | 'rides' | 'artisans' | 'revenue' | 'pilot'
 
 export default function ReportsPage() {
   const { can, category } = useRole()
+  const { from, to, control: dateControl } = useDateRange('month', { includeAll: false })
   const [tab, setTab] = useState<ReportTab>('overview')
   const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month'>('day')
 
@@ -330,23 +332,47 @@ export default function ReportsPage() {
   const [error,   setError]   = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     setLoading(true)
     setError(null)
+    if (tab === 'revenue') setRevenue(null)
 
-    let p: Promise<void>
-    if (tab === 'overview')   p = getOverviewReport()
-      .then(setOverview)
-      .catch(e => { setError(userSafeAdminError(e, 'Failed to load overview report.')) })
-    // Rides & Artisans share the provider report; each also shows a vertical KPI
-    // strip sourced from the overview report.
-    else if (tab === 'rides' || tab === 'artisans') p = Promise.all([getProviderReport(), getOverviewReport()])
-      .then(([pr, ov]) => { setProviders(pr); setOverview(ov) })
-      .catch(e => { setError(userSafeAdminError(e, 'Failed to load provider report.')) })
-    else if (tab === 'revenue') p = getRevenueReport({ groupBy }).then(setRevenue).catch(e => { setError(userSafeAdminError(e, 'Failed to load revenue report.')) })
-    else p = getPilotReport().then(setPilot).catch(e => { setError(userSafeAdminError(e, 'Failed to load pilot report.')) })
-
-    p.finally(() => setLoading(false))
-  }, [tab, groupBy])
+    async function load() {
+      try {
+        if (tab === 'overview') {
+          const value = await getOverviewReport()
+          if (!cancelled) setOverview(value)
+        } else if (tab === 'rides' || tab === 'artisans') {
+          // Provider and registration metrics are intentionally lifetime/current.
+          const [providerReport, overviewReport] = await Promise.all([getProviderReport(), getOverviewReport()])
+          if (!cancelled) {
+            setProviders(providerReport)
+            setOverview(overviewReport)
+          }
+        } else if (tab === 'revenue') {
+          const value = await getRevenueReport({ groupBy, from, to })
+          if (!cancelled) setRevenue(value)
+        } else {
+          const value = await getPilotReport()
+          if (!cancelled) setPilot(value)
+        }
+      } catch (error) {
+        if (cancelled) return
+        const fallback = tab === 'overview'
+          ? 'Failed to load overview report.'
+          : tab === 'rides' || tab === 'artisans'
+            ? 'Failed to load provider report.'
+            : tab === 'revenue'
+              ? 'Failed to load revenue report.'
+              : 'Failed to load pilot report.'
+        setError(userSafeAdminError(error, fallback))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [tab, groupBy, from, to])
 
   // Export the active tab's report as CSV. Data is already loaded client-side,
   // so this is instant. `canExport` gates the button until the data is present.
@@ -421,8 +447,9 @@ export default function ReportsPage() {
 
         {/* Revenue group-by control */}
         {tab === 'revenue' && (
-          <div className="flex items-center gap-3 mb-4 bg-white rounded-xl shadow-sm p-3 w-fit">
+          <div className="flex items-center gap-3 mb-4 bg-white rounded-xl shadow-sm p-3 w-fit flex-wrap">
             <Calendar className="h-4 w-4 text-gray-500" />
+            {dateControl}
             <span className="text-sm font-medium text-gray-700">Group by:</span>
             <Select value={groupBy} onValueChange={v => setGroupBy(v as typeof groupBy)}>
               <SelectTrigger className="w-28 h-8 text-sm"><SelectValue /></SelectTrigger>
