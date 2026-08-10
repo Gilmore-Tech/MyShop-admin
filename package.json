@@ -13,7 +13,8 @@
     "test:webhook-failures": "node --experimental-strip-types --test tests/webhook-failure-containment.test.ts",
     "test:clawback-groups": "node --experimental-strip-types --test tests/clawback-groups.test.ts",
     "test:platform-referrals": "node --experimental-strip-types --test tests/platform-referral-code-contract.test.ts",
-    "test:promo-campaigns": "node --experimental-strip-types --test tests/promo-campaign-contract.test.ts"
+    "test:promo-campaigns": "node --experimental-strip-types --test tests/promo-campaign-contract.test.ts",
+    "test:ride-pricing": "node --experimental-strip-types --test tests/ride-pricing-contract.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

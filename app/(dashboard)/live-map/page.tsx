@@ -11,12 +11,15 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import Link from 'next/link'
+import { RidePricingBreakdown } from '@/components/rides/ride-pricing-breakdown'
 import {
   getLiveMapData, getRideMarkerDetail, getJobMarkerDetail, type LiveMapMarker,
   listRides, listArtisanJobs, type AdminRide, type AdminJob,
 } from '@/lib/api'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { userSafeAdminError } from '@/lib/api-client'
+import type { RidePricingSummary } from '@/lib/ride-pricing-contract'
 
 type SelectedMarker = LiveMapMarker & { detail: Record<string, unknown> | null }
 
@@ -630,21 +633,46 @@ export default function LiveMapPage() {
                     <p className="text-xs font-mono text-gray-600">{selected.lat.toFixed(5)}° N &nbsp;|&nbsp; {Math.abs(selected.lng).toFixed(5)}° W</p>
                   </div>
 
-                  {selected.detail && (
+                  {selected.detail && selected.type === 'job' && (
                     <div className="bg-orange-50 rounded-lg p-3">
-                      <p className="text-[11px] text-orange-400 font-medium mb-1">
-                        {selected.type === 'ride' ? 'Fare' : 'Agreed Price'}
-                      </p>
+                      <p className="text-[11px] text-orange-400 font-medium mb-1">Agreed Price</p>
                       <p className="text-base font-bold" style={{ color: C.gold }}>
-                        {selected.type === 'ride'
-                          ? fmt(selected.detail.farePesewas as number)
-                          : fmt(selected.detail.agreedPricePesewas as number | null)}
+                        {fmt(selected.detail.agreedPricePesewas as number | null)}
                       </p>
                     </div>
                   )}
 
                   {selected.detail && selected.type === 'ride' && (
                     <div className="space-y-2">
+                      {Boolean(selected.detail.pricing) && (
+                        <RidePricingBreakdown
+                          pricing={selected.detail.pricing as RidePricingSummary}
+                          variant="rows"
+                        />
+                      )}
+                      {!selected.detail.pricing && (
+                        <div className="rounded-lg bg-orange-50 p-3">
+                          <p className="mb-1 text-[11px] font-medium text-orange-500">
+                            {selected.status === 'completed'
+                              ? 'Final fare (legacy API)'
+                              : 'Current fare estimate (legacy API)'}
+                          </p>
+                          <p className="text-base font-bold" style={{ color: C.gold }}>
+                            {fmt(
+                              (selected.detail.finalFarePesewas ??
+                                selected.detail.estimatedFarePesewas) as number | null,
+                            )}
+                          </p>
+                          <p className="mt-1 text-[10px] text-orange-600">
+                            Promo and loyalty breakdown unavailable on the current backend.
+                          </p>
+                        </div>
+                      )}
+                      <Link href={`/rides/${selected.bookingId}`}>
+                        <Button variant="outline" size="sm" className="w-full text-xs">
+                          Open full Ride Details
+                        </Button>
+                      </Link>
                       {(selected.detail.pickupAddress as string) && (
                         <div className="bg-gray-50 rounded-lg p-3">
                           <p className="text-[11px] text-gray-400 font-medium mb-1">Pickup</p>

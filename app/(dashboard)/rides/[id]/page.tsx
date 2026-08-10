@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { RidePricingBreakdown } from '@/components/rides/ride-pricing-breakdown'
 import { getRideDetail, cancelRide, forceCompleteRide, type RideDetail, type RideGpsPoint } from '@/lib/api'
 import { getAdminUser, ApiError } from '@/lib/api-client'
 import { can } from '@/lib/roles'
@@ -320,7 +321,7 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
   const canCancel = ride ? CANCELLABLE.includes(ride.status) && canIntervene : false
   const canForce = ride ? ride.status === 'in_progress' && canIntervene : false
 
-  const fare = ride?.finalFarePesewas ?? ride?.estimatedFarePesewas
+  const legacyFare = ride?.finalFarePesewas ?? ride?.estimatedFarePesewas
   const routePoints = useMemo(() => ride?.gpsTrail ?? [], [ride?.gpsTrail])
 
   return (
@@ -452,19 +453,26 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                       </div>
                     </div>
 
-                    {/* Metrics */}
-                    <div className="grid grid-cols-3 gap-3 pt-1">
-                      <div className="bg-gray-50 rounded-lg p-3 text-center">
-                        <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-1">
-                          Fare
-                        </p>
-                        <p className="text-base font-bold text-gray-900">{fmtGhs(fare)}</p>
-                        {ride.surgeMultiplier && Number(ride.surgeMultiplier) > 1 && (
-                          <p className="text-[10px] text-amber-500">
-                            ×{Number(ride.surgeMultiplier).toFixed(2)} surge
+                    {/* Always render all three values, including an explicit
+                        GHS 0.00 discount when the contract returns zero. */}
+                    {ride.pricing && <RidePricingBreakdown pricing={ride.pricing} />}
+
+                    {/* Operational metrics. Preserve the old Fare card only as a
+                        rolling-deploy fallback until the pricing contract arrives. */}
+                    <div className={`grid gap-3 pt-1 ${ride.pricing ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                      {!ride.pricing && (
+                        <div className="bg-gray-50 rounded-lg p-3 text-center">
+                          <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-1">
+                            Fare (legacy)
                           </p>
-                        )}
-                      </div>
+                          <p className="text-base font-bold text-gray-900">{fmtGhs(legacyFare)}</p>
+                          {ride.surgeMultiplier && Number(ride.surgeMultiplier) > 1 && (
+                            <p className="text-[10px] text-amber-500">
+                              ×{Number(ride.surgeMultiplier).toFixed(2)} surge
+                            </p>
+                          )}
+                        </div>
+                      )}
                       <div className="bg-gray-50 rounded-lg p-3 text-center">
                         <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-1">
                           Distance
@@ -482,6 +490,12 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                         </p>
                       </div>
                     </div>
+
+                    {ride.pricing && ride.surgeMultiplier && Number(ride.surgeMultiplier) > 1 && (
+                      <p className="text-[11px] text-amber-600">
+                        Pre-promo fare includes ×{Number(ride.surgeMultiplier).toFixed(2)} surge.
+                      </p>
+                    )}
 
                     {ride.cancellationReason && (
                       <div className="mt-1 text-xs text-red-600 bg-red-50 rounded px-3 py-2">
