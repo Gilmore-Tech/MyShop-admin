@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import Link from 'next/link'
@@ -19,17 +19,12 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { useDateRange, PageSizeSelect } from '@/components/common/table-controls'
 import { listArtisanJobs, deleteJob, cancelJob, type AdminJob } from '@/lib/api'
 import { getAdminUser, ApiError } from '@/lib/api-client'
+import { formatDateTime } from '@/lib/format-date'
 
 function formatGhs(pesewas: number | null | undefined) {
   const ghs = Number(pesewas) / 100
   if (!Number.isFinite(ghs) || ghs === 0) return 'GHC 0'
   return 'GHC ' + ghs.toFixed(2)
-}
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-  })
 }
 
 // In-progress jobs have a payout (so 48h+ means a frozen payout); pre-assignment
@@ -90,9 +85,11 @@ export default function ArtisanJobsPage() {
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
-  const { from, to, control: dateControl } = useDateRange()
+  const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setPage(1) })
+  const requestSequence = useRef(0)
 
   const fetchJobs = useCallback(() => {
+    const request = ++requestSequence.current
     setLoading(true)
     const activeRegion = lockedRegion ?? (regionFilter === 'all' ? undefined : regionFilter)
     listArtisanJobs({
@@ -105,12 +102,19 @@ export default function ArtisanJobsPage() {
       region: activeRegion,
     })
       .then(res => {
+        if (request !== requestSequence.current) return
         setJobs(res.items)
         setTotal(res.total)
-        setTotalPages(res.totalPages)
+        setTotalPages(Math.max(1, res.totalPages || 1))
       })
-      .catch(() => setJobs([]))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        if (request === requestSequence.current) {
+          setJobs([])
+          setTotal(0)
+          setTotalPages(1)
+        }
+      })
+      .finally(() => { if (request === requestSequence.current) setLoading(false) })
   }, [statusFilter, search, from, to, page, limit, regionFilter, lockedRegion])
 
   useEffect(() => { fetchJobs() }, [fetchJobs])
@@ -169,13 +173,13 @@ export default function ArtisanJobsPage() {
               <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
                 <Wrench className="h-3.5 w-3.5 text-gray-600" />
                 <span className="text-sm font-semibold text-gray-700">{activeCount}</span>
-                <span className="text-xs text-gray-400">active</span>
+                <span className="text-xs text-gray-400">active on this page</span>
               </div>
               {staleJobs.length > 0 && (
                 <div className="flex items-center gap-2 bg-red-50 rounded-lg px-3 py-1.5">
                   <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
                   <span className="text-sm font-semibold text-red-700">{staleJobs.length}</span>
-                  <span className="text-xs text-red-400">stale</span>
+                  <span className="text-xs text-red-400">stale on this page</span>
                 </div>
               )}
               <Link href="/artisan-jobs/manual-assignment">
@@ -266,6 +270,7 @@ export default function ArtisanJobsPage() {
           )}
 
           {dateControl}
+          <span className="text-xs text-gray-400">By created date · GMT</span>
 
           <div className="ml-auto flex items-center gap-3">
             <span className="text-sm text-gray-400">{total} jobs</span>

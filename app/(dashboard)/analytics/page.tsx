@@ -20,7 +20,8 @@ import {
  type RevenueDataPoint, type ProviderReport, type OverviewReport,
  type RideStatusBreakdown, type JobCategoryCount, type PaymentReport, type DisputeRatePoint,
 } from '@/lib/api'
-import { formatDayShort } from '@/lib/format-date'
+import { formatDayShort, ghanaWeekdayIndex } from '@/lib/format-date'
+import { useDateRange } from '@/components/common/date-range-filter'
 import { safeAdminErrorDiagnostic } from '@/lib/api-client'
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
@@ -98,8 +99,6 @@ function PieLabel(props: PieLabelRenderProps) {
  )
 }
 
-const RANGES = ['7 days','30 days','3 months']
-
 // Cross-platform charts live on Overview; the rides- and artisans-specific
 // charts are split into their own permission-gated tabs (mirrors the Reports
 // page split). Overview is reachable by anyone holding `view_analytics` (which
@@ -109,8 +108,8 @@ type AnalyticsTab = 'overview' | 'rides' | 'artisans'
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AnalyticsPage() {
  const { can, category } = useRole()
+ const { from, to, control: dateControl } = useDateRange('month', { includeAll: false })
  const [tab, setTab] = useState<AnalyticsTab>('overview')
- const [range, setRange] = useState('30 days')
  const [revenueData, setRevenue] = useState<RevenueDataPoint[]>([])
  const [providers, setProviders] = useState<ProviderReport | null>(null)
  const [overview, setOverview] = useState<OverviewReport | null>(null)
@@ -120,11 +119,15 @@ export default function AnalyticsPage() {
  const [disputeRts, setDisputeRts] = useState<DisputeRatePoint[] | null>(null)
 
  useEffect(() => {
- const groupBy = range ==='3 months' ?'week' :'day'
- const from = new Date()
- from.setDate(from.getDate() - (range ==='7 days' ? 7 : range ==='30 days' ? 30 : 90))
- const fromStr = from.toISOString().split('T')[0]
- const dateParams = { from: fromStr }
+ let cancelled = false
+ const groupBy = 'day' as const
+ const dateParams = { from, to }
+
+ setRevenue([])
+ setRideStatus(null)
+ setJobCats(null)
+ setPaymentRpt(null)
+ setDisputeRts(null)
 
  const trace = <T,>(label: string, p: Promise<T>) =>
  p.catch((err: unknown) => {
@@ -133,7 +136,7 @@ export default function AnalyticsPage() {
  })
 
  Promise.all([
- trace('revenue',       getRevenueReport({ groupBy, from: fromStr })),
+ trace('revenue',       getRevenueReport({ groupBy, from, to })),
  trace('providers',     getProviderReport()),
  trace('overview',      getOverviewReport()),
  trace('rides/status',  getRideStatusReport(dateParams)),
@@ -141,6 +144,7 @@ export default function AnalyticsPage() {
  trace('payments',      getPaymentReport(dateParams)),
  trace('disputes/rate', getDisputeRateReport(dateParams)),
  ]).then(([rev, prov, ov, rs, jc, pr, dr]) => {
+ if (cancelled) return
  if (rev) setRevenue(rev.periods ?? [])
  if (prov) setProviders(prov)
  if (ov) setOverview(ov)
@@ -149,7 +153,8 @@ export default function AnalyticsPage() {
  setPaymentRpt(pr)
  setDisputeRts(Array.isArray(dr) ? dr : dr ? [] : null)
  })
- }, [range])
+ return () => { cancelled = true }
+ }, [from, to])
 
  // ── Derived: KPI strip ─────────────────────────────────────────────────────
  const totalRevGhs   = revenueData.reduce((s, d) => s + d.collectionsGhs, 0)
@@ -164,8 +169,8 @@ export default function AnalyticsPage() {
  // ── Derived: Revenue area chart ────────────────────────────────────────────
  const revenueArea = revenueData.map(d => ({
  date: formatDayShort(d.period),
- 'Collections (GHS)': Math.round(d.collectionsGhs),
- 'Commission (GHS)':  Math.round(d.commissionGhs),
+ 'Collections (GHS)': d.collectionsGhs,
+ 'Commission (GHS)':  d.commissionGhs,
  }))
 
  // ── Derived: Daily payment volume ──────────────────────────────────────────
@@ -180,8 +185,9 @@ export default function AnalyticsPage() {
  const totals: Record<string, { Payments: number; Successful: number }> = {}
  DOW_ORDER.forEach(d => { totals[d] = { Payments: 0, Successful: 0 } })
  revenueData.forEach(d => {
- const day = DOW[new Date(d.period).getDay()]
- if (totals[day]) {
+ const weekday = ghanaWeekdayIndex(d.period)
+ const day = weekday == null ? undefined : DOW[weekday]
+ if (day && totals[day]) {
  totals[day].Payments   += d.totalPayments
  totals[day].Successful += d.successfulPayments
  }
@@ -193,9 +199,8 @@ export default function AnalyticsPage() {
  const peakDay = bookingBar.length
  ? bookingBar.reduce((a, b) => (b.Payments > a.Payments ? b : a))
  : null
- // Day-of-week bucketing is only meaningful for daily periods. In the 3-month
- // view the revenue report is grouped by week, so weekly rows can't be split by day.
- const isDaily = range !== '3 months'
+ // Canonical analytics ranges are grouped daily, including custom ranges.
+ const isDaily = true
 
  // ── Derived: Ride status donut ─────────────────────────────────────────────
  const rideStatusData = useMemo(() => {
@@ -204,7 +209,6 @@ export default function AnalyticsPage() {
  { name:'Completed', value: rideStatus.completed, fill: C.green },
  { name:'Cancelled', value: rideStatus.cancelled, fill: C.red },
  { name:'Disputed', value: rideStatus.disputed, fill: C.amber },
- { name:'In Progress', value: rideStatus.inProgress, fill: C.blue },
  ].filter(d => d.value > 0)
  }
  if (overview) {
@@ -218,10 +222,12 @@ export default function AnalyticsPage() {
  }, [rideStatus, overview])
 
  const rideStatusTotal = rideStatusData.reduce((s, d) => s + d.value, 0)
- const rideStatusLabel = rideStatus ?'Distribution of ride outcomes' :'Current snapshot from overview'
+ const rideStatusLabel = rideStatus
+ ? `Outcomes in selected period · ${overview?.activeRides ?? 0} active now not included`
+ : 'Current snapshot from overview'
  // In fallback mode the number is "active now", not a historical total.
- const rideCenterCaption = rideStatus ?'total rides' :'active now'
- const rideBadgeNoun = rideStatus ?'rides' :'active'
+ const rideCenterCaption = rideStatus ?'outcomes' :'active now'
+ const rideBadgeNoun = rideStatus ?'outcomes' :'active'
 
  // ── Derived: Job categories ────────────────────────────────────────────────
  const categoryData = useMemo(() => {
@@ -324,18 +330,7 @@ export default function AnalyticsPage() {
  <p className="text-sm text-gray-400 mt-0.5">Platform performance - Ashanti Region pilot</p>
  </div>
  <div className="flex items-center gap-3">
- <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
- {RANGES.map(r => (
- <button
- key={r}
- onClick={() => setRange(r)}
- className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors"
- style={range === r ? { backgroundColor:'#fff', color: C.gold, boxShadow:'0 1px 3px rgba(0,0,0,0.08)' } : { color:'#6b7280' }}
- >
- {r}
- </button>
- ))}
- </div>
+ {dateControl}
  <button className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
  <Download className="h-3.5 w-3.5" /> Export
  </button>
@@ -367,7 +362,7 @@ export default function AnalyticsPage() {
  {/* ── KPI strip ─────────────────────────────────────────────────────── */}
  <div className="grid grid-cols-5 gap-3">
  <KpiCard label="Total Collections" value={`GHS ${totalRevGhs.toLocaleString()}`} sub="Gross collected" icon={TrendingUp} />
- <KpiCard label="Commission Earned" value={`GHS ${totalCommGhs.toLocaleString()}`} sub="Recorded across completed payments" icon={CreditCard} />
+ <KpiCard label="Commission Recorded" value={`GHS ${totalCommGhs.toLocaleString()}`} sub="Money-in payment records" icon={CreditCard} />
  <KpiCard label="Total Payments" value={totalPayments.toLocaleString()} sub="Payment transactions" icon={Repeat2} />
  <KpiCard label="Avg Transaction" value={`GHS ${avgBookingGhs}`} sub="Per payment" icon={TrendingUp} />
  <KpiCard label="Registered Users" value={totalUsers.toLocaleString()} sub="Distinct accounts" icon={Users} />
@@ -377,7 +372,7 @@ export default function AnalyticsPage() {
  <Card>
  <div className="mb-4">
  <SectionTitle>Revenue Trend</SectionTitle>
- <p className="text-xs text-gray-400 -mt-2">Daily GHS collected vs commission earned</p>
+ <p className="text-xs text-gray-400 -mt-2">Daily GHS collected vs commission recorded</p>
  </div>
  {revenueArea.length > 0 ? (
  <ResponsiveContainer width="100%" height={220}>
@@ -397,8 +392,8 @@ export default function AnalyticsPage() {
  <YAxis tick={{ fontSize: 11, fill:'#9ca3af' }} tickFormatter={v => `₵${v}`} />
  <Tooltip formatter={(v) => [`₵${Number(v).toLocaleString()}`,'']} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
  <Legend wrapperStyle={{ fontSize: 12 }} />
- <Area type="monotone" dataKey="Collections (GHS)" stroke={C.gold} strokeWidth={2} fill="url(#gradRides)" dot={false} />
- <Area type="monotone" dataKey="Commission (GHS)" stroke={C.green} strokeWidth={2} fill="url(#gradArtisan)" dot={false} />
+ <Area type="monotone" dataKey="Collections (GHS)" stroke={C.gold} strokeWidth={2} fill="url(#gradRides)" dot={revenueArea.length === 1 ? { r: 3 } : false} />
+ <Area type="monotone" dataKey="Commission (GHS)" stroke={C.green} strokeWidth={2} fill="url(#gradArtisan)" dot={revenueArea.length === 1 ? { r: 3 } : false} />
  </AreaChart>
  </ResponsiveContainer>
  ) : (
@@ -419,8 +414,8 @@ export default function AnalyticsPage() {
  <YAxis tick={{ fontSize: 11, fill:'#9ca3af' }} />
  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
  <Legend wrapperStyle={{ fontSize: 12 }} />
- <Line type="monotone" dataKey="Payments" stroke={C.blue} strokeWidth={2} dot={false} />
- <Line type="monotone" dataKey="Successful" stroke={C.green} strokeWidth={2} dot={false} />
+ <Line type="monotone" dataKey="Payments" stroke={C.blue} strokeWidth={2} dot={bookingVolume.length === 1 ? { r: 3 } : false} />
+ <Line type="monotone" dataKey="Successful" stroke={C.green} strokeWidth={2} dot={bookingVolume.length === 1 ? { r: 3 } : false} />
  </LineChart>
  </ResponsiveContainer>
  ) : (
@@ -662,7 +657,7 @@ export default function AnalyticsPage() {
 
  <Card className="col-span-2">
  <SectionTitle>Top Drivers</SectionTitle>
- <p className="text-xs text-gray-400 -mt-2 mb-4">Ranked by total earnings</p>
+ <p className="text-xs text-gray-400 -mt-2 mb-4">All time · not affected by date filter · ranked by total earnings</p>
  {topDrivers.length > 0 ? (
  <table className="w-full text-sm">
  <thead>
@@ -743,7 +738,7 @@ export default function AnalyticsPage() {
 
  <Card className="col-span-2">
  <SectionTitle>Top Artisans</SectionTitle>
- <p className="text-xs text-gray-400 -mt-2 mb-4">Ranked by completed jobs</p>
+ <p className="text-xs text-gray-400 -mt-2 mb-4">All time · not affected by date filter · ranked by completed jobs</p>
  {topArtisans.length > 0 ? (
  <table className="w-full text-sm">
  <thead>

@@ -84,12 +84,30 @@ export interface OverviewReport {
   registeredArtisans: number
   commissionRevenue: { todayGhs: number; weekGhs: number; monthGhs: number }
   paymentSuccessRatePct: number | null
+  period: {
+    from: string
+    to: string
+    timeZone: 'Africa/Accra'
+    ridesCreated: number
+    jobsCreated: number
+    totalPayments: number
+    successfulPayments: number
+    paymentSuccessRatePct: number | null
+    commissionRevenueGhs: number
+  } | null
   generatedAt: string
 }
 
-export async function getOverviewReport(): Promise<OverviewReport> {
-  const raw = await api.get<any>('/admin/reports/overview')
+export async function getOverviewReport(params?: {
+  from?: string
+  to?: string
+}): Promise<OverviewReport> {
+  const query = new URLSearchParams()
+  if (params?.from) query.set('from', params.from)
+  if (params?.to) query.set('to', params.to)
+  const raw = await api.get<any>(`/admin/reports/overview${query.size ? `?${query}` : ''}`)
   const rev = raw.commissionRevenue ?? raw.commission_revenue ?? {}
+  const period = raw.period ?? null
   return {
     activeRides: raw.activeRides ?? raw.active_rides ?? 0,
     activeJobs: raw.activeJobs ?? raw.active_jobs ?? 0,
@@ -104,6 +122,22 @@ export async function getOverviewReport(): Promise<OverviewReport> {
       monthGhs: rev.monthGhs ?? rev.month_ghs ?? 0,
     },
     paymentSuccessRatePct: raw.paymentSuccessRatePct ?? raw.payment_success_rate_pct ?? null,
+    period: period
+      ? {
+          from: period.from ?? params?.from ?? '',
+          to: period.to ?? params?.to ?? '',
+          timeZone: period.timeZone ?? period.time_zone ?? 'Africa/Accra',
+          ridesCreated: Number(period.ridesCreated ?? period.rides_created ?? 0),
+          jobsCreated: Number(period.jobsCreated ?? period.jobs_created ?? 0),
+          totalPayments: Number(period.totalPayments ?? period.total_payments ?? 0),
+          successfulPayments: Number(period.successfulPayments ?? period.successful_payments ?? 0),
+          paymentSuccessRatePct:
+            period.paymentSuccessRatePct ?? period.payment_success_rate_pct ?? null,
+          commissionRevenueGhs: Number(
+            period.commissionRevenueGhs ?? period.commission_revenue_ghs ?? 0,
+          ),
+        }
+      : null,
     generatedAt: raw.generatedAt ?? raw.generated_at ?? new Date().toISOString(),
   }
 }
@@ -2085,6 +2119,12 @@ export type ActivityEventType =
   | 'sos_triggered'
   | 'kyc_submitted'
   | 'dispute_resolved'
+  | 'emergency'
+  | 'dispute'
+  | 'verification'
+  | 'ride'
+  | 'job'
+  | 'payout'
 
 export interface ActivityItem {
   id: string
@@ -2099,8 +2139,15 @@ export interface ActivityItem {
   occurredAt: string
 }
 
-export async function getRecentActivity(limit = 10): Promise<ActivityItem[]> {
-  const raw = await api.get<any>(`/admin/activity?limit=${limit}`)
+export async function getRecentActivity(
+  options: number | { limit?: number; from?: string; to?: string } = 10,
+): Promise<ActivityItem[]> {
+  const params = typeof options === 'number' ? { limit: options } : options
+  const query = new URLSearchParams()
+  query.set('limit', String(params.limit ?? 10))
+  if (params.from) query.set('from', params.from)
+  if (params.to) query.set('to', params.to)
+  const raw = await api.get<any>(`/admin/activity?${query}`)
   const arr: any[] = Array.isArray(raw) ? raw : (raw?.items ?? [])
   return arr
     .filter((r: any) => r?.id)
@@ -2932,8 +2979,11 @@ export interface EmergencyAlert {
   welfareCheck: WelfareCheckInfo | null
 }
 
-export function getEmergencyAlerts() {
-  return api.get<EmergencyAlert[]>('/admin/emergency')
+export function getEmergencyAlerts(params?: { from?: string; to?: string }) {
+  const query = new URLSearchParams()
+  if (params?.from) query.set('from', params.from)
+  if (params?.to) query.set('to', params.to)
+  return api.get<EmergencyAlert[]>(`/admin/emergency${query.size ? `?${query}` : ''}`)
 }
 
 // SOS-only — acknowledges an emergency_event row.

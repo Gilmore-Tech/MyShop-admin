@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import { useRouter } from 'next/navigation'
@@ -15,17 +15,12 @@ import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { useDateRange, PageSizeSelect } from '@/components/common/table-controls'
 import { listRides, type AdminRide } from '@/lib/api'
+import { formatDateTime } from '@/lib/format-date'
 
 function formatGhs(pesewas: number | null | undefined) {
   const ghs = Number(pesewas) / 100
   if (!Number.isFinite(ghs) || ghs === 0) return 'GHC 0'
   return 'GHC ' + ghs.toFixed(2)
-}
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-  })
 }
 
 export default function RidesPage() {
@@ -38,9 +33,11 @@ export default function RidesPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [limit, setLimit] = useState(15)
   const [loading, setLoading] = useState(true)
-  const { from, to, control: dateControl } = useDateRange()
+  const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setPage(1) })
+  const requestSequence = useRef(0)
 
   const fetch = useCallback(() => {
+    const request = ++requestSequence.current
     setLoading(true)
     listRides({
       status: statusFilter === 'all' ? undefined : statusFilter,
@@ -51,12 +48,19 @@ export default function RidesPage() {
       limit,
     })
       .then(res => {
+        if (request !== requestSequence.current) return
         setRides(res.items)
         setTotal(res.total)
-        setTotalPages(res.totalPages)
+        setTotalPages(Math.max(1, res.totalPages || 1))
       })
-      .catch(() => setRides([]))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        if (request === requestSequence.current) {
+          setRides([])
+          setTotal(0)
+          setTotalPages(1)
+        }
+      })
+      .finally(() => { if (request === requestSequence.current) setLoading(false) })
   }, [statusFilter, search, from, to, page, limit])
 
   useEffect(() => { fetch() }, [fetch])
@@ -80,16 +84,16 @@ export default function RidesPage() {
               <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
                 <Car className="h-3.5 w-3.5 text-gray-600" />
                 <span className="text-sm font-semibold text-gray-700">{activeCount}</span>
-                <span className="text-xs text-gray-400">active</span>
+                <span className="text-xs text-gray-400">active on this page</span>
               </div>
               <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
                 <span className="text-sm font-semibold text-gray-700">{completedCount}</span>
-                <span className="text-xs text-gray-400">completed</span>
+                <span className="text-xs text-gray-400">completed on this page</span>
               </div>
               {disputedCount > 0 && (
                 <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
                   <span className="text-sm font-semibold text-gray-700">{disputedCount}</span>
-                  <span className="text-xs text-gray-400">disputed</span>
+                  <span className="text-xs text-gray-400">disputed on this page</span>
                 </div>
               )}
             </div>
@@ -121,6 +125,7 @@ export default function RidesPage() {
             </SelectContent>
           </Select>
           {dateControl}
+          <span className="text-xs text-gray-400">By request date · GMT</span>
           <div className="ml-auto flex items-center gap-3">
             <span className="text-sm text-gray-400">{total} rides</span>
             <PageSizeSelect value={limit} onChange={setLimit} />

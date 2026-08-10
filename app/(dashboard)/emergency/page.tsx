@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
@@ -63,6 +63,9 @@ import {
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
+import { useDateRange } from '@/components/common/date-range-filter'
+import { isInstantInInclusiveDateRange } from '@/lib/date-range'
+import { formatDateTime as fmtDate } from '@/lib/format-date'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -72,32 +75,6 @@ function timeAgo(iso: string): string {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
   return `${Math.floor(diff / 86400)}d ago`
-}
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
-}
-
-type DateRange = 'all' | 'week' | 'month' | 'custom'
-
-const DAY_MS = 86_400_000
-
-// Whether an alert timestamp falls inside the selected date range.
-function inDateRange(iso: string, range: DateRange, from: string, to: string): boolean {
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return true
-  const now = Date.now()
-  if (range === 'week') return t >= now - 7 * DAY_MS
-  if (range === 'month') return t >= now - 30 * DAY_MS
-  if (range === 'custom') {
-    if (from && t < new Date(`${from}T00:00:00`).getTime()) return false
-    if (to && t > new Date(`${to}T23:59:59.999`).getTime()) return false
-    return true
-  }
-  return true
 }
 
 const OTHER_PAGE_SIZE = 10 // rows per page in the acknowledged/monitored history
@@ -290,13 +267,11 @@ function AlertCard({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EmergencyPage() {
+  const { from, to, preset: dateRange, control: dateControl } = useDateRange('all')
   const [alerts, setAlerts] = useState<EmergencyAlert[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState<'all' | 'sos' | 'welfare_check'>('all')
-  const [dateRange, setDateRange] = useState<DateRange>('all')
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo, setCustomTo] = useState('')
   const [page, setPage] = useState(1)
   const [showResolved, setShowResolved] = useState(false)
   const [showAllAction, setShowAllAction] = useState(false)
@@ -304,15 +279,21 @@ export default function EmergencyPage() {
   const [welfareTarget, setWelfareTarget] = useState<EmergencyAlert | null>(null)
   const [acking, setAcking] = useState(false)
   const [selectedAlert, setSelectedAlert] = useState<EmergencyAlert | null>(null)
+  const requestSequence = useRef(0)
 
   const load = useCallback(() => {
+    const request = ++requestSequence.current
     setLoading(true)
     setError(null)
-    getEmergencyAlerts()
-      .then((data) => setAlerts(Array.isArray(data) ? data : ((data as any).items ?? [])))
-      .catch(() => setError('Failed to load emergency alerts.'))
-      .finally(() => setLoading(false))
-  }, [])
+    getEmergencyAlerts({ from, to })
+      .then((data) => {
+        if (request === requestSequence.current) {
+          setAlerts(data)
+        }
+      })
+      .catch(() => { if (request === requestSequence.current) setError('Failed to load emergency alerts.') })
+      .finally(() => { if (request === requestSequence.current) setLoading(false) })
+  }, [from, to])
 
   useEffect(() => {
     load()
@@ -321,28 +302,26 @@ export default function EmergencyPage() {
   // No-op while auto-refresh is globally disabled (see AUTO_REFRESH_DISABLED).
   useAutoRefresh(load, 30_000)
 
-  const filtered = alerts.filter(
-    (a) =>
-      (typeFilter === 'all' || a.type === typeFilter) &&
-      inDateRange(a.occurredAt, dateRange, customFrom, customTo)
-  )
+  const typeFiltered = alerts.filter(a => typeFilter === 'all' || a.type === typeFilter)
 
-  // Triage split: what needs action now vs. everything already handled / monitored.
-  const needsActionList = filtered.filter(needsAction).sort((a, b) => {
+  // Live triage is never date-filtered: an older unresolved alert must remain
+  // visible. The selected date range applies only to handled/monitored history.
+  const needsActionList = typeFiltered.filter(needsAction).sort((a, b) => {
     // SOS before welfare, then most recent first.
     const aw = a.type === 'sos' ? 0 : 1
     const bw = b.type === 'sos' ? 0 : 1
     if (aw !== bw) return aw - bw
     return new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime()
   })
-  const otherList = filtered
+  const otherList = typeFiltered
     .filter((a) => !needsAction(a))
+    .filter(a => isInstantInInclusiveDateRange(a.occurredAt, { from, to }))
     .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
 
   // Reset history pagination whenever filters change.
   useEffect(() => {
     setPage(1)
-  }, [typeFilter, dateRange, customFrom, customTo])
+  }, [typeFilter, dateRange, from, to])
 
   // Pagination over the acknowledged/monitored history only.
   const otherTotalPages = Math.max(1, Math.ceil(otherList.length / OTHER_PAGE_SIZE))
@@ -350,9 +329,9 @@ export default function EmergencyPage() {
   const otherStart = (otherPage - 1) * OTHER_PAGE_SIZE
   const otherPageItems = otherList.slice(otherStart, otherStart + OTHER_PAGE_SIZE)
 
-  const unacknowledgedCount = alerts.filter((a) => !a.acknowledgedAt).length
-  const sosCount = alerts.filter((a) => a.type === 'sos' && !a.acknowledgedAt).length
-  const welfareCount = alerts.filter((a) => a.type === 'welfare_check' && !a.acknowledgedAt).length
+  const needsActionCount = needsActionList.length
+  const sosCount = needsActionList.filter(a => a.type === 'sos').length
+  const welfareCount = needsActionList.filter(a => a.type === 'welfare_check').length
 
   const renderCard = (a: EmergencyAlert) => (
     <AlertCard
@@ -401,11 +380,11 @@ export default function EmergencyPage() {
         {/* KPI strip */}
         <div className="grid grid-cols-3 gap-3 mb-5">
           <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
-            <p className="text-xs text-gray-400 font-medium">Unacknowledged</p>
+            <p className="text-xs text-gray-400 font-medium">Needs action</p>
             <p
-              className={`text-2xl font-bold mt-0.5 ${unacknowledgedCount > 0 ? 'text-red-600' : 'text-gray-800'}`}
+              className={`text-2xl font-bold mt-0.5 ${needsActionCount > 0 ? 'text-red-600' : 'text-gray-800'}`}
             >
-              {unacknowledgedCount}
+              {needsActionCount}
             </p>
           </div>
           <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
@@ -439,40 +418,11 @@ export default function EmergencyPage() {
             </SelectContent>
           </Select>
 
-          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
-            <SelectTrigger className="w-40 h-8 text-sm bg-gray-50">
-              <SelectValue placeholder="Date range" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All time</SelectItem>
-              <SelectItem value="week">Last 7 days</SelectItem>
-              <SelectItem value="month">Last 30 days</SelectItem>
-              <SelectItem value="custom">Custom range</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {dateRange === 'custom' && (
-            <div className="flex items-center gap-1.5">
-              <input
-                type="date"
-                value={customFrom}
-                max={customTo || undefined}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                className="h-8 text-sm bg-gray-50 border border-gray-200 rounded-md px-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
-              />
-              <span className="text-xs text-gray-400">to</span>
-              <input
-                type="date"
-                value={customTo}
-                min={customFrom || undefined}
-                onChange={(e) => setCustomTo(e.target.value)}
-                className="h-8 text-sm bg-gray-50 border border-gray-200 rounded-md px-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
-              />
-            </div>
-          )}
+          {dateControl}
+          <span className="text-xs text-gray-400">History by occurred date · live alerts always shown</span>
 
           <span className="text-xs text-gray-400 ml-auto">
-            {filtered.length} of {alerts.length} alerts
+            {needsActionList.length} live · {otherList.length} history in range (latest 200 max)
           </span>
         </div>
 

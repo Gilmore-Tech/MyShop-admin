@@ -1,12 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import Link from 'next/link'
 import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -14,6 +13,8 @@ import { PageHeader } from '@/components/common/page-header'
 import { getRevenueReport, type RevenueReport } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatPeriodLabel } from '@/lib/format-date'
+import { useDateRange } from '@/components/common/date-range-filter'
+import { dateRangeLabel } from '@/lib/date-range'
 import {
   AreaChart, Area, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -25,41 +26,36 @@ function formatGhs(ghs: number) {
   return 'GHS ' + ghs.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
 export default function RevenuePage() {
   const [report, setReport] = useState<RevenueReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const requestSequence = useRef(0)
 
-  // Leave dates empty by default — the backend returns its own default window.
-  // Sending both `from` and `to` together has tripped a backend bug; we only
-  // include params the user has actually set.
-  const [from, setFrom] = useState<string>('')
-  const [to, setTo] = useState<string>('')
+  const { from, to, preset, control: dateControl } = useDateRange('month', { includeAll: false })
   const [groupBy, setGroupBy] = useState<GroupBy>('day')
 
   const load = useCallback(async () => {
+    const request = ++requestSequence.current
     setLoading(true)
     setError('')
+    setReport(null)
     try {
       const r = await getRevenueReport({
-        ...(from ? { from } : {}),
-        ...(to ? { to } : {}),
+        from,
+        to,
         groupBy,
       })
-      setReport(r)
+      if (request === requestSequence.current) setReport(r)
     } catch (err) {
-      setReport(null)
+      if (request !== requestSequence.current) return
       const raw = err instanceof ApiError ? err.message : 'Failed to load revenue report.'
       const friendly = /database operation failed/i.test(raw)
         ? 'Backend reported a database error. Try a smaller date range, clear the date filters, or retry in a moment.'
         : raw
       setError(friendly)
     } finally {
-      setLoading(false)
+      if (request === requestSequence.current) setLoading(false)
     }
   }, [from, to, groupBy])
 
@@ -112,36 +108,9 @@ export default function RevenuePage() {
 
       <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex items-end gap-3 flex-wrap">
         <div>
-          <Label className="text-xs text-gray-500 mb-1 block">From</Label>
-          <Input
-            type="date"
-            value={from}
-            max={to || todayIso()}
-            onChange={e => setFrom(e.target.value)}
-            className="w-40"
-          />
+          <Label className="text-xs text-gray-500 mb-1 block">Reporting period (GMT)</Label>
+          {dateControl}
         </div>
-        <div>
-          <Label className="text-xs text-gray-500 mb-1 block">To</Label>
-          <Input
-            type="date"
-            value={to}
-            min={from || undefined}
-            max={todayIso()}
-            onChange={e => setTo(e.target.value)}
-            className="w-40"
-          />
-        </div>
-        {(from || to) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => { setFrom(''); setTo('') }}
-            className="text-xs"
-          >
-            Clear dates
-          </Button>
-        )}
         <div>
           <Label className="text-xs text-gray-500 mb-1 block">Group by</Label>
           <Select value={groupBy} onValueChange={v => setGroupBy(v as GroupBy)}>
@@ -158,7 +127,7 @@ export default function RevenuePage() {
           Refresh
         </Button>
         <div className="ml-auto text-xs text-gray-500">
-          {report ? `${periods.length} period${periods.length === 1 ? '' : 's'} | grouped by ${report.groupBy}` : '-'}
+          {report ? `${dateRangeLabel(preset)} · ${periods.length} period${periods.length === 1 ? '' : 's'} · grouped by ${report.groupBy}` : '-'}
         </div>
       </div>
 
@@ -265,10 +234,10 @@ export default function RevenuePage() {
                         contentStyle={{ fontSize: 12, borderRadius: 8 }}
                       />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Area type="monotone" dataKey="collections" stroke="#F5A623" strokeWidth={2} fill="url(#revCollections)" dot={false} name="Money received" />
-                      <Line type="monotone" dataKey="commission"  stroke="#10B981" strokeWidth={2} dot={false} name="MyShop earnings" />
-                      <Line type="monotone" dataKey="payouts"     stroke="#3B82F6" strokeWidth={2} dot={false} name="Paid to providers" />
-                      <Line type="monotone" dataKey="tips"        stroke="#A855F7" strokeWidth={2} dot={false} name="Tips" />
+                      <Area type="monotone" dataKey="collections" stroke="#F5A623" strokeWidth={2} fill="url(#revCollections)" dot={chartData.length === 1 ? { r: 3 } : false} name="Money received" />
+                      <Line type="monotone" dataKey="commission"  stroke="#10B981" strokeWidth={2} dot={chartData.length === 1 ? { r: 3 } : false} name="MyShop earnings" />
+                      <Line type="monotone" dataKey="payouts"     stroke="#3B82F6" strokeWidth={2} dot={chartData.length === 1 ? { r: 3 } : false} name="Paid to providers" />
+                      <Line type="monotone" dataKey="tips"        stroke="#A855F7" strokeWidth={2} dot={chartData.length === 1 ? { r: 3 } : false} name="Tips" />
                     </AreaChart>
                   </ResponsiveContainer>
                 )}
