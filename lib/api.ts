@@ -41,6 +41,10 @@ import {
   type PromoCampaignStatus,
   type PromoCampaignType,
 } from './promo-campaign-contract'
+import {
+  normaliseRidePricing,
+  type RidePricingSummary,
+} from './ride-pricing-contract'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -321,6 +325,7 @@ export interface RideMarkerDetail {
   dropoffAddress: string | null
   estimatedFarePesewas: number | null
   finalFarePesewas: number | null
+  pricing: RidePricingSummary | null
   distanceKm: string | number | null
   durationMins: string | number | null
   driver: {
@@ -335,8 +340,11 @@ export interface RideMarkerDetail {
   client: { fullName: string; displayName: string | null; phone: string }
 }
 
-export function getRideMarkerDetail(rideId: string) {
-  return api.get<RideMarkerDetail>(`/admin/live-map/rides/${rideId}`)
+export async function getRideMarkerDetail(rideId: string): Promise<RideMarkerDetail> {
+  const raw = await api.get<Omit<RideMarkerDetail, 'pricing'> & { pricing?: unknown }>(
+    `/admin/live-map/rides/${rideId}`,
+  )
+  return { ...raw, pricing: normaliseRidePricing(raw?.pricing) }
 }
 
 export interface JobMarkerDetail {
@@ -2597,6 +2605,11 @@ export interface RideDetail {
   dropoffAddress: string | null
   estimatedFarePesewas: number | null
   finalFarePesewas: number | null
+  pricing: RidePricingSummary | null
+  paymentStatus: string
+  paymentMethod: string | null
+  amountPaidPesewas: number | null
+  paidAt: string | null
   surgeMultiplier: string | number
   distanceKm: string | number | null
   durationMins: string | number | null
@@ -2647,7 +2660,12 @@ export async function getRideDetail(rideId: string): Promise<RideDetail> {
   const gpsTrail = Array.isArray(trailSource)
     ? trailSource.map(normaliseRideGpsPoint).filter((point): point is RideGpsPoint => point !== null)
     : []
-  return { ...raw, stops: Array.isArray(raw?.stops) ? raw.stops : [], gpsTrail }
+  return {
+    ...raw,
+    pricing: normaliseRidePricing(raw?.pricing),
+    stops: Array.isArray(raw?.stops) ? raw.stops : [],
+    gpsTrail,
+  }
 }
 
 export function cancelRide(rideId: string, reason: string) {
