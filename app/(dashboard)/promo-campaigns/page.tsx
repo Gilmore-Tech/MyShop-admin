@@ -214,7 +214,7 @@ export default function PromoCampaignsPage() {
                 <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scope</TableHead>
                 <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Window</TableHead>
                 <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Budget</TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Budget committed</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
             </TableHeader>

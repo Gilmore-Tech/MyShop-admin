@@ -49,6 +49,16 @@ export const PROMO_CAMPAIGN_STATUSES: PromoCampaignStatus[] = [
   'draft', 'pending_approval', 'approved', 'paused', 'ended', 'budget_exhausted',
 ]
 
+/**
+ * The Admin may explicitly resume a paused or budget-exhausted campaign. The
+ * backend remains authoritative on the current window and committed-budget
+ * preconditions; its release/refund path may also reactivate an exhausted
+ * campaign automatically after budget is returned.
+ */
+export function canResumePromoCampaign(status: PromoCampaignStatus): boolean {
+  return status === 'paused' || status === 'budget_exhausted'
+}
+
 export interface PromoCampaign {
   id: string
   name: string
@@ -82,7 +92,14 @@ export interface PromoCampaign {
 export interface PromoCampaignStats {
   reservedRedemptions: number
   settledRedemptions: number
+  /** Legacy audience-scoped beneficiary count retained for older API builds. */
   uniqueClients: number
+  uniqueProviders: number | null
+  uniqueBeneficiaries: number | null
+  budgetReservedPesewas: number | null
+  budgetSettledPesewas: number | null
+  budgetCommittedPesewas: number
+  /** Legacy committed-budget ledger; despite its name, it includes reservations. */
   budgetSpentPesewas: number
 }
 
@@ -220,13 +237,33 @@ export function normalisePromoCampaignDetail(raw: unknown): PromoCampaignDetail 
   const campaign = normalisePromoCampaign(o)
   const statsRaw = pick(o, 'stats')
   const s = statsRaw == null ? {} : objectAt(statsRaw, 'stats')
+  const uniqueClients = nullableInt(pick(s, 'uniqueClients')) ?? 0
+  const uniqueProviders = nullableInt(pick(s, 'uniqueProviders'))
+  const uniqueBeneficiaries = nullableInt(pick(s, 'uniqueBeneficiaries'))
+  const budgetReservedPesewas = nullableInt(pick(s, 'budgetReservedPesewas'))
+  const budgetSettledPesewas = nullableInt(pick(s, 'budgetSettledPesewas'))
+  const legacyBudgetSpentPesewas = nullableInt(pick(s, 'budgetSpentPesewas')) ?? campaign.budgetSpentPesewas
+  const budgetCommittedPesewas = nullableInt(pick(s, 'budgetCommittedPesewas'))
+    ?? (budgetReservedPesewas !== null && budgetSettledPesewas !== null
+      ? budgetReservedPesewas + budgetSettledPesewas
+      : legacyBudgetSpentPesewas)
   return {
     ...campaign,
     stats: {
       reservedRedemptions: nullableInt(pick(s, 'reservedRedemptions')) ?? 0,
       settledRedemptions: nullableInt(pick(s, 'settledRedemptions')) ?? 0,
-      uniqueClients: nullableInt(pick(s, 'uniqueClients')) ?? 0,
-      budgetSpentPesewas: nullableInt(pick(s, 'budgetSpentPesewas')) ?? campaign.budgetSpentPesewas,
+      uniqueClients,
+      uniqueProviders,
+      // Older APIs only expose `uniqueClients`. That count is trustworthy for
+      // client campaigns, but provider campaigns historically distincted the
+      // nullable clientId column, so fail visibly instead of presenting it as a
+      // provider count during a rolling deployment.
+      uniqueBeneficiaries: uniqueBeneficiaries
+        ?? (campaign.audience === 'client' ? uniqueClients : uniqueProviders),
+      budgetReservedPesewas,
+      budgetSettledPesewas,
+      budgetCommittedPesewas,
+      budgetSpentPesewas: legacyBudgetSpentPesewas,
     },
   }
 }

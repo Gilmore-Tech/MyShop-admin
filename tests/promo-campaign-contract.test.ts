@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  canResumePromoCampaign,
   effectiveCampaignType,
   audienceScopedPayloadFields,
   ghsInputToPesewas,
@@ -81,6 +82,13 @@ const VALID_RELIEF_DRAFT = {
   endsAt: '2026-08-17T00:00:00.000Z',
   budgetCapPesewas: 100_000,
 }
+
+test('resume action is available for paused and reconciled budget-exhausted campaigns', () => {
+  assert.equal(canResumePromoCampaign('paused'), true)
+  assert.equal(canResumePromoCampaign('budget_exhausted'), true)
+  assert.equal(canResumePromoCampaign('approved'), false)
+  assert.equal(canResumePromoCampaign('ended'), false)
+})
 
 test('campaign normaliser preserves the full camelCase shape', () => {
   const result = normalisePromoCampaign(campaign)
@@ -166,16 +174,61 @@ test('detail normaliser attaches stats and defaults missing counters to zero', (
       reservedRedemptions: 4,
       settledRedemptions: 40,
       uniqueClients: 32,
+      uniqueProviders: 0,
+      uniqueBeneficiaries: 32,
+      budgetReservedPesewas: 25_000,
+      budgetSettledPesewas: 100_000,
+      budgetCommittedPesewas: 125_000,
       budgetSpentPesewas: 125_000,
     },
   })
   assert.equal(detail.stats.settledRedemptions, 40)
   assert.equal(detail.stats.uniqueClients, 32)
+  assert.equal(detail.stats.uniqueBeneficiaries, 32)
+  assert.equal(detail.stats.budgetReservedPesewas, 25_000)
+  assert.equal(detail.stats.budgetSettledPesewas, 100_000)
+  assert.equal(detail.stats.budgetCommittedPesewas, 125_000)
 
   const bare = normalisePromoCampaignDetail(campaign)
   assert.equal(bare.stats.reservedRedemptions, 0)
-  // Missing stats fall back to the campaign's own spent figure.
+  assert.equal(bare.stats.budgetReservedPesewas, null)
+  assert.equal(bare.stats.budgetSettledPesewas, null)
+  // Older APIs only expose the legacy committed-budget field.
+  assert.equal(bare.stats.budgetCommittedPesewas, 125_000)
   assert.equal(bare.stats.budgetSpentPesewas, 125_000)
+})
+
+test('detail normaliser never mistakes the legacy client count for unique providers', () => {
+  const oldProviderDetail = normalisePromoCampaignDetail({
+    ...campaign,
+    audience: 'driver',
+    campaignType: 'commission_relief',
+    promoScope: 'ride',
+    stats: { uniqueClients: 1, budgetSpentPesewas: 900 },
+  })
+  assert.equal(oldProviderDetail.stats.uniqueProviders, null)
+  assert.equal(oldProviderDetail.stats.uniqueBeneficiaries, null)
+
+  const currentProviderDetail = normalisePromoCampaignDetail({
+    ...campaign,
+    audience: 'driver',
+    campaignType: 'commission_relief',
+    promoScope: 'ride',
+    stats: {
+      uniqueClients: 3,
+      uniqueProviders: 3,
+      uniqueBeneficiaries: 3,
+      budget_reserved_pesewas: 200,
+      budget_settled_pesewas: 700,
+      budget_committed_pesewas: 900,
+      budget_spent_pesewas: 900,
+    },
+  })
+  assert.equal(currentProviderDetail.stats.uniqueProviders, 3)
+  assert.equal(currentProviderDetail.stats.uniqueBeneficiaries, 3)
+  assert.equal(currentProviderDetail.stats.budgetReservedPesewas, 200)
+  assert.equal(currentProviderDetail.stats.budgetSettledPesewas, 700)
+  assert.equal(currentProviderDetail.stats.budgetCommittedPesewas, 900)
 })
 
 test('list normaliser reads the campaigns envelope with pagination fallbacks', () => {
