@@ -14,11 +14,20 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PageSizeSelect } from '@/components/common/table-controls'
+import { DateRangeFilter } from '@/components/common/date-range-filter'
 import { listTransactions, type AdminTransaction } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatTransactionAmount } from '@/lib/money'
 import { paymentMethodLabel, paymentStatusLabel, transactionTypeLabel } from '@/lib/payment-labels'
+import { formatDateTime } from '@/lib/format-date'
 import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
+import { useGhanaCalendarNow } from '@/hooks/use-ghana-calendar-now'
+import {
+  defaultCustomDateRange,
+  isDateRangePreset,
+  resolveInclusiveDateRange,
+  type DateRangePreset,
+} from '@/lib/date-range'
 
 const txTypeColors: Record<string, string> = {
   collection: 'bg-gray-100 text-gray-600',
@@ -34,13 +43,6 @@ const txTypeColors: Record<string, string> = {
 // cash-commission remittances).
 const TYPE_OPTIONS = ['collection', 'payout', 'refund', 'clawback', 'tip', 'remittance'] as const
 
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
-
 // Canonical status vocabulary the backend translates per source (a 'completed'
 // filter matches escrowed/completed payments, completed payouts, etc.).
 const STATUS_OPTIONS = ['pending', 'completed', 'failed', 'refunded'] as const
@@ -51,6 +53,7 @@ export default function TransactionsPage() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const calendarNow = useGhanaCalendarNow()
 
   // Filter state is the URL — useSearchParams is the source of truth so links
   // are shareable. Spec §4.1: "Filters debounce 300ms, write to URL".
@@ -58,6 +61,11 @@ export default function TransactionsPage() {
   const statusFilter = searchParams.get('status') ?? 'all'
   const urlSearch = searchParams.get('search') ?? ''
   const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1)
+  const rawRange = searchParams.get('range')
+  const dateRange: DateRangePreset = isDateRangePreset(rawRange) ? rawRange : 'all'
+  const customFrom = searchParams.get('from') ?? ''
+  const customTo = searchParams.get('to') ?? ''
+  const { from, to } = resolveInclusiveDateRange(dateRange, customFrom, customTo, calendarNow)
 
   // Search has its own local state so typing doesn't cause an immediate URL
   // write — debounced below.
@@ -70,6 +78,7 @@ export default function TransactionsPage() {
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<AdminTransaction | null>(null)
   const [limit, setLimit] = useState(15)
+  const requestSequence = useRef(0)
 
   // ── URL writers ────────────────────────────────────────────────────────────
   const setParams = useCallback((updates: Record<string, string | null>) => {
@@ -97,21 +106,26 @@ export default function TransactionsPage() {
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchTransactions = useCallback(
     (silent = false) => {
+      const request = ++requestSequence.current
       if (!silent) setLoading(true)
       setError('')
       return listTransactions({
         type: typeFilter === 'all' ? undefined : typeFilter,
         status: statusFilter === 'all' ? undefined : statusFilter,
         search: urlSearch || undefined,
+        from,
+        to,
         page,
         limit,
       })
         .then(res => {
+          if (request !== requestSequence.current) return
           setTransactions(res.items)
           setTotal(res.total)
-          setTotalPages(res.totalPages)
+          setTotalPages(Math.max(1, res.totalPages || 1))
         })
         .catch(err => {
+          if (request !== requestSequence.current) return
           setTransactions([])
           setTotal(0)
           setTotalPages(1)
@@ -123,9 +137,11 @@ export default function TransactionsPage() {
             setError('Failed to load transactions.')
           }
         })
-        .finally(() => { if (!silent) setLoading(false) })
+        .finally(() => {
+          if (request === requestSequence.current) setLoading(false)
+        })
     },
-    [typeFilter, statusFilter, urlSearch, page, limit],
+    [typeFilter, statusFilter, urlSearch, from, to, page, limit],
   )
 
   useEffect(() => { fetchTransactions() }, [fetchTransactions])
@@ -189,6 +205,22 @@ export default function TransactionsPage() {
             ))}
           </SelectContent>
         </Select>
+        <DateRangeFilter
+          value={dateRange}
+          onChange={value => {
+            const custom = defaultCustomDateRange(customFrom, customTo)
+            setParams({
+              range: value,
+              from: value === 'custom' ? custom.from : null,
+              to: value === 'custom' ? custom.to : null,
+            })
+          }}
+          customFrom={customFrom}
+          customTo={customTo}
+          onCustomFromChange={value => setParams({ range: 'custom', from: value || null })}
+          onCustomToChange={value => setParams({ range: 'custom', to: value || null })}
+        />
+        <span className="text-xs text-gray-500">By transaction record date · refunds use their resolution record · GMT</span>
         <Button variant="outline" size="sm" onClick={() => fetchTransactions()} disabled={loading} className="gap-1.5">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh

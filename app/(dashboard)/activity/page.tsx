@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
@@ -13,6 +13,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { getRecentActivity, type ActivityItem, type ActivityEventType } from '@/lib/api'
+import { useDateRange } from '@/components/common/date-range-filter'
+import { formatDateTime } from '@/lib/format-date'
 
 // ─── Event metadata ───────────────────────────────────────────────────────────
 
@@ -32,6 +34,12 @@ const EVENT_META: Record<ActivityEventType, {
   sos_triggered:    { label: 'SOS Triggered',    icon: Siren,        color: 'text-red-700',    bg: 'bg-red-100',     border: 'border-red-200' },
   kyc_submitted:    { label: 'KYC Submitted',    icon: UserCheck,    color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
   dispute_resolved: { label: 'Dispute Resolved', icon: Scale,        color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
+  emergency:        { label: 'Emergency / SOS',  icon: Siren,        color: 'text-red-700',    bg: 'bg-red-100',     border: 'border-red-200' },
+  dispute:          { label: 'Dispute',          icon: Scale,        color: 'text-red-600',    bg: 'bg-red-50',      border: 'border-red-100' },
+  verification:     { label: 'Document Submitted', icon: UserCheck,  color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
+  ride:             { label: 'Ride Activity',    icon: Activity,     color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
+  job:              { label: 'Job Activity',     icon: Activity,     color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
+  payout:           { label: 'Payout Activity',  icon: DollarSign,   color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -65,10 +73,6 @@ function timeAgo(iso: string): string {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })
-}
-
 function fmtAmount(p: number) {
   return 'GHS ' + (p / 100).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -95,49 +99,34 @@ function eventLabel(t: string) {
   return EVENT_META[t as ActivityEventType]?.label ?? humanizeType(t)
 }
 
-type DateRange = 'all' | 'week' | 'month' | 'custom'
-
-const DAY_MS = 86_400_000
-
-// Whether an event timestamp falls inside the selected date range.
-function inDateRange(iso: string, range: DateRange, from: string, to: string): boolean {
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return true
-  const now = Date.now()
-  if (range === 'week')  return t >= now - 7 * DAY_MS
-  if (range === 'month') return t >= now - 30 * DAY_MS
-  if (range === 'custom') {
-    if (from && t < new Date(`${from}T00:00:00`).getTime())     return false
-    if (to   && t > new Date(`${to}T23:59:59.999`).getTime())   return false
-    return true
-  }
-  return true
-}
-
-const FETCH_LIMIT = 200   // how many recent events to pull for filtering
+const FETCH_LIMIT = 100   // backend-capped recent events within the selected range
 const PAGE_SIZE = 15      // rows shown per page
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ActivityPage() {
   const router = useRouter()
+  const {
+    from, to, preset: dateRange, setPreset: setDateRange,
+    setCustomFrom, setCustomTo, control: dateControl,
+  } = useDateRange('all')
   const [items, setItems]             = useState<ActivityItem[]>([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
   const [typeFilter, setTypeFilter]   = useState<string>('all')
   const [roleFilter, setRoleFilter]   = useState<'all' | 'client' | 'driver' | 'artisan' | 'system'>('all')
-  const [dateRange, setDateRange]     = useState<DateRange>('all')
-  const [customFrom, setCustomFrom]   = useState('')
-  const [customTo, setCustomTo]       = useState('')
   const [page, setPage]               = useState(1)
+  const requestSequence = useRef(0)
 
   const load = useCallback(() => {
+    const request = ++requestSequence.current
     setLoading(true); setError(null)
-    getRecentActivity(FETCH_LIMIT)
-      .then(data => setItems(data))
-      .catch(() => setError('Failed to load activity feed.'))
-      .finally(() => setLoading(false))
-  }, [])
+    setItems([])
+    getRecentActivity({ limit: FETCH_LIMIT, from, to })
+      .then(data => { if (request === requestSequence.current) setItems(data) })
+      .catch(() => { if (request === requestSequence.current) setError('Failed to load activity feed.') })
+      .finally(() => { if (request === requestSequence.current) setLoading(false) })
+  }, [from, to])
 
   useEffect(() => { load() }, [load])
   useAutoRefresh(load)
@@ -151,12 +140,11 @@ export default function ActivityPage() {
   const filtered = items.filter(item => {
     const matchType = typeFilter === 'all' || item.eventType === typeFilter
     const matchRole = roleFilter === 'all' || item.actorRole === roleFilter
-    const matchDate = inDateRange(item.occurredAt, dateRange, customFrom, customTo)
-    return matchType && matchRole && matchDate
+    return matchType && matchRole
   })
 
   // Reset to the first page whenever the filters change so results stay visible.
-  useEffect(() => { setPage(1) }, [typeFilter, roleFilter, dateRange, customFrom, customTo])
+  useEffect(() => { setPage(1) }, [typeFilter, roleFilter, dateRange, from, to])
 
   // Client-side pagination over the filtered list.
   const totalPages   = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
@@ -166,9 +154,9 @@ export default function ActivityPage() {
 
   // Summary counts
   const counts = {
-    sos:      items.filter(i => i.eventType === 'sos_triggered').length,
-    disputed: items.filter(i => i.eventType === 'ride_disputed' || i.eventType === 'job_disputed').length,
-    kyc:      items.filter(i => i.eventType === 'kyc_submitted').length,
+    sos: filtered.filter(i => i.eventType === 'emergency' || i.eventType === 'sos_triggered').length,
+    disputed: filtered.filter(i => i.eventType === 'dispute' || i.eventType === 'ride_disputed' || i.eventType === 'job_disputed').length,
+    kyc: filtered.filter(i => i.eventType === 'verification' || i.eventType === 'kyc_submitted').length,
   }
 
   function navigateToBooking(item: ActivityItem) {
@@ -182,7 +170,7 @@ export default function ActivityPage() {
       <div>
         <PageHeader
           title="Activity Feed"
-          subtitle="Platform-wide event stream - rides, jobs, payments, and safety events."
+          subtitle="Platform-wide events by occurred date (GMT) - rides, jobs, payments, and safety."
           actions={
             <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" onClick={load}>
               <RefreshCw className="h-3.5 w-3.5" /> Refresh
@@ -194,18 +182,18 @@ export default function ActivityPage() {
         {!loading && items.length > 0 && (counts.sos > 0 || counts.disputed > 0 || counts.kyc > 0) && (
           <div className="flex items-center gap-2 mb-4 flex-wrap">
             {counts.sos > 0 && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
-                <Siren className="h-3 w-3" /> {counts.sos} SOS
+              <span title="Count among loaded events" className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
+                <Siren className="h-3 w-3" /> {counts.sos} loaded emergency/SOS
               </span>
             )}
             {counts.disputed > 0 && (
               <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-600 border border-red-100">
-                <Scale className="h-3 w-3" /> {counts.disputed} Dispute{counts.disputed !== 1 ? 's' : ''}
+                <Scale className="h-3 w-3" /> {counts.disputed} loaded dispute{counts.disputed !== 1 ? 's' : ''}
               </span>
             )}
             {counts.kyc > 0 && (
               <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
-                <UserCheck className="h-3 w-3" /> {counts.kyc} KYC Pending
+                <UserCheck className="h-3 w-3" /> {counts.kyc} loaded document submission{counts.kyc !== 1 ? 's' : ''}
               </span>
             )}
           </div>
@@ -238,37 +226,7 @@ export default function ActivityPage() {
             </SelectContent>
           </Select>
 
-          <Select value={dateRange} onValueChange={v => setDateRange(v as DateRange)}>
-            <SelectTrigger className="w-40 h-8 text-sm bg-gray-50">
-              <SelectValue placeholder="Date range" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All time</SelectItem>
-              <SelectItem value="week">Last 7 days</SelectItem>
-              <SelectItem value="month">Last 30 days</SelectItem>
-              <SelectItem value="custom">Custom range</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {dateRange === 'custom' && (
-            <div className="flex items-center gap-1.5">
-              <input
-                type="date"
-                value={customFrom}
-                max={customTo || undefined}
-                onChange={e => setCustomFrom(e.target.value)}
-                className="h-8 text-sm bg-gray-50 border border-gray-200 rounded-md px-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
-              />
-              <span className="text-xs text-gray-400">to</span>
-              <input
-                type="date"
-                value={customTo}
-                min={customFrom || undefined}
-                onChange={e => setCustomTo(e.target.value)}
-                className="h-8 text-sm bg-gray-50 border border-gray-200 rounded-md px-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-200"
-              />
-            </div>
-          )}
+          {dateControl}
 
           {(typeFilter !== 'all' || roleFilter !== 'all' || dateRange !== 'all') && (
             <Button
@@ -284,7 +242,9 @@ export default function ActivityPage() {
             </Button>
           )}
 
-          <span className="text-xs text-gray-400 ml-auto">{filtered.length} event{filtered.length !== 1 ? 's' : ''}</span>
+          <span className="text-xs text-gray-400 ml-auto">
+            {filtered.length} loaded event{filtered.length !== 1 ? 's' : ''} · up to latest 100 in range
+          </span>
         </div>
 
         {/* Loading skeleton */}
@@ -343,7 +303,7 @@ export default function ActivityPage() {
                     color: 'text-gray-500', bg: 'bg-gray-100', border: 'border-gray-200',
                   }
                   const Icon = meta.icon
-                  const isSos = item.eventType === 'sos_triggered'
+                  const isSos = item.eventType === 'emergency' || item.eventType === 'sos_triggered'
 
                   return (
                     <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isSos ? 'bg-red-50/40' : ''}`}>
@@ -399,7 +359,7 @@ export default function ActivityPage() {
                       {/* Time */}
                       <td className="px-4 py-3 whitespace-nowrap">
                         <p className="text-xs font-medium text-gray-700">{timeAgo(item.occurredAt)}</p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">{fmtDate(item.occurredAt)}</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">{formatDateTime(item.occurredAt)}</p>
                       </td>
 
                       {/* Booking ref + link */}
