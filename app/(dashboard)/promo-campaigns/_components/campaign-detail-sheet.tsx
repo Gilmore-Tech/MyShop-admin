@@ -24,7 +24,8 @@ import { ApiError } from '@/lib/api-client'
 import { formatDateTime } from '@/lib/format-date'
 import { formatGhs } from '@/lib/money'
 import {
-  ghsInputToPesewas, isProviderAudience, pesewasToGhsInput, validatePromoBannerFile,
+  canResumePromoCampaign, ghsInputToPesewas, isProviderAudience, pesewasToGhsInput,
+  validatePromoBannerFile,
   PROMO_BANNER_ACCEPTED_TYPES,
 } from '@/lib/promo-campaign-contract'
 import { CampaignAudienceBadge } from './campaign-audience-badge'
@@ -139,8 +140,9 @@ export function CampaignDetailSheet({
   const busy = pendingAction !== null || uploadingBanner
   const isProvider = detail != null && isProviderAudience(detail.audience)
   const audienceWord = isProvider ? 'provider' : 'client'
+  const canResume = detail != null && canResumePromoCampaign(detail.status)
   const budgetPct = detail?.budgetCapPesewas != null && detail.budgetCapPesewas > 0
-    ? Math.min(100, Math.round((detail.stats.budgetSpentPesewas / detail.budgetCapPesewas) * 100))
+    ? Math.min(100, Math.round((detail.stats.budgetCommittedPesewas / detail.budgetCapPesewas) * 100))
     : null
 
   return (
@@ -184,12 +186,27 @@ export function CampaignDetailSheet({
               <div className="grid grid-cols-2 gap-3">
                 <Stat label="Reserved redemptions" value={String(detail.stats.reservedRedemptions)} />
                 <Stat label="Settled redemptions" value={String(detail.stats.settledRedemptions)} />
-                <Stat label={isProvider ? 'Unique providers' : 'Unique clients'} value={String(detail.stats.uniqueClients)} />
                 <Stat
-                  label="Budget spent"
-                  value={`${formatGhs(detail.stats.budgetSpentPesewas)}${detail.budgetCapPesewas != null ? ` / ${formatGhs(detail.budgetCapPesewas)}` : ''}`}
+                  label={isProvider ? 'Unique providers (committed)' : 'Unique clients (committed)'}
+                  value={detail.stats.uniqueBeneficiaries == null ? 'Unavailable' : String(detail.stats.uniqueBeneficiaries)}
+                />
+                <Stat
+                  label="Budget reserved"
+                  value={detail.stats.budgetReservedPesewas == null ? 'Unavailable' : formatGhs(detail.stats.budgetReservedPesewas)}
+                />
+                <Stat
+                  label="Settled spend"
+                  value={detail.stats.budgetSettledPesewas == null ? 'Unavailable' : formatGhs(detail.stats.budgetSettledPesewas)}
+                />
+                <Stat
+                  label="Total committed"
+                  value={`${formatGhs(detail.stats.budgetCommittedPesewas)}${detail.budgetCapPesewas != null ? ` / ${formatGhs(detail.budgetCapPesewas)}` : ''}`}
                 />
               </div>
+              <p className="text-[10px] leading-4 text-gray-400">
+                Committed counts include reserved and settled redemptions. Total committed is reserved budget plus
+                settled spend; released and refunded redemptions are excluded.
+              </p>
               {budgetPct != null && (
                 <div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
@@ -198,7 +215,7 @@ export function CampaignDetailSheet({
                       style={{ width: `${budgetPct}%` }}
                     />
                   </div>
-                  <p className="mt-1 text-[10px] text-gray-400">{budgetPct}% of budget used</p>
+                  <p className="mt-1 text-[10px] text-gray-400">{budgetPct}% of budget committed</p>
                 </div>
               )}
 
@@ -330,7 +347,7 @@ export function CampaignDetailSheet({
                     </>
                   )}
 
-                  {(detail.status === 'approved' || detail.status === 'paused') && (
+                  {(detail.status === 'approved' || canResume) && (
                     <RoleGate permission="manage_promotions">
                       {detail.status === 'approved' ? (
                         <Button
@@ -355,16 +372,18 @@ export function CampaignDetailSheet({
                           Resume
                         </Button>
                       )}
-                      <Button size="sm" variant="outline" className="gap-1.5" disabled={busy} onClick={() => setRestrictedEditOpen(true)}>
-                        <Pencil className="h-3.5 w-3.5" /> Adjust budget / end date
-                      </Button>
+                      {detail.status !== 'budget_exhausted' && (
+                        <Button size="sm" variant="outline" className="gap-1.5" disabled={busy} onClick={() => setRestrictedEditOpen(true)}>
+                          <Pencil className="h-3.5 w-3.5" /> Adjust budget / end date
+                        </Button>
+                      )}
                       <Button size="sm" variant="destructive" className="gap-1.5" disabled={busy} onClick={() => setEndConfirmOpen(true)}>
                         <Ban className="h-3.5 w-3.5" /> End campaign
                       </Button>
                     </RoleGate>
                   )}
 
-                  {(detail.status === 'ended' || detail.status === 'budget_exhausted') && (
+                  {detail.status === 'ended' && (
                     <p className="text-xs italic text-gray-400">
                       This campaign has finished. No further actions are available.
                     </p>
@@ -373,6 +392,13 @@ export function CampaignDetailSheet({
                 {detail.status === 'pending_approval' && (
                   <p className="text-[10px] text-gray-400">
                     Maker-checker: the admin who created this campaign cannot approve it.
+                  </p>
+                )}
+                {detail.status === 'budget_exhausted' && (
+                  <p className="text-[10px] leading-4 text-amber-700">
+                    A release or refund can reactivate this campaign automatically after committed budget drops below
+                    the cap. If repaired historical drift leaves it stopped, Resume is available only while the campaign
+                    window remains open and the backend confirms budget is available.
                   </p>
                 )}
               </section>
