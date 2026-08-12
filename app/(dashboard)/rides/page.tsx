@@ -15,6 +15,7 @@ import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { useDateRange, PageSizeSelect } from '@/components/common/table-controls'
 import { listRides, type AdminRide } from '@/lib/api'
+import { paymentMethodLabel } from '@/lib/payment-labels'
 import { formatDateTime } from '@/lib/format-date'
 import { formatGhs } from '@/lib/money'
 
@@ -39,6 +40,12 @@ export default function RidesPage() {
       search: search || undefined,
       from,
       to,
+      // When the list is narrowed to completed rides, a date range means "rides
+      // that finished in this window" — the same day Payments → Money Owed
+      // stamps the debt on. Filtering those by booking date instead drops every
+      // ride booked before midnight and finished after it, which is what made
+      // "N rides completed today" and "no debts today" look contradictory.
+      dateBasis: statusFilter === 'completed' ? 'completed' : undefined,
       page,
       limit,
     })
@@ -120,7 +127,9 @@ export default function RidesPage() {
             </SelectContent>
           </Select>
           {dateControl}
-          <span className="text-xs text-gray-400">By request date · GMT</span>
+          <span className="text-xs text-gray-400">
+            {statusFilter === 'completed' ? 'By completion date · GMT' : 'By request date · GMT'}
+          </span>
           <div className="ml-auto flex items-center gap-3">
             <span className="text-sm text-gray-400">{total} rides</span>
             <PageSizeSelect value={limit} onChange={setLimit} />
@@ -162,7 +171,15 @@ export default function RidesPage() {
                     <TableRow key={ride.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/rides/${ride.id}`)}>
                       <TableCell>
                         <p className="font-mono text-sm font-semibold text-gray-900">{ride.id.slice(-8).toUpperCase()}</p>
-                        <p className="text-xs text-gray-400 mt-0.5 whitespace-nowrap">{formatDateTime(ride.createdAt)}</p>
+                        {/* A completed ride is dated by when it finished — that is the
+                            day it settled, and the day any cash debt is stamped on
+                            Payments → Money Owed. Showing the booking time here made
+                            the two pages look like they disagreed. */}
+                        <p className="text-xs text-gray-400 mt-0.5 whitespace-nowrap">
+                          {ride.completedAt
+                            ? `Completed ${formatDateTime(ride.completedAt)}`
+                            : formatDateTime(ride.createdAt)}
+                        </p>
                       </TableCell>
                       <TableCell className="text-sm font-medium text-gray-800">{ride.clientName ?? '-'}</TableCell>
                       <TableCell className="text-sm text-gray-500">
@@ -171,7 +188,22 @@ export default function RidesPage() {
                       <TableCell><StatusBadge status={ride.status} /></TableCell>
                       <TableCell className="text-right">
                         <p className="text-sm font-semibold text-gray-800">{formatGhs(ride.farePesewas)}</p>
-                        <p className="text-xs text-gray-400 capitalize">{ride.paymentStatus ?? '-'}</p>
+                        {/* Method decides whether a debt is expected at all: cash means
+                            the driver holds the fare and owes commission back, so a
+                            clawback should exist; MoMo/card commission is withheld from
+                            the payout and correctly produces none. A completed ride with
+                            no payment row never settled — flag it rather than show "-". */}
+                        <p className="text-xs text-gray-400">
+                          {paymentMethodLabel(ride.paymentMethod)}
+                          {' · '}
+                          {ride.paymentStatus ? (
+                            <span className="capitalize">{ride.paymentStatus}</span>
+                          ) : ride.status === 'completed' ? (
+                            <span className="text-amber-600 font-semibold">unsettled</span>
+                          ) : (
+                            '—'
+                          )}
+                        </p>
                       </TableCell>
                       <TableCell onClick={e => e.stopPropagation()}>
                         <DropdownMenu>
