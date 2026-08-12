@@ -21,6 +21,7 @@ import {
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { useDateRange } from '@/components/common/date-range-filter'
+import { PageSizeSelect } from '@/components/common/table-controls'
 import { ghanaDateKey } from '@/lib/date-range'
 import { groupClawbacksByProvider, type ProviderClawbackGroup } from '@/lib/clawback-groups'
 import { paymentStatusLabel } from '@/lib/payment-labels'
@@ -86,6 +87,8 @@ export default function ClawbacksPage() {
   const [actionError, setActionError] = useState('')
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
   const [truncated, setTruncated] = useState(false)
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(15)
   const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setSelectedGroupKey(null) })
   const dateFiltered = useMemo(
     () => (from || to ? clawbacks.filter(item => isWithinRange(item, from, to)) : clawbacks),
@@ -99,6 +102,16 @@ export default function ClawbacksPage() {
   const selected = groups.find(group => (group.providerId || group.clawbacks[0].id) === selectedGroupKey) ?? null
   const eligibleCount = dateFiltered.filter(isWriteOffEligible).length
   const visibleOutstanding = groups.reduce((sum, group) => sum + group.outstandingPesewas, 0)
+
+  // Everything is already in memory, so paging is a slice — the totals below the
+  // table stay whole-set figures, not per-page ones.
+  const totalPages = Math.max(1, Math.ceil(groups.length / limit))
+  const currentPage = Math.min(page, totalPages)
+  const pageGroups = groups.slice((currentPage - 1) * limit, currentPage * limit)
+  const firstRowNumber = groups.length === 0 ? 0 : (currentPage - 1) * limit + 1
+  const lastRowNumber = (currentPage - 1) * limit + pageGroups.length
+
+  useEffect(() => { setPage(1) }, [from, to, limit])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -174,6 +187,7 @@ export default function ClawbacksPage() {
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
           {dateControl}
+          <PageSizeSelect value={limit} onChange={setLimit} />
           <p className="text-xs text-gray-500">Newest records first. Filters by the date each amount was recorded.</p>
         </div>
 
@@ -232,7 +246,7 @@ export default function ClawbacksPage() {
                     {from || to ? 'No unpaid amounts recorded in this date range' : 'No unpaid amounts'}
                   </TableCell>
                 </TableRow>
-              ) : groups.map(group => (
+              ) : pageGroups.map(group => (
                 <TableRow
                   key={group.providerId || group.clawbacks[0].id}
                   className="cursor-pointer hover:bg-gray-50"
@@ -256,8 +270,32 @@ export default function ClawbacksPage() {
               ))}
             </TableBody>
           </Table>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3">
+            <p className="text-xs text-gray-500">
+              {loading && <Loader2 className="inline h-3 w-3 animate-spin" />}
+              {!loading && groups.length === 0 && 'Nothing to show'}
+              {!loading && groups.length > 0 &&
+                `Showing ${firstRowNumber}–${lastRowNumber} of ${groups.length} ${groups.length === 1 ? 'person' : 'people'} · ${dateFiltered.length} record${dateFiltered.length === 1 ? '' : 's'}`}
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Page {currentPage} of {totalPages}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1 || loading}
+                onClick={() => setPage(currentPage - 1)}
+              >Previous</Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= totalPages || loading}
+                onClick={() => setPage(currentPage + 1)}
+              >Next</Button>
+            </div>
+          </div>
           <div className="bg-gray-50 px-4 py-3 text-xs text-gray-500">
-            Total still to be paid{from || to ? ' in this date range' : ''}:{' '}
+            Total still to be paid{from || to ? ' in this date range' : ''}
+            {totalPages > 1 ? ', across all pages' : ''}:{' '}
             <strong className="text-red-600">
               {loading ? '—' : formatGhs(from || to ? visibleOutstanding : totalOutstanding || visibleOutstanding)}
             </strong>
