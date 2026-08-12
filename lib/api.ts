@@ -1756,6 +1756,27 @@ export interface SystemAuditEvent {
   eventHash: string
   retentionUntil: string
   legalHold: boolean
+  actorAttribution?: 'authenticated' | 'unauthenticated_request' | 'integration' | 'runtime' | 'database' | 'deployment'
+  actorDisplayLabel?: string
+  origin?: {
+    source: string
+    environment: string
+    route: string | null
+    method: string | null
+    requestReference: string | null
+    correlationId: string | null
+  }
+  diagnostic?: {
+    status: number | null
+    errorCode: string | null
+    durationMs: number | null
+  }
+  reportedClient?: {
+    app: 'client' | 'provider' | null
+    platform: 'android' | 'ios' | null
+    build: number | null
+    version: string | null
+  }
 }
 
 export interface SystemAuditPage {
@@ -1782,6 +1803,12 @@ export interface SystemTelemetryEvent {
   appVersion: string | null
   metadata: Record<string, unknown> | null
   expiresAt: string
+  reportedClient?: {
+    app: 'client' | 'provider' | null
+    platform: 'android' | 'ios' | null
+    build: number | null
+    version: string | null
+  }
 }
 
 export interface SystemTelemetryPage {
@@ -1790,11 +1817,13 @@ export interface SystemTelemetryPage {
   timeZone: 'GMT'
   timestampPrecision: 'milliseconds'
   retentionDays: 90
+  deliverySemantics?: 'best_effort_at_least_once'
+  countingUnit?: 'event_rows'
 }
 
 export interface SystemAuditSummary {
   total: number
-  telemetryTotal: number
+  telemetryTotal: number | null
   failures: number
   critical: number
   openAlerts: number
@@ -1802,6 +1831,13 @@ export interface SystemAuditSummary {
   windowFrom?: string
   windowTo?: string
   timeZone: 'GMT'
+  scope?: 'filtered'
+  filtersApplied?: string[]
+  openAlertsScope?: 'global'
+  telemetryFilterScope?: 'filtered' | 'not_comparable_audit_only_filters'
+  telemetryUnsupportedFilters?: string[]
+  telemetryDeliverySemantics?: 'best_effort_at_least_once'
+  telemetryCountingUnit?: 'event_rows'
 }
 
 export interface SystemAuditAlert {
@@ -1853,8 +1889,8 @@ export function getSystemTelemetryEvents(filters: SystemAuditFilters = {}): Prom
   return api.get<SystemTelemetryPage>(`/system-audit/telemetry${queryString(filters)}`)
 }
 
-export function getSystemAuditSummary(from?: string, to?: string): Promise<SystemAuditSummary> {
-  return api.get<SystemAuditSummary>(`/system-audit/summary${queryString({ from, to })}`)
+export function getSystemAuditSummary(filters: SystemAuditFilters = {}): Promise<SystemAuditSummary> {
+  return api.get<SystemAuditSummary>(`/system-audit/summary${queryString(filters)}`)
 }
 
 export function getSystemAuditAlerts(openOnly = true): Promise<SystemAuditAlert[]> {

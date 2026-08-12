@@ -73,6 +73,15 @@ export default function SystemAuditPage() {
   const [searchDraft, setSearchDraft] = useState('')
 
   const activeFilters = useMemo(() => ({ ...filters, cursor: undefined }), [filters])
+  const hasSummaryFilters = useMemo(
+    () => Object.entries(filters).some(([key, value]) => key !== 'limit' && value !== undefined && value !== ''),
+    [filters],
+  )
+  const telemetrySummaryComparable = summary.telemetryTotal !== null
+  const telemetrySummaryLabel = telemetrySummaryComparable
+    ? hasSummaryFilters ? 'Mobile event rows (filtered)' : 'Mobile event rows (24h)'
+    : 'Mobile event rows (not comparable)'
+  const telemetrySummaryValue = summary.telemetryTotal?.toLocaleString() ?? '—'
 
   const load = useCallback(async (cursor?: string) => {
     setLoading(true)
@@ -80,7 +89,7 @@ export default function SystemAuditPage() {
     try {
       const [page, totals, openAlerts] = await Promise.all([
         getSystemAuditEvents({ ...activeFilters, cursor }),
-        getSystemAuditSummary(filters.from, filters.to),
+        getSystemAuditSummary(activeFilters),
         getSystemAuditAlerts(true),
       ])
       setEvents(page.data)
@@ -92,7 +101,7 @@ export default function SystemAuditPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeFilters, filters.from, filters.to])
+  }, [activeFilters])
 
   useEffect(() => { void load(currentCursor) }, [load, currentCursor])
 
@@ -209,11 +218,11 @@ export default function SystemAuditPage() {
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
           {[
-            [filters.from || filters.to ? 'Events (range)' : 'Events (24h)', summary.total.toLocaleString()],
-            [filters.from || filters.to ? 'Mobile (range)' : 'Mobile (24h)', summary.telemetryTotal.toLocaleString()],
+            [hasSummaryFilters ? 'Audit events (filtered)' : 'Audit events (24h)', summary.total.toLocaleString()],
+            [telemetrySummaryLabel, telemetrySummaryValue],
             ['Failures', summary.failures.toLocaleString()],
             ['Critical', summary.critical.toLocaleString()],
-            ['Open alerts', summary.openAlerts.toLocaleString()],
+            ['Open alerts (global)', summary.openAlerts.toLocaleString()],
             ['Tamper status', integrity],
           ].map(([label, value]) => (
             <Card key={label}>
@@ -224,6 +233,15 @@ export default function SystemAuditPage() {
             </Card>
           ))}
         </div>
+
+        {!telemetrySummaryComparable && (
+          <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Mobile event rows cannot be compared under the active audit-only filters
+            {summary.telemetryUnsupportedFilters?.length
+              ? ` (${summary.telemetryUnsupportedFilters.join(', ')})`
+              : ''}. Audit-event totals remain filtered correctly.
+          </div>
+        )}
 
         {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
@@ -262,6 +280,22 @@ export default function SystemAuditPage() {
                   {['admin', 'client', 'driver', 'artisan', 'system', 'deployment'].map(value => <SelectItem key={value} value={value}>{title(value)}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <Select value={filters.source ?? 'all'} onValueChange={value => updateFilter('source', value === 'all' ? undefined : value)}>
+                <SelectTrigger className="w-48"><SelectValue placeholder="All sources" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sources</SelectItem>
+                  {['http_api', 'auth_service', 'otp_delivery_service', 'legacy_admin_audit', 'database_trigger', 'application_bootstrap', 'deployment_webhook', 'super_admin_dashboard', 'mobile:client', 'mobile:provider'].map(value => (
+                    <SelectItem key={value} value={value}>{title(value)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filters.environment ?? 'all'} onValueChange={value => updateFilter('environment', value === 'all' ? undefined : value)}>
+                <SelectTrigger className="w-40"><SelectValue placeholder="All environments" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All environments</SelectItem>
+                  {['production', 'staging', 'historical', 'unknown'].map(value => <SelectItem key={value} value={value}>{title(value)}</SelectItem>)}
+                </SelectContent>
+              </Select>
               <Select value={filters.outcome ?? 'all'} onValueChange={value => updateFilter('outcome', value === 'all' ? undefined : value)}>
                 <SelectTrigger className="w-36"><SelectValue placeholder="All outcomes" /></SelectTrigger>
                 <SelectContent><SelectItem value="all">All outcomes</SelectItem><SelectItem value="success">Success</SelectItem><SelectItem value="failure">Failure</SelectItem></SelectContent>
@@ -286,8 +320,24 @@ export default function SystemAuditPage() {
                   ) : events.map(event => (
                     <TableRow key={event.id} className="align-top">
                       <TableCell className="whitespace-nowrap text-xs text-gray-500">{gmtTimestamp(event.occurredAt)}</TableCell>
-                      <TableCell><p className="text-sm font-medium">{event.actorLabel ?? title(event.actorType)}</p><p className="text-xs text-gray-400">{title(event.actorRole)} · {event.actorId?.slice(0, 12) ?? 'system'}</p></TableCell>
-                      <TableCell><p className="text-xs font-semibold uppercase text-gray-400">{title(event.category)}</p><p className="text-sm text-gray-800">{title(event.action)}</p></TableCell>
+                      <TableCell>
+                        <p className="text-sm font-medium">{event.actorDisplayLabel ?? event.actorLabel ?? title(event.actorType)}</p>
+                        <p className="text-xs text-gray-400">
+                          {event.actorAttribution === 'unauthenticated_request'
+                            ? 'Public endpoint · no authenticated account'
+                            : `${title(event.actorRole)} · ${event.actorId?.slice(0, 12) ?? title(event.actorAttribution ?? 'system')}`}
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-xs font-semibold uppercase text-gray-400">{title(event.category)}</p>
+                        <p className="text-sm text-gray-800">{title(event.action)}</p>
+                        <p className="mt-1 max-w-80 truncate font-mono text-[10px] text-gray-500" title={`${event.origin?.method ?? ''} ${event.origin?.route ?? ''}`}>
+                          {event.origin?.route ? `${event.origin.method ?? 'HTTP'} ${event.origin.route}` : title(event.source)}
+                        </p>
+                        <p className="max-w-80 truncate text-[10px] text-gray-400" title={event.requestReference ?? ''}>
+                          {event.source} · {event.environment} · ref {event.requestReference ?? '—'}
+                        </p>
+                      </TableCell>
                       <TableCell><Outcome event={event} /><p className="mt-1 text-[11px] text-gray-400">{title(event.severity)}</p></TableCell>
                       <TableCell><p className="text-sm">{title(event.targetType)}</p><p className="max-w-36 truncate font-mono text-[10px] text-gray-400" title={event.targetId ?? ''}>{event.targetId ?? '—'}</p></TableCell>
                       <TableCell>
@@ -295,8 +345,11 @@ export default function SystemAuditPage() {
                           <summary className="cursor-pointer font-medium text-orange-600">View evidence</summary>
                           <div className="mt-2 space-y-1 break-all text-gray-500">
                             <p>Source: {event.source} · {event.environment}</p>
+                            <p>Route: {event.origin?.method ?? '—'} {event.origin?.route ?? '—'}</p>
                             <p>Reference: {event.requestReference ?? '—'}</p><p>Correlation: {event.correlationId ?? '—'}</p>
-                            <p>IP: {event.ipAddressMasked ?? '—'} · App: {event.appVersion ?? '—'}</p>
+                            <p>Error: {event.diagnostic?.errorCode ?? '—'} · HTTP: {event.diagnostic?.status ?? '—'} · Duration: {event.diagnostic?.durationMs ?? '—'} ms</p>
+                            <p>Reported client: {event.reportedClient?.app ?? 'unavailable'} · {event.reportedClient?.platform ?? 'platform unavailable'} · build {event.reportedClient?.build ?? 'unavailable'}</p>
+                            <p>IP: {event.ipAddressMasked ?? '—'} · Version: {event.reportedClient?.version ?? event.appVersion ?? 'unavailable'}</p>
                             <p>Hash: {event.eventHash}</p><p>Retained to: {gmtTimestamp(event.retentionUntil)}{event.legalHold ? ' · LEGAL HOLD' : ''}</p>
                             <Button variant="outline" size="sm" onClick={() => void toggleLegalHold(event)}>{event.legalHold ? 'Release legal hold' : 'Apply legal hold'}</Button>
                             {event.metadata && <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2">{JSON.stringify(event.metadata, null, 2)}</pre>}
@@ -327,6 +380,7 @@ export default function SystemAuditPage() {
               <div>
                 <p className="font-medium text-gray-900">Privacy-minimal mobile activity</p>
                 <p className="text-xs text-gray-500">Named screens, app lifecycle and meaningful actions only · retained for 90 days</p>
+                <p className="mt-1 text-xs text-amber-700">Best-effort, at-least-once event rows: ambiguous transport loss can duplicate a row. This is not a financial ledger.</p>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => void exportTelemetry('csv')} className="gap-1"><Download className="h-4 w-4" /> CSV</Button>
@@ -351,7 +405,11 @@ export default function SystemAuditPage() {
                       <TableCell><p className="text-sm font-medium">{title(event.actorType)}</p><p className="text-xs text-gray-400">{title(event.actorRole)} · {event.actorId?.slice(0, 12) ?? 'system'}</p></TableCell>
                       <TableCell><p className="text-xs font-semibold uppercase text-gray-400">{title(event.category)}</p><p className="text-sm text-gray-800">{title(event.action)}</p></TableCell>
                       <TableCell><span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${event.outcome === 'failure' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{title(event.outcome)}</span></TableCell>
-                      <TableCell><p className="text-sm">{event.source}</p><p className="text-xs text-gray-400">{event.appVersion ?? 'version unavailable'}</p></TableCell>
+                      <TableCell>
+                        <p className="text-sm">{event.reportedClient?.app ?? event.source}</p>
+                        <p className="text-xs text-gray-400">{event.reportedClient?.platform ?? 'platform unavailable'} · build {event.reportedClient?.build ?? 'unavailable'}</p>
+                        <p className="text-xs text-gray-400">Version {event.reportedClient?.version ?? event.appVersion ?? 'unavailable'}</p>
+                      </TableCell>
                       <TableCell><details className="max-w-72 text-xs"><summary className="cursor-pointer font-medium text-orange-600">View details</summary><div className="mt-2 space-y-1 break-all text-gray-500"><p>Correlation: {event.correlationId ?? '—'}</p><p>Expires: {gmtTimestamp(event.expiresAt)}</p>{event.metadata && <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2">{JSON.stringify(event.metadata, null, 2)}</pre>}</div></details></TableCell>
                     </TableRow>
                   ))}
