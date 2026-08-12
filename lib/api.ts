@@ -45,6 +45,11 @@ import {
   normaliseRidePricing,
   type RidePricingSummary,
 } from './ride-pricing-contract'
+import {
+  normaliseAdminRideListResponse,
+  type AdminRideListResponse as NormalisedAdminRideListResponse,
+} from './admin-ride-contract'
+export type { AdminRide, AdminRideListResponse } from './admin-ride-contract'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -2639,35 +2644,14 @@ export function unexpireBid(bidId: string) {
 
 // ── Rides (admin listing) ─────────────────────────────────────────────────────
 
-export interface AdminRide {
-  id: string
-  clientName: string | null
-  driverName: string | null
-  pickupAddress: string
-  dropoffAddress: string
-  status: string
-  farePesewas: number
-  paymentMethod: string | null
-  paymentStatus: string | null
-  createdAt: string
-}
-
-export interface AdminRideListResponse {
-  items: AdminRide[]
-  total: number
-  page: number
-  limit: number
-  totalPages: number
-}
-
-export function listRides(params?: {
+export async function listRides(params?: {
   status?: string
   search?: string
   page?: number
   limit?: number
   from?: string
   to?: string
-}) {
+}): Promise<NormalisedAdminRideListResponse> {
   const qs = params
     ? '?' +
       new URLSearchParams(
@@ -2678,7 +2662,8 @@ export function listRides(params?: {
         )
       ).toString()
     : ''
-  return api.get<AdminRideListResponse>(`/admin/rides${qs}`)
+  const raw = await api.get<unknown>(`/admin/rides${qs}`)
+  return normaliseAdminRideListResponse(raw)
 }
 
 export interface RideDetail {
