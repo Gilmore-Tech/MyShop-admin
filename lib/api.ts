@@ -5,6 +5,7 @@
 import {
   api,
   apiFetch,
+  ApiError,
   AdminUser,
   setTokens,
   setAdminUser,
@@ -45,6 +46,11 @@ import {
   normaliseRidePricing,
   type RidePricingSummary,
 } from './ride-pricing-contract'
+import {
+  normaliseAdminRideListResponse,
+  type AdminRideListResponse as NormalisedAdminRideListResponse,
+} from './admin-ride-contract'
+export type { AdminRide, AdminRideListResponse } from './admin-ride-contract'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -1756,6 +1762,27 @@ export interface SystemAuditEvent {
   eventHash: string
   retentionUntil: string
   legalHold: boolean
+  actorAttribution?: 'authenticated' | 'unauthenticated_request' | 'integration' | 'runtime' | 'database' | 'deployment'
+  actorDisplayLabel?: string
+  origin?: {
+    source: string
+    environment: string
+    route: string | null
+    method: string | null
+    requestReference: string | null
+    correlationId: string | null
+  }
+  diagnostic?: {
+    status: number | null
+    errorCode: string | null
+    durationMs: number | null
+  }
+  reportedClient?: {
+    app: 'client' | 'provider' | null
+    platform: 'android' | 'ios' | null
+    build: number | null
+    version: string | null
+  }
 }
 
 export interface SystemAuditPage {
@@ -1782,6 +1809,12 @@ export interface SystemTelemetryEvent {
   appVersion: string | null
   metadata: Record<string, unknown> | null
   expiresAt: string
+  reportedClient?: {
+    app: 'client' | 'provider' | null
+    platform: 'android' | 'ios' | null
+    build: number | null
+    version: string | null
+  }
 }
 
 export interface SystemTelemetryPage {
@@ -1790,11 +1823,13 @@ export interface SystemTelemetryPage {
   timeZone: 'GMT'
   timestampPrecision: 'milliseconds'
   retentionDays: 90
+  deliverySemantics?: 'best_effort_at_least_once'
+  countingUnit?: 'event_rows'
 }
 
 export interface SystemAuditSummary {
   total: number
-  telemetryTotal: number
+  telemetryTotal: number | null
   failures: number
   critical: number
   openAlerts: number
@@ -1802,6 +1837,13 @@ export interface SystemAuditSummary {
   windowFrom?: string
   windowTo?: string
   timeZone: 'GMT'
+  scope?: 'filtered'
+  filtersApplied?: string[]
+  openAlertsScope?: 'global'
+  telemetryFilterScope?: 'filtered' | 'not_comparable_audit_only_filters'
+  telemetryUnsupportedFilters?: string[]
+  telemetryDeliverySemantics?: 'best_effort_at_least_once'
+  telemetryCountingUnit?: 'event_rows'
 }
 
 export interface SystemAuditAlert {
@@ -1853,8 +1895,8 @@ export function getSystemTelemetryEvents(filters: SystemAuditFilters = {}): Prom
   return api.get<SystemTelemetryPage>(`/system-audit/telemetry${queryString(filters)}`)
 }
 
-export function getSystemAuditSummary(from?: string, to?: string): Promise<SystemAuditSummary> {
-  return api.get<SystemAuditSummary>(`/system-audit/summary${queryString({ from, to })}`)
+export function getSystemAuditSummary(filters: SystemAuditFilters = {}): Promise<SystemAuditSummary> {
+  return api.get<SystemAuditSummary>(`/system-audit/summary${queryString(filters)}`)
 }
 
 export function getSystemAuditAlerts(openOnly = true): Promise<SystemAuditAlert[]> {
@@ -2603,35 +2645,14 @@ export function unexpireBid(bidId: string) {
 
 // ── Rides (admin listing) ─────────────────────────────────────────────────────
 
-export interface AdminRide {
-  id: string
-  clientName: string | null
-  driverName: string | null
-  pickupAddress: string
-  dropoffAddress: string
-  status: string
-  farePesewas: number
-  paymentMethod: string | null
-  paymentStatus: string | null
-  createdAt: string
-}
-
-export interface AdminRideListResponse {
-  items: AdminRide[]
-  total: number
-  page: number
-  limit: number
-  totalPages: number
-}
-
-export function listRides(params?: {
+export async function listRides(params?: {
   status?: string
   search?: string
   page?: number
   limit?: number
   from?: string
   to?: string
-}) {
+}): Promise<NormalisedAdminRideListResponse> {
   const qs = params
     ? '?' +
       new URLSearchParams(
@@ -2642,7 +2663,8 @@ export function listRides(params?: {
         )
       ).toString()
     : ''
-  return api.get<AdminRideListResponse>(`/admin/rides${qs}`)
+  const raw = await api.get<unknown>(`/admin/rides${qs}`)
+  return normaliseAdminRideListResponse(raw)
 }
 
 export interface RideDetail {
@@ -3166,13 +3188,17 @@ export interface AdminClawback {
   id: string
   providerName: string | null
   providerId: string
+  providerType: string | null
   providerPhone: string | null
   source: string | null
   amountPesewas: number
   paidAmountPesewas: number
   outstandingPesewas: number
   originalDisputeId: string | null
+  linkedPaymentId: string | null
+  reason: string | null
   initiatedAt: string
+  settledAt: string | null
   daysOutstanding: number
   status: string
 }
@@ -3183,28 +3209,119 @@ export interface ClawbackListResponse {
   totalOutstandingPesewas: number
 }
 
-export async function listClawbacks(): Promise<ClawbackListResponse> {
-  const raw = await api.get<any>('/admin/clawbacks')
+/**
+ * Every debt category the backend can hold against a provider. `GET /admin/clawbacks`
+ * defaults to `CASH_COMMISSION` alone (backend spec §2.8), so the admin panel asks
+ * for each source explicitly — otherwise dispute and manual debts never appear.
+ */
+export const CLAWBACK_SOURCES = ['CASH_COMMISSION', 'DISPUTE', 'WRITE_OFF', 'MANUAL'] as const
+
+export interface ClawbackQuery {
+  /** Inclusive Ghana calendar dates (YYYY-MM-DD); filter `created_at`. */
+  from?: string
+  to?: string
+  source?: string
+  status?: string
+  providerId?: string
+  page?: number
+  limit?: number
+}
+
+export async function listClawbacks(params?: ClawbackQuery): Promise<ClawbackListResponse> {
+  const entries = Object.entries(params ?? {})
+    .filter(([, value]) => value != null && value !== '')
+    .map(([key, value]) => [key, String(value)] as [string, string])
+  const qs = entries.length ? '?' + new URLSearchParams(entries).toString() : ''
+  const raw = await api.get<any>(`/admin/clawbacks${qs}`)
   const items: AdminClawback[] = (raw?.items ?? []).map(
     (c: any): AdminClawback => ({
       id: c.id,
       providerName: c.providerName ?? c.provider_name ?? null,
       providerId: c.providerId ?? c.provider_id ?? '',
+      providerType: c.providerType ?? c.provider_type ?? null,
       providerPhone: c.providerPhone ?? c.provider_phone ?? null,
       source: c.source ?? null,
       amountPesewas: c.amountPesewas ?? c.amount_pesewas ?? 0,
       paidAmountPesewas: c.paidAmountPesewas ?? c.paid_amount_pesewas ?? 0,
       outstandingPesewas: c.outstandingPesewas ?? c.outstanding_pesewas ?? 0,
-      originalDisputeId: c.originalDisputeId ?? c.original_dispute_id ?? null,
-      initiatedAt: c.initiatedAt ?? c.initiated_at ?? c.createdAt ?? '',
+      // Two backend docs name this field differently — accept either shape.
+      originalDisputeId:
+        c.originalDisputeId ?? c.original_dispute_id ?? c.linkedDisputeId ?? c.linked_dispute_id ?? null,
+      linkedPaymentId: c.linkedPaymentId ?? c.linked_payment_id ?? null,
+      reason: c.reason ?? c.writeOffReason ?? c.write_off_reason ?? null,
+      initiatedAt: c.initiatedAt ?? c.initiated_at ?? c.createdAt ?? c.created_at ?? '',
+      settledAt: c.settledAt ?? c.settled_at ?? c.writtenOffAt ?? c.written_off_at ?? null,
       daysOutstanding: c.daysOutstanding ?? c.days_outstanding ?? 0,
       status: c.status ?? 'outstanding',
     })
   )
+  const summary = raw?.summary ?? raw
   return {
     items,
     total: raw?.total ?? items.length,
-    totalOutstandingPesewas: raw?.totalOutstandingPesewas ?? raw?.total_outstanding_pesewas ?? 0,
+    totalOutstandingPesewas:
+      summary?.totalOutstandingPesewas ?? summary?.total_outstanding_pesewas ?? 0,
+  }
+}
+
+const CLAWBACK_PAGE_LIMIT = 100
+const CLAWBACK_MAX_PAGES = 25
+
+export interface AllClawbacksResult {
+  items: AdminClawback[]
+  totalOutstandingPesewas: number
+  /** True when the page cap was reached before the backend ran out of records. */
+  truncated: boolean
+  /** False when the backend rejected the query params and returned an unfiltered list. */
+  serverFiltered: boolean
+}
+
+/**
+ * Loads every debt on record for the given date range — all sources, all pages —
+ * so the clawbacks page never silently shows a truncated slice. Records are
+ * deduplicated by id, which also makes this correct if the backend ignores
+ * `source` and returns the same rows for each request.
+ */
+export async function listAllClawbacks(range?: { from?: string; to?: string }): Promise<AllClawbacksResult> {
+  const byId = new Map<string, AdminClawback>()
+  let truncated = false
+
+  const collect = async (query: ClawbackQuery) => {
+    for (let page = 1; page <= CLAWBACK_MAX_PAGES; page++) {
+      const response = await listClawbacks({ ...query, page, limit: CLAWBACK_PAGE_LIMIT })
+      const before = byId.size
+      for (const item of response.items) byId.set(item.id, item)
+      // A short page means the source is exhausted; no new ids means the backend
+      // is ignoring `page` and re-serving the same rows.
+      if (response.items.length < CLAWBACK_PAGE_LIMIT || byId.size === before) return
+      if (page === CLAWBACK_MAX_PAGES) truncated = true
+    }
+  }
+
+  try {
+    for (const source of CLAWBACK_SOURCES) await collect({ ...range, source })
+  } catch (err) {
+    // Params rejected (the deployed API has done this before — see
+    // docs/backend-requests.md §2). Fall back to the plain list; the page still
+    // applies the date range itself.
+    if (!(err instanceof ApiError) || err.status !== 400) throw err
+    const fallback = await listClawbacks()
+    return {
+      items: fallback.items,
+      totalOutstandingPesewas:
+        fallback.totalOutstandingPesewas ||
+        fallback.items.reduce((sum, item) => sum + item.outstandingPesewas, 0),
+      truncated: fallback.total > fallback.items.length,
+      serverFiltered: false,
+    }
+  }
+
+  const items = [...byId.values()]
+  return {
+    items,
+    totalOutstandingPesewas: items.reduce((sum, item) => sum + item.outstandingPesewas, 0),
+    truncated,
+    serverFiltered: true,
   }
 }
 

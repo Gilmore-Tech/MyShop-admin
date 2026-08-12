@@ -21,7 +21,11 @@ Powers **Payments → Clawbacks**. Route is not registered on the deployed API
     id: string
     providerName: string | null
     providerId: string           // drivers/artisans row id
+    providerType: string         // ⬅ NEW — 'driver' | 'artisan'; the page shows the role
     userId: string               // ⬅ NEW — the provider's user-account id (see note below)
+    source: string | null        // CASH_COMMISSION | DISPUTE | WRITE_OFF | MANUAL
+    amountPesewas: number
+    paidAmountPesewas: number
     outstandingPesewas: number
     originalDisputeId: string | null
     initiatedAt: string          // ISO
@@ -32,6 +36,19 @@ Powers **Payments → Clawbacks**. Route is not registered on the deployed API
   totalOutstandingPesewas: number
 }
 ```
+
+**Query params the page sends** (all documented in the payment-panel spec §2.8, so
+please don't reject them with `forbidNonWhitelisted`):
+
+| Param          | Notes                                                                            |
+| -------------- | -------------------------------------------------------------------------------- |
+| `from`/`to`    | inclusive `YYYY-MM-DD`, filter `created_at`. Powers the page's date-range filter. |
+| `source`       | requested once per source, because §2.8 defaults to `CASH_COMMISSION` alone       |
+| `page`/`limit` | the page walks every page (`limit=100`) so no debt is hidden by pagination        |
+
+The page loads **every** source and every page, then deduplicates by `id`, so it is
+safe if `source`/`page` are ignored. If an "all sources" value exists (or the
+default becomes "no filter"), say so and the four requests collapse into one.
 
 Action endpoints the page also calls:
 - **`PATCH /v1/admin/clawbacks/:id/write-off`** — body `{ reason: string }` (min 10 chars, audit-logged). Permission L1 (super_admin).

@@ -14,12 +14,14 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import {
   escalateClawback,
-  listClawbacks,
+  listAllClawbacks,
   sendDirectSms,
   writeOffClawback,
   type AdminClawback,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { useDateRange } from '@/components/common/date-range-filter'
+import { ghanaDateKey } from '@/lib/date-range'
 import { groupClawbacksByProvider, type ProviderClawbackGroup } from '@/lib/clawback-groups'
 import { paymentStatusLabel } from '@/lib/payment-labels'
 
@@ -33,6 +35,14 @@ function formatGhs(pesewas: number) {
 function formatDate(iso: string) {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+/** Mobile-app role the debt belongs to. */
+function providerRoleLabel(providerType: string | null) {
+  const value = (providerType ?? '').toLowerCase()
+  if (value.includes('driver')) return 'Driver'
+  if (value.includes('artisan')) return 'Artisan'
+  return 'Role not provided'
 }
 
 function plainLabel(value: string | null) {
@@ -52,6 +62,21 @@ function isWriteOffEligible(debt: AdminClawback) {
   return debt.outstandingPesewas < WRITEOFF_THRESHOLD && debt.daysOutstanding >= WRITEOFF_INACTIVE_DAYS
 }
 
+/** Ghana calendar date of a record, or null when the backend sent no usable date. */
+function recordDateKey(iso: string): string | null {
+  if (!iso) return null
+  const parsed = new Date(iso)
+  return Number.isNaN(parsed.getTime()) ? null : ghanaDateKey(parsed)
+}
+
+function isWithinRange(debt: AdminClawback, from?: string, to?: string) {
+  const key = recordDateKey(debt.initiatedAt)
+  if (!key) return false
+  if (from && key < from) return false
+  if (to && key > to) return false
+  return true
+}
+
 export default function ClawbacksPage() {
   const [clawbacks, setClawbacks] = useState<AdminClawback[]>([])
   const [totalOutstanding, setTotalOutstanding] = useState(0)
@@ -60,28 +85,40 @@ export default function ClawbacksPage() {
   const [actionId, setActionId] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
+  const [truncated, setTruncated] = useState(false)
+  const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setSelectedGroupKey(null) })
+  const dateFiltered = useMemo(
+    () => (from || to ? clawbacks.filter(item => isWithinRange(item, from, to)) : clawbacks),
+    [clawbacks, from, to],
+  )
+  // Records the backend sent without a date can't be placed in a range — say so
+  // rather than dropping them silently.
+  const undatedHidden = from || to ? clawbacks.filter(item => !recordDateKey(item.initiatedAt)).length : 0
 
-  const groups = useMemo(() => groupClawbacksByProvider(clawbacks), [clawbacks])
+  const groups = useMemo(() => groupClawbacksByProvider(dateFiltered), [dateFiltered])
   const selected = groups.find(group => (group.providerId || group.clawbacks[0].id) === selectedGroupKey) ?? null
-  const eligibleCount = clawbacks.filter(isWriteOffEligible).length
+  const eligibleCount = dateFiltered.filter(isWriteOffEligible).length
+  const visibleOutstanding = groups.reduce((sum, group) => sum + group.outstandingPesewas, 0)
 
   const load = useCallback(() => {
     setLoading(true)
     setError('')
-    listClawbacks()
+    listAllClawbacks({ from, to })
       .then(result => {
         setClawbacks(result.items)
         setTotalOutstanding(result.totalOutstandingPesewas)
+        setTruncated(result.truncated)
       })
       .catch(err => {
         setClawbacks([])
         setTotalOutstanding(0)
+        setTruncated(false)
         setError(err instanceof ApiError
           ? (err.status === 404 ? 'The money-owed service is not available yet.' : err.message)
           : 'Failed to load amounts owed.')
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [from, to])
 
   useEffect(() => { load() }, [load])
 
@@ -135,6 +172,19 @@ export default function ClawbacksPage() {
           </div>
         </div>
 
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {dateControl}
+          <p className="text-xs text-gray-500">Newest records first. Filters by the date each amount was recorded.</p>
+        </div>
+
+        {truncated && (
+          <Alert className="mb-4 bg-amber-50">
+            <AlertDescription className="text-sm text-amber-800">
+              There are more records than this page can load at once. Narrow the date range to see the rest.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {eligibleCount > 0 && (
           <Alert className="mb-4 bg-emerald-50">
             <AlertDescription className="text-sm text-emerald-700">
@@ -163,6 +213,7 @@ export default function ClawbacksPage() {
                 <TableHead className="text-right">Total owed</TableHead>
                 <TableHead className="text-right">Already paid</TableHead>
                 <TableHead className="text-right">Still to pay</TableHead>
+                <TableHead>Latest record</TableHead>
                 <TableHead>Oldest record</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Details</TableHead>
@@ -172,11 +223,15 @@ export default function ClawbacksPage() {
               {loading ? (
                 [...Array(5)].map((_, index) => (
                   <TableRow key={index}>
-                    {[...Array(8)].map((__, cell) => <TableCell key={cell}><div className="h-4 animate-pulse rounded bg-gray-100" /></TableCell>)}
+                    {[...Array(9)].map((__, cell) => <TableCell key={cell}><div className="h-4 animate-pulse rounded bg-gray-100" /></TableCell>)}
                   </TableRow>
                 ))
               ) : groups.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="py-12 text-center text-sm text-gray-400">No unpaid amounts</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={9} className="py-12 text-center text-sm text-gray-400">
+                    {from || to ? 'No unpaid amounts recorded in this date range' : 'No unpaid amounts'}
+                  </TableCell>
+                </TableRow>
               ) : groups.map(group => (
                 <TableRow
                   key={group.providerId || group.clawbacks[0].id}
@@ -185,12 +240,15 @@ export default function ClawbacksPage() {
                 >
                   <TableCell>
                     <p className="text-sm font-medium text-gray-900">{group.providerName ?? 'Name not provided'}</p>
-                    <p className="text-xs text-gray-500">{group.providerPhone ?? 'Phone not provided'}</p>
+                    <p className="text-xs text-gray-500">
+                      {providerRoleLabel(group.providerType)} · {group.providerPhone ?? 'Phone not provided'}
+                    </p>
                   </TableCell>
                   <TableCell className="text-right text-sm">{group.clawbacks.length}</TableCell>
                   <TableCell className="text-right text-sm">{formatGhs(group.amountPesewas)}</TableCell>
                   <TableCell className="text-right text-sm text-emerald-600">{formatGhs(group.paidAmountPesewas)}</TableCell>
                   <TableCell className="text-right text-sm font-semibold text-red-600">{formatGhs(group.outstandingPesewas)}</TableCell>
+                  <TableCell className="text-sm text-gray-700">{formatDate(group.latestInitiatedAt)}</TableCell>
                   <TableCell className="text-sm text-gray-500">{formatDate(group.initiatedAt)}</TableCell>
                   <TableCell><span className={statusBadgeClass(group.status)}>{paymentStatusLabel(group.status)}</span></TableCell>
                   <TableCell className="text-right"><Button size="sm" variant="outline">View records</Button></TableCell>
@@ -199,7 +257,15 @@ export default function ClawbacksPage() {
             </TableBody>
           </Table>
           <div className="bg-gray-50 px-4 py-3 text-xs text-gray-500">
-            Total still to be paid: <strong className="text-red-600">{loading ? '—' : formatGhs(totalOutstanding || groups.reduce((sum, group) => sum + group.outstandingPesewas, 0))}</strong>
+            Total still to be paid{from || to ? ' in this date range' : ''}:{' '}
+            <strong className="text-red-600">
+              {loading ? '—' : formatGhs(from || to ? visibleOutstanding : totalOutstanding || visibleOutstanding)}
+            </strong>
+            {undatedHidden > 0 && (
+              <span className="ml-2 text-amber-700">
+                {undatedHidden} record{undatedHidden === 1 ? '' : 's'} hidden — no start date recorded. Choose “All time” to see {undatedHidden === 1 ? 'it' : 'them'}.
+              </span>
+            )}
           </div>
         </div>
 
@@ -268,6 +334,7 @@ function DebtDetailsSheet({
                 <div className="grid gap-3 text-sm sm:grid-cols-2">
                   <div><p className="text-xs text-gray-500">Name</p><p className="font-medium">{group.providerName ?? 'Not provided'}</p></div>
                   <div><p className="text-xs text-gray-500">Phone number</p><p className="flex items-center gap-1.5 font-medium"><Phone className="h-3.5 w-3.5" />{group.providerPhone ?? 'Not provided'}</p></div>
+                  <div><p className="text-xs text-gray-500">Role on the app</p><p className="font-medium">{providerRoleLabel(group.providerType)}</p></div>
                   <div className="sm:col-span-2"><p className="text-xs text-gray-500">Provider ID</p><p className="break-all font-mono text-xs">{group.providerId || 'Not provided'}</p></div>
                 </div>
               </section>
@@ -288,7 +355,11 @@ function DebtDetailsSheet({
                         <div className="mb-3 flex items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-medium">{plainLabel(debt.source)}</p>
-                            <p className="text-xs text-gray-500">Started {formatDate(debt.initiatedAt)} · unpaid for {debt.daysOutstanding} days</p>
+                            <p className="text-xs text-gray-500">
+                              Recorded {formatDate(debt.initiatedAt)} · unpaid for {debt.daysOutstanding} days
+                              {debt.settledAt ? ` · closed ${formatDate(debt.settledAt)}` : ''}
+                            </p>
+                            {debt.reason && <p className="mt-1 text-xs text-gray-500">Reason: {debt.reason}</p>}
                           </div>
                           <span className={statusBadgeClass(debt.status)}>{paymentStatusLabel(debt.status)}</span>
                         </div>
