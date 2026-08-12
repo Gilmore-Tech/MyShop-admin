@@ -16,12 +16,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { useDateRange, PageSizeSelect } from '@/components/common/table-controls'
 import { listRides, type AdminRide } from '@/lib/api'
 import { formatDateTime } from '@/lib/format-date'
-
-function formatGhs(pesewas: number | null | undefined) {
-  const ghs = Number(pesewas) / 100
-  if (!Number.isFinite(ghs) || ghs === 0) return 'GHC 0'
-  return 'GHC ' + ghs.toFixed(2)
-}
+import { formatGhs } from '@/lib/money'
 
 export default function RidesPage() {
   const router = useRouter()
@@ -141,7 +136,7 @@ export default function RidesPage() {
                   <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</TableHead>
                   <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Driver</TableHead>
                   <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Fare</TableHead>
+                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Client amount</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>

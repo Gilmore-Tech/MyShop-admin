@@ -20,6 +20,7 @@ import {
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { userSafeAdminError } from '@/lib/api-client'
 import type { RidePricingSummary } from '@/lib/ride-pricing-contract'
+import { formatGhs } from '@/lib/money'
 
 type SelectedMarker = LiveMapMarker & { detail: Record<string, unknown> | null }
 
@@ -106,8 +107,7 @@ function normaliseStatus(status: string): string {
 }
 
 function fmt(pesewas: number | null | undefined) {
-  if (pesewas == null) return '-'
-  return `GHS ${(pesewas / 100).toFixed(2)}`
+  return formatGhs(pesewas)
 }
 
 function fmtDate(iso: string) {
@@ -181,7 +181,7 @@ function RidesTable() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              {['Booking ID', 'Client', 'Driver', 'Pickup -> Dropoff', 'Status', 'Fare', 'Payment', 'Created'].map(h => (
+              {['Booking ID', 'Client', 'Driver', 'Pickup -> Dropoff', 'Status', 'Client amount', 'Payment', 'Created'].map(h => (
                 <th key={h} className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">{h}</th>
               ))}
             </tr>
