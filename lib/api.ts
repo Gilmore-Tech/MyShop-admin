@@ -5,6 +5,7 @@
 import {
   api,
   apiFetch,
+  ApiError,
   AdminUser,
   setTokens,
   setAdminUser,
@@ -3187,13 +3188,17 @@ export interface AdminClawback {
   id: string
   providerName: string | null
   providerId: string
+  providerType: string | null
   providerPhone: string | null
   source: string | null
   amountPesewas: number
   paidAmountPesewas: number
   outstandingPesewas: number
   originalDisputeId: string | null
+  linkedPaymentId: string | null
+  reason: string | null
   initiatedAt: string
+  settledAt: string | null
   daysOutstanding: number
   status: string
 }
@@ -3204,28 +3209,119 @@ export interface ClawbackListResponse {
   totalOutstandingPesewas: number
 }
 
-export async function listClawbacks(): Promise<ClawbackListResponse> {
-  const raw = await api.get<any>('/admin/clawbacks')
+/**
+ * Every debt category the backend can hold against a provider. `GET /admin/clawbacks`
+ * defaults to `CASH_COMMISSION` alone (backend spec §2.8), so the admin panel asks
+ * for each source explicitly — otherwise dispute and manual debts never appear.
+ */
+export const CLAWBACK_SOURCES = ['CASH_COMMISSION', 'DISPUTE', 'WRITE_OFF', 'MANUAL'] as const
+
+export interface ClawbackQuery {
+  /** Inclusive Ghana calendar dates (YYYY-MM-DD); filter `created_at`. */
+  from?: string
+  to?: string
+  source?: string
+  status?: string
+  providerId?: string
+  page?: number
+  limit?: number
+}
+
+export async function listClawbacks(params?: ClawbackQuery): Promise<ClawbackListResponse> {
+  const entries = Object.entries(params ?? {})
+    .filter(([, value]) => value != null && value !== '')
+    .map(([key, value]) => [key, String(value)] as [string, string])
+  const qs = entries.length ? '?' + new URLSearchParams(entries).toString() : ''
+  const raw = await api.get<any>(`/admin/clawbacks${qs}`)
   const items: AdminClawback[] = (raw?.items ?? []).map(
     (c: any): AdminClawback => ({
       id: c.id,
       providerName: c.providerName ?? c.provider_name ?? null,
       providerId: c.providerId ?? c.provider_id ?? '',
+      providerType: c.providerType ?? c.provider_type ?? null,
       providerPhone: c.providerPhone ?? c.provider_phone ?? null,
       source: c.source ?? null,
       amountPesewas: c.amountPesewas ?? c.amount_pesewas ?? 0,
       paidAmountPesewas: c.paidAmountPesewas ?? c.paid_amount_pesewas ?? 0,
       outstandingPesewas: c.outstandingPesewas ?? c.outstanding_pesewas ?? 0,
-      originalDisputeId: c.originalDisputeId ?? c.original_dispute_id ?? null,
-      initiatedAt: c.initiatedAt ?? c.initiated_at ?? c.createdAt ?? '',
+      // Two backend docs name this field differently — accept either shape.
+      originalDisputeId:
+        c.originalDisputeId ?? c.original_dispute_id ?? c.linkedDisputeId ?? c.linked_dispute_id ?? null,
+      linkedPaymentId: c.linkedPaymentId ?? c.linked_payment_id ?? null,
+      reason: c.reason ?? c.writeOffReason ?? c.write_off_reason ?? null,
+      initiatedAt: c.initiatedAt ?? c.initiated_at ?? c.createdAt ?? c.created_at ?? '',
+      settledAt: c.settledAt ?? c.settled_at ?? c.writtenOffAt ?? c.written_off_at ?? null,
       daysOutstanding: c.daysOutstanding ?? c.days_outstanding ?? 0,
       status: c.status ?? 'outstanding',
     })
   )
+  const summary = raw?.summary ?? raw
   return {
     items,
     total: raw?.total ?? items.length,
-    totalOutstandingPesewas: raw?.totalOutstandingPesewas ?? raw?.total_outstanding_pesewas ?? 0,
+    totalOutstandingPesewas:
+      summary?.totalOutstandingPesewas ?? summary?.total_outstanding_pesewas ?? 0,
+  }
+}
+
+const CLAWBACK_PAGE_LIMIT = 100
+const CLAWBACK_MAX_PAGES = 25
+
+export interface AllClawbacksResult {
+  items: AdminClawback[]
+  totalOutstandingPesewas: number
+  /** True when the page cap was reached before the backend ran out of records. */
+  truncated: boolean
+  /** False when the backend rejected the query params and returned an unfiltered list. */
+  serverFiltered: boolean
+}
+
+/**
+ * Loads every debt on record for the given date range — all sources, all pages —
+ * so the clawbacks page never silently shows a truncated slice. Records are
+ * deduplicated by id, which also makes this correct if the backend ignores
+ * `source` and returns the same rows for each request.
+ */
+export async function listAllClawbacks(range?: { from?: string; to?: string }): Promise<AllClawbacksResult> {
+  const byId = new Map<string, AdminClawback>()
+  let truncated = false
+
+  const collect = async (query: ClawbackQuery) => {
+    for (let page = 1; page <= CLAWBACK_MAX_PAGES; page++) {
+      const response = await listClawbacks({ ...query, page, limit: CLAWBACK_PAGE_LIMIT })
+      const before = byId.size
+      for (const item of response.items) byId.set(item.id, item)
+      // A short page means the source is exhausted; no new ids means the backend
+      // is ignoring `page` and re-serving the same rows.
+      if (response.items.length < CLAWBACK_PAGE_LIMIT || byId.size === before) return
+      if (page === CLAWBACK_MAX_PAGES) truncated = true
+    }
+  }
+
+  try {
+    for (const source of CLAWBACK_SOURCES) await collect({ ...range, source })
+  } catch (err) {
+    // Params rejected (the deployed API has done this before — see
+    // docs/backend-requests.md §2). Fall back to the plain list; the page still
+    // applies the date range itself.
+    if (!(err instanceof ApiError) || err.status !== 400) throw err
+    const fallback = await listClawbacks()
+    return {
+      items: fallback.items,
+      totalOutstandingPesewas:
+        fallback.totalOutstandingPesewas ||
+        fallback.items.reduce((sum, item) => sum + item.outstandingPesewas, 0),
+      truncated: fallback.total > fallback.items.length,
+      serverFiltered: false,
+    }
+  }
+
+  const items = [...byId.values()]
+  return {
+    items,
+    totalOutstandingPesewas: items.reduce((sum, item) => sum + item.outstandingPesewas, 0),
+    truncated,
+    serverFiltered: true,
   }
 }
 

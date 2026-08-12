@@ -5,9 +5,10 @@ import type { AdminClawback } from '../lib/api.ts'
 
 function debt(overrides: Partial<AdminClawback>): AdminClawback {
   return {
-    id: 'debt-1', providerId: 'provider-1', providerName: 'Ama Driver', providerPhone: null,
-    source: 'DISPUTE', amountPesewas: 5000, paidAmountPesewas: 1000,
-    outstandingPesewas: 4000, originalDisputeId: null, initiatedAt: '2026-05-01T00:00:00Z',
+    id: 'debt-1', providerId: 'provider-1', providerName: 'Ama Driver', providerType: 'driver',
+    providerPhone: null, source: 'DISPUTE', amountPesewas: 5000, paidAmountPesewas: 1000,
+    outstandingPesewas: 4000, originalDisputeId: null, linkedPaymentId: null, reason: null,
+    initiatedAt: '2026-05-01T00:00:00Z', settledAt: null,
     daysOutstanding: 80, status: 'partial', ...overrides,
   }
 }
@@ -34,7 +35,20 @@ test('uses the oldest debt date, longest age, unique disputes, and reports mixed
   ])
 
   assert.equal(group.initiatedAt, '2026-04-01T00:00:00Z')
+  assert.equal(group.latestInitiatedAt, '2026-05-01T00:00:00Z')
   assert.equal(group.daysOutstanding, 110)
   assert.equal(group.status, 'mixed')
   assert.deepEqual(group.disputeIds, ['dispute-1'])
+})
+
+test('lists the most recently recorded debts first, inside groups and across them', () => {
+  const groups = groupClawbacksByProvider([
+    debt({ id: 'old', providerId: 'provider-1', initiatedAt: '2026-01-10T00:00:00Z' }),
+    debt({ id: 'newest', providerId: 'provider-2', providerName: 'Kojo Artisan', providerType: 'artisan', initiatedAt: '2026-08-12T00:00:00Z' }),
+    debt({ id: 'middle', providerId: 'provider-1', initiatedAt: '2026-06-05T00:00:00Z' }),
+  ])
+
+  assert.deepEqual(groups.map(group => group.providerId), ['provider-2', 'provider-1'])
+  assert.deepEqual(groups[1].clawbacks.map(item => item.id), ['middle', 'old'])
+  assert.equal(groups[0].providerType, 'artisan')
 })
