@@ -20,6 +20,12 @@ export interface AdminRide {
   amountPaidPesewas: number | null
   paidAt: string | null
   createdAt: string
+  /**
+   * When the ride finished. This — not `createdAt` — is the day a completed
+   * ride settled, and so the day any cash-commission debt is dated on
+   * Payments → Money Owed. Null for rides that never completed.
+   */
+  completedAt: string | null
 }
 
 export interface AdminRideListResponse {
@@ -107,6 +113,7 @@ export function normaliseAdminRide(raw: unknown): AdminRide | null {
     ),
     paidAt: nullableString(raw.paidAt ?? raw.paid_at),
     createdAt: nullableString(raw.createdAt ?? raw.created_at) ?? '',
+    completedAt: nullableString(raw.completedAt ?? raw.completed_at),
   }
 }
 

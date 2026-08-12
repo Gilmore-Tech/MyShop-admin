@@ -2652,6 +2652,15 @@ export async function listRides(params?: {
   limit?: number
   from?: string
   to?: string
+  /**
+   * Which timestamp `from`/`to` filter on. `created` (the backend default) is
+   * the booking date; `completed` is when the ride finished — the date it
+   * settled and, for cash, incurred its clawback. Use `completed` alongside
+   * `status=completed` so the result lines up with a date-filtered
+   * Payments → Money Owed view instead of silently dropping rides booked
+   * before midnight and finished after it.
+   */
+  dateBasis?: 'created' | 'completed'
 }): Promise<NormalisedAdminRideListResponse> {
   const qs = params
     ? '?' +
@@ -3210,17 +3219,23 @@ export interface ClawbackListResponse {
 }
 
 /**
- * Every debt category the backend can hold against a provider. `GET /admin/clawbacks`
- * defaults to `CASH_COMMISSION` alone (backend spec §2.8), so the admin panel asks
- * for each source explicitly — otherwise dispute and manual debts never appear.
+ * The only two values the backend ever writes to `clawbacks.source`:
+ * `CASH_COMMISSION` (a cash ride or job settled and the provider owes the
+ * platform its commission) and `DISPUTE_REFUND` (a refund clawed back from the
+ * provider). Write-off and escalation are *statuses*, not sources.
+ *
+ * `GET /admin/clawbacks` returns every source when `source` is omitted, so the
+ * page does not need to fan out per source — that only ever risked missing a
+ * value the enum here got wrong.
  */
-export const CLAWBACK_SOURCES = ['CASH_COMMISSION', 'DISPUTE', 'WRITE_OFF', 'MANUAL'] as const
+export const CLAWBACK_SOURCES = ['CASH_COMMISSION', 'DISPUTE_REFUND'] as const
+export type ClawbackSource = (typeof CLAWBACK_SOURCES)[number]
 
 export interface ClawbackQuery {
   /** Inclusive Ghana calendar dates (YYYY-MM-DD); filter `created_at`. */
   from?: string
   to?: string
-  source?: string
+  source?: ClawbackSource
   status?: string
   providerId?: string
   page?: number
@@ -3277,21 +3292,32 @@ export interface AllClawbacksResult {
 }
 
 /**
- * Loads every debt on record for the given date range — all sources, all pages —
- * so the clawbacks page never silently shows a truncated slice. Records are
- * deduplicated by id, which also makes this correct if the backend ignores
- * `source` and returns the same rows for each request.
+ * Loads every debt incurred in the given date range, walking pages until the
+ * backend runs out, so the clawbacks page never silently shows a truncated
+ * slice. The date window is applied server-side (`created_at`), which is the
+ * same timestamp `GET /admin/rides?dateBasis=completed` filters on — so "debts
+ * recorded today" and "rides completed today" describe the same day.
+ *
+ * Records are deduplicated by id, which keeps the walk correct even if the
+ * backend ignores `page` and re-serves the same rows.
  */
 export async function listAllClawbacks(range?: { from?: string; to?: string }): Promise<AllClawbacksResult> {
   const byId = new Map<string, AdminClawback>()
   let truncated = false
+  // The backend scopes this to the same window, so it is the authoritative
+  // figure for the range rather than a sum over whatever pages we managed to
+  // fetch. Falls back to the walked sum if an older API omits it.
+  let reportedOutstanding: number | null = null
 
   const collect = async (query: ClawbackQuery) => {
     for (let page = 1; page <= CLAWBACK_MAX_PAGES; page++) {
       const response = await listClawbacks({ ...query, page, limit: CLAWBACK_PAGE_LIMIT })
+      if (page === 1 && response.totalOutstandingPesewas) {
+        reportedOutstanding = response.totalOutstandingPesewas
+      }
       const before = byId.size
       for (const item of response.items) byId.set(item.id, item)
-      // A short page means the source is exhausted; no new ids means the backend
+      // A short page means the ledger is exhausted; no new ids means the backend
       // is ignoring `page` and re-serving the same rows.
       if (response.items.length < CLAWBACK_PAGE_LIMIT || byId.size === before) return
       if (page === CLAWBACK_MAX_PAGES) truncated = true
@@ -3299,9 +3325,13 @@ export async function listAllClawbacks(range?: { from?: string; to?: string }): 
   }
 
   try {
-    for (const source of CLAWBACK_SOURCES) await collect({ ...range, source })
+    // One walk over every source. Asking per source used to be the way to reach
+    // dispute debts, but it also meant a single unrecognised source value made
+    // the whole request 400 (the API rejects unknown query params outright) and
+    // silently drop the panel back to an unfiltered first page.
+    await collect({ ...range })
   } catch (err) {
-    // Params rejected (the deployed API has done this before — see
+    // Params rejected by an API that predates the date filter (see
     // docs/backend-requests.md §2). Fall back to the plain list; the page still
     // applies the date range itself.
     if (!(err instanceof ApiError) || err.status !== 400) throw err
@@ -3319,7 +3349,8 @@ export async function listAllClawbacks(range?: { from?: string; to?: string }): 
   const items = [...byId.values()]
   return {
     items,
-    totalOutstandingPesewas: items.reduce((sum, item) => sum + item.outstandingPesewas, 0),
+    totalOutstandingPesewas:
+      reportedOutstanding ?? items.reduce((sum, item) => sum + item.outstandingPesewas, 0),
     truncated,
     serverFiltered: true,
   }

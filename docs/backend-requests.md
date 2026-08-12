@@ -23,7 +23,9 @@ Powers **Payments → Clawbacks**. Route is not registered on the deployed API
     providerId: string           // drivers/artisans row id
     providerType: string         // ⬅ NEW — 'driver' | 'artisan'; the page shows the role
     userId: string               // ⬅ NEW — the provider's user-account id (see note below)
-    source: string | null        // CASH_COMMISSION | DISPUTE | WRITE_OFF | MANUAL
+    source: string | null        // CASH_COMMISSION | DISPUTE_REFUND — the only two values
+                                 // ever written. Write-off and escalation are statuses,
+                                 // not sources; filter those with `status`.
     amountPesewas: number
     paidAmountPesewas: number
     outstandingPesewas: number
@@ -37,18 +39,32 @@ Powers **Payments → Clawbacks**. Route is not registered on the deployed API
 }
 ```
 
-**Query params the page sends** (all documented in the payment-panel spec §2.8, so
-please don't reject them with `forbidNonWhitelisted`):
+**Query params the page sends** — ✅ all now accepted by `ListClawbacksDto`:
 
 | Param          | Notes                                                                            |
 | -------------- | -------------------------------------------------------------------------------- |
 | `from`/`to`    | inclusive `YYYY-MM-DD`, filter `created_at`. Powers the page's date-range filter. |
-| `source`       | requested once per source, because §2.8 defaults to `CASH_COMMISSION` alone       |
+| `status`       | outstanding \| partial \| settled \| written_off \| escalated                     |
+| `source`       | CASH_COMMISSION \| DISPUTE_REFUND. Omit for every source.                        |
+| `providerId`   | narrow to one driver/artisan                                                      |
 | `page`/`limit` | the page walks every page (`limit=100`) so no debt is hidden by pagination        |
 
-The page loads **every** source and every page, then deduplicates by `id`, so it is
-safe if `source`/`page` are ignored. If an "all sources" value exists (or the
-default becomes "no filter"), say so and the four requests collapse into one.
+> **Fixed (was breaking the page).** The API runs `forbidNonWhitelisted: true`, and
+> the DTO previously accepted only `status`/`page`/`limit` — so every request
+> carrying `from`/`to`/`source` returned **400**. The page caught it and fell back
+> to an unparameterised `GET /admin/clawbacks`, i.e. the newest 50 rows
+> platform-wide with the date range then applied client-side. That is why
+> Money Owed could not be reconciled against a date-filtered ride list. The DTO now
+> accepts all of the above, so the page issues one server-filtered walk.
+>
+> `totalOutstandingPesewas` follows the date/source/provider scope (it still ignores
+> the `status` lens and pagination), so a filtered day reports that day's balance
+> rather than a platform-lifetime figure.
+
+**Reconciling against rides.** `GET /admin/rides` now takes `dateBasis=created|completed`.
+Use `?status=completed&dateBasis=completed&from=…&to=…` — a completed ride's debt is
+stamped when it *finished*, so filtering rides by booking date silently excludes any
+ride booked before midnight and completed after it.
 
 Action endpoints the page also calls:
 - **`PATCH /v1/admin/clawbacks/:id/write-off`** — body `{ reason: string }` (min 10 chars, audit-logged). Permission L1 (super_admin).
