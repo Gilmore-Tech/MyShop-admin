@@ -174,14 +174,14 @@ function TierDialog({
     }
   }
 
-  // Live fare preview for a sample 5 km / 12 min trip.
+  // Live fare preview for a sample 4 km / 12 min trip.
   const sampleFare = (() => {
     const base = ghsToPesewas(form.baseFare)
     const km = ghsToPesewas(form.perKm)
     const min = ghsToPesewas(form.perMin)
     const minFare = ghsToPesewas(form.minFare)
     if ([base, km, min, minFare].some(v => isNaN(v))) return null
-    return Math.max(base + km * 5 + min * 12, minFare)
+    return Math.max(base + km * 4 + min * 12, minFare)
   })()
 
   return (
@@ -270,7 +270,7 @@ function TierDialog({
               </div>
               {sampleFare != null && (
                 <div className="bg-gray-50 rounded-lg px-3 py-2.5 text-xs text-gray-500">
-                  Estimated fare for a 5&nbsp;km / 12&nbsp;min trip:{' '}
+                  Estimated fare for a 4&nbsp;km / 12&nbsp;min trip:{' '}
                   <strong className="text-gray-700">{formatGhs(sampleFare)}</strong>
                 </div>
               )}
