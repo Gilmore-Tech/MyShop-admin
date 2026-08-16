@@ -47,6 +47,14 @@ import {
   type RidePricingSummary,
 } from './ride-pricing-contract'
 import {
+  normaliseDistanceSafeguardPreview,
+  normaliseDistanceSafeguardState,
+  type DistanceSafeguardFloorInput,
+  type DistanceSafeguardPreview,
+  type DistanceSafeguardState,
+  type SaveDistanceSafeguardDraftInput,
+} from './ride-distance-safeguard-contract'
+import {
   normaliseAdminRideListResponse,
   type AdminRideListResponse as NormalisedAdminRideListResponse,
 } from './admin-ride-contract'
@@ -2398,6 +2406,66 @@ export async function updateRideCategory(
 ): Promise<RideCategory> {
   const raw = await api.patch<any>(`/admin/ride-categories/${id}`, data)
   return normaliseRideCategory(raw?.data ?? raw)
+}
+
+// ── Distance fare safeguard policy ───────────────────────────────────────────
+// Exact-Super-Admin-only backend workflow. The UI deliberately never exposes
+// the underlying writer-version implementation: it manages immutable policy
+// revisions through save draft -> server preview -> activate/deactivate.
+
+const DISTANCE_SAFEGUARD_PATH = '/admin/ride-fare-policy/distance-safeguard'
+
+export async function getDistanceSafeguardState(): Promise<DistanceSafeguardState> {
+  return normaliseDistanceSafeguardState(await api.get<unknown>(DISTANCE_SAFEGUARD_PATH))
+}
+
+export async function saveDistanceSafeguardDraft(
+  input: SaveDistanceSafeguardDraftInput,
+): Promise<DistanceSafeguardState> {
+  const raw = await api.put<unknown>(`${DISTANCE_SAFEGUARD_PATH}/draft`, {
+    expectedRevision: input.expectedRevision,
+    includedDistanceMeters: input.includedDistanceMeters,
+    categoryFloors: input.categoryFloors.map((floor: DistanceSafeguardFloorInput) => ({
+      rideCategoryId: floor.rideCategoryId,
+      mode: floor.mode,
+      customFloorPesewas: floor.customFloorPesewas,
+    })),
+    reason: input.reason.trim(),
+  })
+  return normaliseDistanceSafeguardState(raw)
+}
+
+export async function previewDistanceSafeguardDraft(
+  expectedRevision: number,
+): Promise<DistanceSafeguardPreview> {
+  const raw = await api.post<unknown>(`${DISTANCE_SAFEGUARD_PATH}/preview`, {
+    expectedRevision,
+  })
+  return normaliseDistanceSafeguardPreview(raw)
+}
+
+export async function activateDistanceSafeguard(input: {
+  expectedRevision: number
+  previewToken: string
+  reason: string
+}): Promise<DistanceSafeguardState> {
+  const raw = await api.post<unknown>(`${DISTANCE_SAFEGUARD_PATH}/activate`, {
+    expectedRevision: input.expectedRevision,
+    previewToken: input.previewToken,
+    reason: input.reason.trim(),
+  })
+  return normaliseDistanceSafeguardState(raw)
+}
+
+export async function deactivateDistanceSafeguard(input: {
+  expectedRevision: number
+  reason: string
+}): Promise<DistanceSafeguardState> {
+  const raw = await api.post<unknown>(`${DISTANCE_SAFEGUARD_PATH}/deactivate`, {
+    expectedRevision: input.expectedRevision,
+    reason: input.reason.trim(),
+  })
+  return normaliseDistanceSafeguardState(raw)
 }
 
 // ── Driver tier verification ──────────────────────────────────────────────────

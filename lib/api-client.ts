@@ -256,7 +256,14 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   PROMO_END_CANNOT_SHRINK: 'The end date can only be extended, never brought forward.',
   PROMO_CAMPAIGN_STATE_CHANGED: 'This campaign changed state in the meantime. Reload and try again.',
   PROMO_AUDIENCE_TYPE_MISMATCH: 'Provider campaigns must use the commission-relief type (and client campaigns cannot).',
-  SUPER_ADMIN_REQUIRED: 'Only the Super Administrator can change the platform sanity limits.',
+  SUPER_ADMIN_REQUIRED: 'Only the Super Administrator can perform this action.',
+  RIDE_FARE_POLICY_REVISION_CONFLICT: 'This fare policy changed in the meantime. The latest revision must be reviewed.',
+  RIDE_FARE_POLICY_PREVIEW_STALE: 'Tier rates or fare-policy terms changed after this preview. Generate a new preview.',
+  RIDE_FARE_POLICY_REASON_REQUIRED: 'Enter a reason for this fare-policy action.',
+  RIDE_FARE_POLICY_DISTANCE_INVALID: 'Enter a valid included distance in kilometres.',
+  RIDE_FARE_POLICY_CATEGORY_FLOORS_INVALID: 'Review every active tier and correct its safeguard floor.',
+  RIDE_FARE_POLICY_DRAFT_REQUIRED: 'Save a fare-policy draft before generating a preview.',
+  RIDE_FARE_POLICY_PREVIEW_INVALID: 'Generate a fresh server preview before activation.',
 }
 
 function fallbackForStatus(status: number): string {
