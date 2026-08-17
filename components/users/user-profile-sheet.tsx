@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Mail, Phone, Calendar, Star, Pencil, Check, X, Loader2, RotateCcw, ShieldOff, UserX, FileText, ExternalLink, CheckCircle, XCircle, ChevronDown, ChevronUp, Car, Tag, TrendingUp, XOctagon, IdCard, Lock, Unlock, LogOut, Trash2, Upload, AlertTriangle } from 'lucide-react'
+import { Mail, Phone, Calendar, Star, Pencil, Check, X, Loader2, RotateCcw, ShieldOff, UserX, FileText, ExternalLink, ChevronDown, ChevronUp, Car, Tag, TrendingUp, XOctagon, IdCard, Lock, Unlock, LogOut, Trash2, Upload, AlertTriangle } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -10,8 +10,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
-import { updateUser, reinstateUser, suspendUser, banUser, deleteUser, forceLogoutUser, getProviderDocuments, finalizeVerification, reviewClientKyc, getUser, unlockPayoutMethod, uploadProviderDocument, ADMIN_UPLOADABLE_DOC_TYPES, documentTypeTracksExpiry, type PlatformUser, type ProviderSuspension, type UserProviderDocument } from '@/lib/api'
+import { updateUser, reinstateUser, suspendUser, banUser, deleteUser, forceLogoutUser, getProviderDocuments, reviewClientKyc, getUser, unlockPayoutMethod, uploadProviderDocument, ADMIN_UPLOADABLE_DOC_TYPES, documentTypeTracksExpiry, type PlatformUser, type ProviderSuspension, type UserProviderDocument } from '@/lib/api'
 import { ApiError, FEATURES } from '@/lib/api-client'
+import { providerDocumentStatusPresentation } from '@/lib/provider-verification-contract'
 import { DocumentExpiryControl } from '@/components/common/document-expiry-control'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -79,22 +80,19 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
 }
 
 function docStatusBadge(status: string) {
-  if (status === 'approved' || status === 'confirmed')
-    return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">
-        <CheckCircle className="h-3 w-3" />
-        Approved
-      </span>
-    )
-  if (status === 'rejected')
-    return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">
-        <XCircle className="h-3 w-3" />
-        Rejected
-      </span>
-    )
-  if (status === 'pending_review') return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">Pending Review</span>
-  return <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Awaiting Upload</span>
+  const presentation = providerDocumentStatusPresentation(status)
+  const tone =
+    presentation.kind === 'approved'
+      ? 'bg-emerald-50 text-emerald-700'
+      : presentation.kind === 'rejected'
+        ? 'bg-red-50 text-red-700'
+        : presentation.kind === 'progress'
+          ? 'bg-blue-50 text-blue-700'
+          : presentation.kind === 'pending'
+            ? 'bg-amber-50 text-amber-700'
+            : 'bg-gray-100 text-gray-600'
+
+  return <span className={`inline-flex items-center text-[11px] font-medium px-1.5 py-0.5 rounded-full ${tone}`}>{presentation.label}</span>
 }
 
 function DocumentCard({ doc, onStale, expiryEditable = true }: { doc: UserProviderDocument; onStale?: () => void; expiryEditable?: boolean }) {
@@ -415,230 +413,6 @@ function DocumentsSection({ roleAccountId, role, userName }: { roleAccountId: st
   )
 }
 
-// ── Verify Provider Dialog ────────────────────────────────────────────────────
-
-function VerifyProviderDialog({ open, user, providerType, action, reason, loading, error, onActionChange, onReasonChange, onConfirm, onClose }: { open: boolean; user: PlatformUser | null; providerType: 'driver' | 'artisan' | null; action: 'approve' | 'reject'; reason: string; loading: boolean; error: string; onActionChange: (a: 'approve' | 'reject') => void; onReasonChange: (r: string) => void; onConfirm: () => void; onClose: () => void }) {
-  const [docs, setDocs] = useState<UserProviderDocument[]>([])
-  const [docsLoading, setDocsLoading] = useState(false)
-
-  const loadDocs = useCallback(() => {
-    if (!open || !user) return
-    setDocsLoading(true)
-    if (providerType !== 'driver' && providerType !== 'artisan') return
-    getProviderDocuments(providerType, user.roleAccountId)
-      .then(res => {
-        setDocs(res.documents.filter(d => d.isCurrent))
-      })
-      .catch(() => setDocs([]))
-      .finally(() => setDocsLoading(false))
-  }, [open, user, providerType])
-
-  useEffect(() => {
-    loadDocs()
-  }, [loadDocs])
-
-  const driver = providerType === 'driver' && user?.role === 'driver' ? user.profile : null
-  const artisan = providerType === 'artisan' && user?.role === 'artisan' ? user.profile : null
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={o => {
-        if (!o) onClose()
-      }}
-    >
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
-        {/* Header */}
-        <DialogHeader className="px-6 pt-5 pb-4 border-b border-gray-100 shrink-0">
-          <DialogTitle className="text-base font-semibold text-gray-900 capitalize">
-            Review {providerType} - {user?.fullName}
-          </DialogTitle>
-          <DialogDescription className="text-xs text-gray-400">Review the provider details and documents before making a decision.</DialogDescription>
-        </DialogHeader>
-
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
-          {/* Provider details */}
-          {driver && (
-            <div className="space-y-3">
-              <div>
-                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Vehicle</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    {
-                      label: 'Make & Model',
-                      value: [driver.vehicleMake, driver.vehicleModel].filter(Boolean).join(' ') || '-'
-                    },
-                    { label: 'Year', value: driver.vehicleYear ?? '-' },
-                    {
-                      label: 'Plate Number',
-                      value: driver.vehiclePlate ?? '-'
-                    },
-                    { label: 'Color', value: driver.vehicleColor ?? '-' }
-                  ].map(({ label, value }) => (
-                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
-                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-                      <p className="text-sm text-gray-900 mt-0.5">{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Licence</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    {
-                      label: 'Licence Number',
-                      value: driver.licenceNumber ?? '-'
-                    },
-                    {
-                      label: 'Expiry',
-                      value: driver.licenceExpiry ? new Date(driver.licenceExpiry).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
-                    }
-                  ].map(({ label, value }) => (
-                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
-                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-                      <p className="text-sm text-gray-900 mt-0.5">{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Payout</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    {
-                      label: 'Preference',
-                      value: driver.payoutPreference ?? '-'
-                    },
-                    { label: 'Method', value: driver.payoutMethod ?? '-' }
-                  ].map(({ label, value }) => (
-                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
-                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-                      <p className="text-sm text-gray-900 mt-0.5 capitalize">{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {artisan && (
-            <div className="space-y-3">
-              <div>
-                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Business Info</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    {
-                      label: 'Business Name',
-                      value: artisan.businessName ?? '-'
-                    },
-                    {
-                      label: 'Display Name',
-                      value: artisan.displayName ?? '-'
-                    },
-                    {
-                      label: 'Categories',
-                      value: artisan.categories?.join(', ') || '-'
-                    },
-                    {
-                      label: 'Service Radius',
-                      value: artisan.serviceRadius != null ? `${artisan.serviceRadius} km` : '-'
-                    },
-                    { label: 'Capacity', value: artisan.shopCapacity ?? '-' },
-                    {
-                      label: 'Max Concurrent Jobs',
-                      value: artisan.maxConcurrentJobs ?? '-'
-                    }
-                  ].map(({ label, value }) => (
-                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
-                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-                      <p className="text-sm text-gray-900 mt-0.5 capitalize">{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Payout</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    {
-                      label: 'Preference',
-                      value: artisan.payoutPreference ?? '-'
-                    },
-                    { label: 'Method', value: artisan.payoutMethod ?? '-' }
-                  ].map(({ label, value }) => (
-                    <div key={label} className="bg-gray-50 rounded-lg px-3 py-2">
-                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-                      <p className="text-sm text-gray-900 mt-0.5 capitalize">{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Documents */}
-          <div>
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Documents</p>
-            {docsLoading ? (
-              <div className="space-y-2">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="h-14 bg-gray-100 rounded-lg animate-pulse" />
-                ))}
-              </div>
-            ) : docs.length === 0 ? (
-              <div className="flex flex-col items-center gap-1.5 py-6 text-center">
-                <FileText className="h-7 w-7 text-gray-200" />
-                <p className="text-sm text-gray-400">No documents found</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {docs.map(doc => (
-                  <DocumentCard key={doc.id} doc={doc} onStale={loadDocs} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Decision */}
-          <div>
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Decision</p>
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                {(['approve', 'reject'] as const).map(a => (
-                  <button key={a} type="button" onClick={() => onActionChange(a)} className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-medium border transition-colors ${action === a ? (a === 'approve' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200') : 'text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
-                    {a === 'approve' ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-                    {a === 'approve' ? 'Approve Provider' : 'Reject Provider'}
-                  </button>
-                ))}
-              </div>
-              <div>
-                <Label className="text-xs text-gray-500">
-                  Reason <span className="text-gray-400">(min 5 chars)</span>
-                </Label>
-                <textarea className="mt-1.5 w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-20 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200" placeholder={action === 'approve' ? 'All documents reviewed and verified.' : 'Describe the reason for rejection…'} value={reason} onChange={e => onReasonChange(e.target.value)} />
-              </div>
-              {error && <p className="text-xs text-red-600">{error}</p>}
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 shrink-0 flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button disabled={loading || reason.trim().length < 5} onClick={onConfirm} className={action === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            {loading ? 'Submitting…' : `Confirm ${action === 'approve' ? 'Approval' : 'Rejection'}`}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 type ActionDialogType = 'suspend' | 'ban' | 'delete' | 'reinstate' | 'force_logout'
 
 interface UserProfileSheetProps {
@@ -680,15 +454,6 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState('')
 
-  const [verifyDialog, setVerifyDialog] = useState<{
-    providerId: string
-    providerType: 'driver' | 'artisan'
-  } | null>(null)
-  const [verifyAction, setVerifyAction] = useState<'approve' | 'reject'>('approve')
-  const [verifyReason, setVerifyReason] = useState('')
-  const [verifyLoading, setVerifyLoading] = useState(false)
-  const [verifyError, setVerifyError] = useState('')
-
   const [kycDialogOpen, setKycDialogOpen] = useState(false)
   const [kycAction, setKycAction] = useState<'approve' | 'reject'>('approve')
   const [kycReason, setKycReason] = useState('')
@@ -710,7 +475,6 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
   const canDelete = can('delete_user')
   const canForceLogout = can('force_logout_user')
   const canViewVerifications = can('view_verifications')
-  // The profile-sheet inline review maps to the RM final decision.
 
   function startEdit() {
     if (!u) return
@@ -774,36 +538,6 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
       setActionError(err instanceof ApiError ? err.message : 'Action failed.')
     } finally {
       setActionLoading(false)
-    }
-  }
-
-  function openVerify(providerId: string, providerType: 'driver' | 'artisan') {
-    setVerifyAction('approve')
-    setVerifyReason('')
-    setVerifyError('')
-    setVerifyDialog({ providerId, providerType })
-  }
-
-  async function handleVerifyConfirm() {
-    if (!verifyDialog) return
-    if (verifyReason.trim().length < 5) {
-      setVerifyError('Reason must be at least 5 characters.')
-      return
-    }
-    setVerifyLoading(true)
-    setVerifyError('')
-    try {
-      await finalizeVerification(verifyDialog.providerId, verifyDialog.providerType, verifyAction, verifyReason.trim())
-      setVerifyDialog(null)
-      if (u) {
-        const updated = await getUser(u.role, u.roleAccountId)
-        onUpdate?.(updated)
-        setRichUser(updated)
-      }
-    } catch (err) {
-      setVerifyError(err instanceof ApiError ? err.message : 'Action failed.')
-    } finally {
-      setVerifyLoading(false)
     }
   }
 
@@ -1005,13 +739,22 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                       <span className="text-gray-500">Verification</span>
                       <div className="flex items-center gap-2">
                         <StatusBadge status={driver.verificationStatus} />
-                        {driver.verificationStatus === 'pending' && (
-                          <button onClick={() => openVerify(u.roleAccountId, 'driver')} className="text-[11px] font-medium text-orange-500 hover:text-orange-700 underline">
-                            Review
-                          </button>
+                        {driver.verificationStatus === 'pending' && canViewVerifications && (
+                          <Link href="/verifications" className="text-[11px] font-medium text-orange-500 hover:text-orange-700 underline">
+                            {driver.verificationStage === 'coordinator_validated' ? 'Open RM queue' : 'Open verification queue'}
+                          </Link>
                         )}
                       </div>
                     </div>
+                    {driver.verificationStatus === 'rejected' && (
+                      <div className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+                        <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="font-semibold">Verification rejected</p>
+                          <p className="mt-0.5">{driver.rejectionReason ?? 'The rejection reason was not returned by the API.'}</p>
+                        </div>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">Online Status</span>
                       {driver.onlineStatus === 'online' ? (
@@ -1157,13 +900,22 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                       <span className="text-gray-500">Verification</span>
                       <div className="flex items-center gap-2">
                         <StatusBadge status={artisan.verificationStatus} />
-                        {artisan.verificationStatus === 'pending' && (
-                          <button onClick={() => openVerify(u.roleAccountId, 'artisan')} className="text-[11px] font-medium text-orange-500 hover:text-orange-700 underline">
-                            Review
-                          </button>
+                        {artisan.verificationStatus === 'pending' && canViewVerifications && (
+                          <Link href="/verifications" className="text-[11px] font-medium text-orange-500 hover:text-orange-700 underline">
+                            {artisan.verificationStage === 'coordinator_validated' ? 'Open RM queue' : 'Open verification queue'}
+                          </Link>
                         )}
                       </div>
                     </div>
+                    {artisan.verificationStatus === 'rejected' && (
+                      <div className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+                        <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="font-semibold">Verification rejected</p>
+                          <p className="mt-0.5">{artisan.rejectionReason ?? 'The rejection reason was not returned by the API.'}</p>
+                        </div>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">Online Status</span>
                       {artisan.onlineStatus === 'online' ? (
@@ -1359,27 +1111,6 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Verify provider review dialog */}
-      <VerifyProviderDialog
-        open={!!verifyDialog}
-        user={user}
-        providerType={verifyDialog?.providerType ?? null}
-        action={verifyAction}
-        reason={verifyReason}
-        loading={verifyLoading}
-        error={verifyError}
-        onActionChange={a => {
-          setVerifyAction(a)
-          setVerifyError('')
-        }}
-        onReasonChange={r => {
-          setVerifyReason(r)
-          setVerifyError('')
-        }}
-        onConfirm={handleVerifyConfirm}
-        onClose={() => setVerifyDialog(null)}
-      />
 
       {/* Unlock payout method dialog */}
       <Dialog

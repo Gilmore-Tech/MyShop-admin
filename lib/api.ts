@@ -471,6 +471,8 @@ export interface ProviderDocument {
     | 'coordinator_validated'
     | 'approved'
     | 'rejected'
+    | 'superseded'
+    | 'expired'
   file_url: string // Cloudinary URL
   mime_type: string | null
   uploaded_at: string // ISO string
@@ -491,6 +493,7 @@ export type VerificationStage =
   | 'docs_verified' // admin done; awaiting coordinator validation
   | 'coordinator_validated' // coordinator done; awaiting RM final decision
   | 'online' // RM approved/eligible (leaves queue; availability remains provider-controlled)
+  | 'rejected' // RM rejected; provider must replace the selected documents
 
 export interface VerificationItem {
   provider_type: string
@@ -653,12 +656,14 @@ export function finalizeVerification(
   providerId: string,
   providerType: 'driver' | 'artisan',
   action: 'approve' | 'reject',
-  reason: string
+  reason: string,
+  rejectedDocumentIds?: readonly string[]
 ) {
   return api.patch(`/admin/verifications/${providerId}/finalize`, {
     action,
     providerType,
     reason,
+    ...(action === 'reject' ? { rejectedDocumentIds: [...(rejectedDocumentIds ?? [])] } : {}),
   })
 }
 
@@ -1079,6 +1084,8 @@ export interface ClientRoleProfile {
 
 export interface DriverRoleProfile {
   verificationStatus: string
+  verificationStage: VerificationStage | null
+  rejectionReason: string | null
   onlineStatus: string
   legalName: string | null
   email: string | null
@@ -1106,6 +1113,8 @@ export interface DriverRoleProfile {
 
 export interface ArtisanRoleProfile {
   verificationStatus: string
+  verificationStage: VerificationStage | null
+  rejectionReason: string | null
   onlineStatus: string
   legalName: string | null
   email: string | null
@@ -1234,6 +1243,8 @@ function normalisePlatformUser(
       role,
       profile: {
         verificationStatus: raw.verificationStatus ?? raw.verification_status ?? 'unverified',
+        verificationStage: (raw.verificationStage ?? raw.verification_stage ?? null) as VerificationStage | null,
+        rejectionReason: raw.rejectionReason ?? raw.rejection_reason ?? null,
         onlineStatus: raw.onlineStatus ?? raw.online_status ?? 'offline',
         legalName,
         email: raw.email ?? null,
@@ -1268,6 +1279,8 @@ function normalisePlatformUser(
     role,
     profile: {
       verificationStatus: raw.verificationStatus ?? raw.verification_status ?? 'unverified',
+      verificationStage: (raw.verificationStage ?? raw.verification_stage ?? null) as VerificationStage | null,
+      rejectionReason: raw.rejectionReason ?? raw.rejection_reason ?? null,
       onlineStatus: raw.onlineStatus ?? raw.online_status ?? 'offline',
       legalName,
       email: raw.email ?? null,

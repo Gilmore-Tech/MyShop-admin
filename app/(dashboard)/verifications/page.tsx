@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
@@ -28,6 +29,13 @@ import { ApiError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { ROLE_DEFINITIONS, type Permission } from '@/lib/roles'
 import { DocumentExpiryControl } from '@/components/common/document-expiry-control'
+import {
+  canAdminReviewProviderDocument,
+  isRmRejectionCandidate,
+  providerDocumentStatusPresentation,
+  stageOneDocumentResolution,
+  validateRmRejectedDocumentIds,
+} from '@/lib/provider-verification-contract'
 
 // Which pipeline step the viewer acts on, derived from their permissions. The
 // queue is filtered to that stage; the drawer renders the matching action.
@@ -89,34 +97,19 @@ function DocsProgress({ pending, approved, rejected, total }: {
 }
 
 function DocStatusBadge({ status }: { status: string }) {
-  if (status === 'approved') return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-      <CheckCircle className="h-3 w-3" /> Approved
-    </span>
-  )
-  if (status === 'rejected') return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-      <XCircle className="h-3 w-3" /> Rejected
-    </span>
-  )
-  if (status === 'uploaded') return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-      Awaiting Upload
-    </span>
-  )
-  if (status === 'confirmed') return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
-      Admin verified · Coordinator next
-    </span>
-  )
-  if (status === 'coordinator_validated') return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
-      Coordinator validated · RM next
-    </span>
-  )
+  const presentation = providerDocumentStatusPresentation(status)
+  const classes =
+    presentation.kind === 'approved' ? 'bg-emerald-100 text-emerald-700'
+      : presentation.kind === 'rejected' ? 'bg-red-100 text-red-700'
+      : presentation.kind === 'progress' ? 'bg-blue-50 text-blue-700'
+      : presentation.kind === 'incomplete' || presentation.kind === 'unknown' ? 'bg-amber-50 text-amber-700'
+      : 'bg-gray-100 text-gray-600'
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-      Pending Review
+    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${classes}`}>
+      {presentation.kind === 'approved' && <CheckCircle className="h-3 w-3" />}
+      {presentation.kind === 'rejected' && <XCircle className="h-3 w-3" />}
+      {(presentation.kind === 'incomplete' || presentation.kind === 'unknown') && <AlertCircle className="h-3 w-3" />}
+      {presentation.label}
     </span>
   )
 }
@@ -280,7 +273,6 @@ function DocumentStep({
   doc,
   index,
   total,
-  pendingOnly,
   existingReview,
   onSave,
   onPrev,
@@ -296,7 +288,6 @@ function DocumentStep({
   doc: ProviderDocument
   index: number
   total: number
-  pendingOnly: ProviderDocument[]
   existingReview: DocReview | undefined
   onSave: (review: DocReview) => Promise<void>
   onPrev: () => void
@@ -324,6 +315,20 @@ function DocumentStep({
   }, [doc.id, existingReview, doc.status, doc.rejection_reason])
 
   const isLast = index === total - 1
+  const canReview = !readOnly && !existingReview && canAdminReviewProviderDocument(doc.status)
+  const nonReviewMessage = !readOnly && !canReview
+    ? doc.status === 'rejected' || doc.status === 'expired'
+      ? 'This document is rejected. Wait for the provider to upload and confirm a replacement.'
+      : doc.status === 'confirmed'
+        ? 'Admin review is already saved. This document remains ready for submission and does not need to be reviewed again.'
+        : doc.status === 'coordinator_validated'
+          ? 'This document already passed Coordinator validation and remains ready while the provider replaces only the rejected documents.'
+        : doc.status === 'uploaded'
+          ? 'The upload was started but not confirmed. The provider must finish or retry the upload.'
+          : existingReview
+            ? 'This decision has been saved. Continue through the remaining documents.'
+            : 'This document is not reviewable at its current status.'
+    : null
 
   async function handleSave() {
     if (action === 'reject' && reason.trim().length < 5) {
@@ -395,7 +400,13 @@ function DocumentStep({
       <DocViewer doc={doc} />
 
       {/* Review controls */}
-      {!readOnly && (<>
+      {nonReviewMessage && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <p>{nonReviewMessage}</p>
+        </div>
+      )}
+      {canReview && (<>
       <div className="flex gap-2">
         {(['approve', 'reject'] as const).map(a => (
           <button
@@ -466,7 +477,7 @@ function DocumentStep({
         <Button variant="outline" size="sm" onClick={onPrev} disabled={index === 0} className="gap-1">
           <ChevronLeft className="h-4 w-4" /> Back
         </Button>
-        {!readOnly && (
+        {canReview && (
           <Button
             size="sm"
             onClick={handleSave}
@@ -505,18 +516,20 @@ function FinalDecisionStep({
   rejectLabel = 'Reject Provider',
   heading = 'Overall Provider Decision',
   showTiers = true,
+  requireRejectedDocuments = false,
 }: {
   item: VerificationItem
   documents: ProviderDocument[]
   reviews: Map<string, DocReview>
   onBack: () => void
-  onSubmit: (action: 'approve' | 'reject', reason: string) => Promise<void>
+  onSubmit: (action: 'approve' | 'reject', reason: string, rejectedDocumentIds?: string[]) => Promise<void>
   submitting: boolean
   canReviewTiers: boolean
   approveLabel?: string
   rejectLabel?: string
   heading?: string
   showTiers?: boolean
+  requireRejectedDocuments?: boolean
 }) {
   const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded'
   const isVerifiedAtThisStage = (s: string) =>
@@ -534,7 +547,25 @@ function FinalDecisionStep({
 
   const [action, setAction] = useState<'approve' | 'reject'>(suggested)
   const [reason, setReason] = useState(suggested === 'approve' ? 'All documents reviewed and verified.' : '')
+  const [rejectedDocumentIds, setRejectedDocumentIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
+  const rejectionCandidates = documents.filter(document => isRmRejectionCandidate({
+    id: document.id,
+    status: document.status,
+    isCurrent: document.isCurrent,
+  }))
+  const needsRejectionSelection = requireRejectedDocuments && action === 'reject'
+  const rejectionSelectionComplete = !needsRejectionSelection || rejectedDocumentIds.size > 0
+
+  function toggleRejectedDocument(documentId: string, checked: boolean) {
+    setRejectedDocumentIds(previous => {
+      const next = new Set(previous)
+      if (checked) next.add(documentId)
+      else next.delete(documentId)
+      return next
+    })
+    setError('')
+  }
 
   async function handleSubmit() {
     if (reason.trim().length < 5) { setError('Reason must be at least 5 characters.'); return }
@@ -542,9 +573,25 @@ function FinalDecisionStep({
       setError('Every current document must be independently approved before the provider can be approved.')
       return
     }
+    let selectedIds: string[] | undefined
+    if (needsRejectionSelection) {
+      try {
+        selectedIds = validateRmRejectedDocumentIds(
+          documents.map(document => ({
+            id: document.id,
+            status: document.status,
+            isCurrent: document.isCurrent,
+          })),
+          [...rejectedDocumentIds],
+        )
+      } catch (selectionError) {
+        setError(selectionError instanceof Error ? selectionError.message : 'Select the documents that need replacement.')
+        return
+      }
+    }
     setError('')
     try {
-      await onSubmit(action, reason.trim())
+      await onSubmit(action, reason.trim(), selectedIds)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to submit provider decision.')
     }
@@ -635,6 +682,47 @@ function FinalDecisionStep({
         ))}
       </div>
 
+      {needsRejectionSelection && (
+        <div className="space-y-3 rounded-xl border border-red-200 bg-red-50/40 p-3">
+          <div>
+            <p className="text-sm font-semibold text-red-800">Select documents that require replacement</p>
+            <p className="text-xs text-red-700 mt-1">
+              Select one or more current documents. Only the selected documents will be marked rejected and shown to the provider for re-upload.
+            </p>
+          </div>
+          {rejectionCandidates.length === 0 ? (
+            <div className="flex items-start gap-2 rounded-lg bg-white px-3 py-2 text-xs text-red-700">
+              <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              No current Coordinator-validated document is eligible. Reload the provider before making a final decision.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {rejectionCandidates.map(document => {
+                const checkboxId = `reject-document-${document.id}`
+                return (
+                  <label key={document.id} htmlFor={checkboxId} className="flex items-start gap-2 rounded-lg border border-red-100 bg-white px-3 py-2 cursor-pointer">
+                    <Checkbox
+                      id={checkboxId}
+                      checked={rejectedDocumentIds.has(document.id)}
+                      onCheckedChange={checked => toggleRejectedDocument(document.id, checked === true)}
+                      className="mt-0.5 border-red-300 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-gray-800">{document.label || document.type}</span>
+                      <span className="block text-[11px] text-gray-500">Version {document.version} · {document.id.slice(0, 8)}…</span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            The provider will be unable to complete verification until replacements for the selected documents are uploaded and pass the review chain again.
+          </div>
+        </div>
+      )}
+
       <div>
         <label className="block text-xs font-medium text-gray-500 mb-1">
           Reason <span className="text-gray-400">(required, min 5 chars)</span>
@@ -661,7 +749,7 @@ function FinalDecisionStep({
         <Button
           size="sm"
           onClick={handleSubmit}
-          disabled={submitting || (action === 'approve' && !allApproved)}
+          disabled={submitting || (action === 'approve' && !allApproved) || !rejectionSelectionComplete || (needsRejectionSelection && rejectionCandidates.length === 0)}
           className="flex-1 text-white"
           style={{ backgroundColor: action === 'approve' ? '#059669' : '#DC2626' }}
         >
@@ -689,19 +777,20 @@ function AdminSubmitStep({
   submitting: boolean
   reviewOnly?: boolean
 }) {
-  const needsReview = (s: string) => s === 'pending_review' || s === 'uploaded'
   const resolved = documents.map(d => ({
     doc: d,
-    review: reviews.get(d.id) ?? (!needsReview(d.status)
-      ? { action: ['confirmed', 'coordinator_validated', 'approved'].includes(d.status) ? 'approve' : 'reject' as 'approve' | 'reject', reason: d.rejection_reason ?? '' }
-      : null),
+    review: reviews.get(d.id),
+    resolution: stageOneDocumentResolution(d.status, reviews.get(d.id)?.action),
   }))
-  const allDecided = resolved.length > 0 && resolved.every(r => r.review != null)
+  const allReady = resolved.length > 0 && resolved.every(row => row.resolution === 'ready')
+  const awaitingProvider = resolved.filter(row => row.resolution === 'waiting_for_provider').length
+  const awaitingReview = resolved.filter(row => row.resolution === 'needs_review').length
+  const incompleteUploads = resolved.filter(row => row.resolution === 'upload_incomplete').length
   const [error, setError] = useState('')
 
   async function handleSubmit() {
     if (documents.length === 0) { setError('At least one current document is required before submitting.'); return }
-    if (!allDecided) { setError('Review every document (approve or reject) before submitting.'); return }
+    if (!allReady) { setError('Every current document must pass Admin review before it can be submitted.'); return }
     setError('')
     try {
       await onSubmit()
@@ -726,18 +815,27 @@ function AdminSubmitStep({
         {resolved.map(({ doc, review }) => (
           <div key={doc.id} className="flex items-center justify-between gap-2">
             <p className="text-sm text-gray-700 truncate">{doc.label || doc.type}</p>
-            {review
-              ? <DocStatusBadge status={reviews.has(doc.id) ? (review.action === 'approve' ? 'confirmed' : 'rejected') : doc.status} />
-              : <span className="text-xs text-gray-400 italic">Not reviewed</span>
-            }
+            <DocStatusBadge status={review ? (review.action === 'approve' ? 'confirmed' : 'rejected') : doc.status} />
           </div>
         ))}
       </div>
 
-      {!allDecided && (
+      {awaitingProvider > 0 && (
+        <div className="flex items-start gap-2 bg-red-50 text-red-700 text-xs rounded-lg px-3 py-2">
+          <XCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          {awaitingProvider} rejected or expired document{awaitingProvider === 1 ? '' : 's'} must be replaced by the provider before submission.
+        </div>
+      )}
+      {awaitingReview > 0 && (
         <div className="flex items-start gap-2 bg-amber-50 text-amber-700 text-xs rounded-lg px-3 py-2">
           <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-          Every document must be approved or rejected before submitting.
+          {awaitingReview} document{awaitingReview === 1 ? '' : 's'} still require{awaitingReview === 1 ? 's' : ''} Admin review.
+        </div>
+      )}
+      {incompleteUploads > 0 && (
+        <div className="flex items-start gap-2 bg-amber-50 text-amber-700 text-xs rounded-lg px-3 py-2">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          {incompleteUploads} upload{incompleteUploads === 1 ? ' was' : 's were'} not completed. Wait for the provider to finish or retry.
         </div>
       )}
       {error && (
@@ -753,7 +851,7 @@ function AdminSubmitStep({
         <Button
           size="sm"
           onClick={handleSubmit}
-          disabled={submitting || !allDecided}
+          disabled={submitting || !allReady}
           className="flex-1 text-white"
           style={{ backgroundColor: '#F5A623' }}
         >
@@ -944,11 +1042,21 @@ function ReviewDrawer({
   const providerType = item.provider_type as 'driver' | 'artisan'
 
   // Coordinator (validate) / RM (finalize) decision — chosen by the item's stage.
-  async function handleDecisionSubmit(decision: 'approve' | 'reject', reason: string) {
+  async function handleDecisionSubmit(
+    decision: 'approve' | 'reject',
+    reason: string,
+    rejectedDocumentIds?: string[],
+  ) {
     setSubmitting(true)
     try {
       if (action === 'rm') {
-        await finalizeVerification(item.provider_id, providerType, decision, reason)
+        await finalizeVerification(
+          item.provider_id,
+          providerType,
+          decision,
+          reason,
+          rejectedDocumentIds,
+        )
       } else {
         await validateVerification(item.provider_id, providerType, decision, reason)
       }
@@ -1041,7 +1149,6 @@ function ReviewDrawer({
               doc={currentDoc}
               index={currentIndex}
               total={documents.length}
-              pendingOnly={documents.filter(d => d.status === 'pending_review' || d.status === 'uploaded')}
               existingReview={reviews.get(currentDoc.id)}
               onSave={handleDocSave}
               onPrev={() => setCurrentIndex(i => Math.max(0, i - 1))}
@@ -1079,6 +1186,7 @@ function ReviewDrawer({
                 heading={action === 'rm' ? 'Final Verification' : 'Validate Documents'}
                 approveLabel={action === 'rm' ? 'Approve Provider' : 'Send to RM'}
                 rejectLabel={action === 'rm' ? 'Reject Provider' : 'Bounce to Admin'}
+                requireRejectedDocuments={action === 'rm'}
               />
             )
           ) : null}
