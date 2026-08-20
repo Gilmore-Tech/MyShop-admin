@@ -47,6 +47,14 @@ import {
   type RidePricingSummary,
 } from './ride-pricing-contract'
 import {
+  normaliseDistanceSafeguardPreview,
+  normaliseDistanceSafeguardState,
+  type DistanceSafeguardFloorInput,
+  type DistanceSafeguardPreview,
+  type DistanceSafeguardState,
+  type SaveDistanceSafeguardDraftInput,
+} from './ride-distance-safeguard-contract'
+import {
   normaliseAdminRideListResponse,
   type AdminRideListResponse as NormalisedAdminRideListResponse,
 } from './admin-ride-contract'
@@ -463,6 +471,8 @@ export interface ProviderDocument {
     | 'coordinator_validated'
     | 'approved'
     | 'rejected'
+    | 'superseded'
+    | 'expired'
   file_url: string // Cloudinary URL
   mime_type: string | null
   uploaded_at: string // ISO string
@@ -483,6 +493,7 @@ export type VerificationStage =
   | 'docs_verified' // admin done; awaiting coordinator validation
   | 'coordinator_validated' // coordinator done; awaiting RM final decision
   | 'online' // RM approved/eligible (leaves queue; availability remains provider-controlled)
+  | 'rejected' // RM rejected; provider must replace the selected documents
 
 export interface VerificationItem {
   provider_type: string
@@ -645,12 +656,14 @@ export function finalizeVerification(
   providerId: string,
   providerType: 'driver' | 'artisan',
   action: 'approve' | 'reject',
-  reason: string
+  reason: string,
+  rejectedDocumentIds?: readonly string[]
 ) {
   return api.patch(`/admin/verifications/${providerId}/finalize`, {
     action,
     providerType,
     reason,
+    ...(action === 'reject' ? { rejectedDocumentIds: [...(rejectedDocumentIds ?? [])] } : {}),
   })
 }
 
@@ -1071,6 +1084,8 @@ export interface ClientRoleProfile {
 
 export interface DriverRoleProfile {
   verificationStatus: string
+  verificationStage: VerificationStage | null
+  rejectionReason: string | null
   onlineStatus: string
   legalName: string | null
   email: string | null
@@ -1098,6 +1113,8 @@ export interface DriverRoleProfile {
 
 export interface ArtisanRoleProfile {
   verificationStatus: string
+  verificationStage: VerificationStage | null
+  rejectionReason: string | null
   onlineStatus: string
   legalName: string | null
   email: string | null
@@ -1226,6 +1243,8 @@ function normalisePlatformUser(
       role,
       profile: {
         verificationStatus: raw.verificationStatus ?? raw.verification_status ?? 'unverified',
+        verificationStage: (raw.verificationStage ?? raw.verification_stage ?? null) as VerificationStage | null,
+        rejectionReason: raw.rejectionReason ?? raw.rejection_reason ?? null,
         onlineStatus: raw.onlineStatus ?? raw.online_status ?? 'offline',
         legalName,
         email: raw.email ?? null,
@@ -1260,6 +1279,8 @@ function normalisePlatformUser(
     role,
     profile: {
       verificationStatus: raw.verificationStatus ?? raw.verification_status ?? 'unverified',
+      verificationStage: (raw.verificationStage ?? raw.verification_stage ?? null) as VerificationStage | null,
+      rejectionReason: raw.rejectionReason ?? raw.rejection_reason ?? null,
       onlineStatus: raw.onlineStatus ?? raw.online_status ?? 'offline',
       legalName,
       email: raw.email ?? null,
@@ -2398,6 +2419,66 @@ export async function updateRideCategory(
 ): Promise<RideCategory> {
   const raw = await api.patch<any>(`/admin/ride-categories/${id}`, data)
   return normaliseRideCategory(raw?.data ?? raw)
+}
+
+// ── Distance fare safeguard policy ───────────────────────────────────────────
+// Exact-Super-Admin-only backend workflow. The UI deliberately never exposes
+// the underlying writer-version implementation: it manages immutable policy
+// revisions through save draft -> server preview -> activate/deactivate.
+
+const DISTANCE_SAFEGUARD_PATH = '/admin/ride-fare-policy/distance-safeguard'
+
+export async function getDistanceSafeguardState(): Promise<DistanceSafeguardState> {
+  return normaliseDistanceSafeguardState(await api.get<unknown>(DISTANCE_SAFEGUARD_PATH))
+}
+
+export async function saveDistanceSafeguardDraft(
+  input: SaveDistanceSafeguardDraftInput,
+): Promise<DistanceSafeguardState> {
+  const raw = await api.put<unknown>(`${DISTANCE_SAFEGUARD_PATH}/draft`, {
+    expectedRevision: input.expectedRevision,
+    includedDistanceMeters: input.includedDistanceMeters,
+    categoryFloors: input.categoryFloors.map((floor: DistanceSafeguardFloorInput) => ({
+      rideCategoryId: floor.rideCategoryId,
+      mode: floor.mode,
+      customFloorPesewas: floor.customFloorPesewas,
+    })),
+    reason: input.reason.trim(),
+  })
+  return normaliseDistanceSafeguardState(raw)
+}
+
+export async function previewDistanceSafeguardDraft(
+  expectedRevision: number,
+): Promise<DistanceSafeguardPreview> {
+  const raw = await api.post<unknown>(`${DISTANCE_SAFEGUARD_PATH}/preview`, {
+    expectedRevision,
+  })
+  return normaliseDistanceSafeguardPreview(raw)
+}
+
+export async function activateDistanceSafeguard(input: {
+  expectedRevision: number
+  previewToken: string
+  reason: string
+}): Promise<DistanceSafeguardState> {
+  const raw = await api.post<unknown>(`${DISTANCE_SAFEGUARD_PATH}/activate`, {
+    expectedRevision: input.expectedRevision,
+    previewToken: input.previewToken,
+    reason: input.reason.trim(),
+  })
+  return normaliseDistanceSafeguardState(raw)
+}
+
+export async function deactivateDistanceSafeguard(input: {
+  expectedRevision: number
+  reason: string
+}): Promise<DistanceSafeguardState> {
+  const raw = await api.post<unknown>(`${DISTANCE_SAFEGUARD_PATH}/deactivate`, {
+    expectedRevision: input.expectedRevision,
+    reason: input.reason.trim(),
+  })
+  return normaliseDistanceSafeguardState(raw)
 }
 
 // ── Driver tier verification ──────────────────────────────────────────────────
