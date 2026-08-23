@@ -45,6 +45,7 @@ test('the reconciliation queue is reachable from every payment navigation surfac
   const pages = [
     '../app/(dashboard)/payments/transactions/page.tsx',
     '../app/(dashboard)/payments/revenue/page.tsx',
+    '../app/(dashboard)/payments/commission-ledger/page.tsx',
     '../app/(dashboard)/payments/batch-payouts/page.tsx',
     '../app/(dashboard)/payments/clawbacks/page.tsx',
   ]
