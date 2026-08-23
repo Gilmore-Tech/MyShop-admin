@@ -56,6 +56,9 @@ function BoundaryOverlay({ boundary, colour, editable, onChange }: BoundaryOverl
     })
 
     const listeners: google.maps.MapsEventListener[] = []
+    const retainListener = (listener: google.maps.MapsEventListener | undefined) => {
+      if (listener && typeof listener.remove === 'function') listeners.push(listener)
+    }
     const emit = () => {
       if (!callbackRef.current) return
       const coordinates = polygons.map(({ paths }) =>
@@ -69,14 +72,14 @@ function BoundaryOverlay({ boundary, colour, editable, onChange }: BoundaryOverl
     if (editable) {
       for (const { paths } of polygons) {
         paths.forEach((path) => {
-          listeners.push(path.addListener('insert_at', emit))
-          listeners.push(path.addListener('set_at', emit))
-          listeners.push(path.addListener('remove_at', emit))
+          retainListener(path.addListener('insert_at', emit))
+          retainListener(path.addListener('set_at', emit))
+          retainListener(path.addListener('remove_at', emit))
         })
       }
     }
     return () => {
-      listeners.forEach((listener) => listener.remove())
+      listeners.forEach((listener) => listener?.remove?.())
       polygons.forEach(({ overlay }) => overlay.setMap(null))
     }
   }, [boundary, colour, editable, map])
