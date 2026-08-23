@@ -256,6 +256,10 @@ test('admin surface is exact-root gated and has no direct charging activation pa
     new URL('../app/(dashboard)/ride-toll-zones/page.tsx', import.meta.url),
     'utf8',
   )
+  const map = readFileSync(
+    new URL('../app/(dashboard)/ride-toll-zones/_components/toll-zone-map.tsx', import.meta.url),
+    'utf8',
+  )
   const api = readFileSync(new URL('../lib/api.ts', import.meta.url), 'utf8')
   const sidebar = readFileSync(new URL('../components/app-sidebar.tsx', import.meta.url), 'utf8')
 
@@ -264,6 +268,10 @@ test('admin surface is exact-root gated and has no direct charging activation pa
   assert.match(page, /previewOverlaps\.length > 0/)
   assert.match(page, /Generate server preview/)
   assert.match(page, /RIDE_TOLLS_ENABLED/)
+  assert.match(map, /overlay\.setPaths\(new google\.maps\.MVCArray\(paths\)\)/)
+  assert.match(map, /overlay\.setPaths[\s\S]*overlay\.setMap\(map\)/)
+  assert.match(map, /paths\.forEach\(\(path\)/)
+  assert.doesNotMatch(map, /getPaths\(\)/)
   assert.match(sidebar, /href: '\/ride-toll-zones'.*superAdmin: true/)
   assert.match(api, /\/admin\/ride-toll-policy/)
   assert.match(api, /\/draft/)
