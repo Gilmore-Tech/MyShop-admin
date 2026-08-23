@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { useDateRange, PageSizeSelect } from '@/components/common/table-controls'
+import { useLinkedParam } from '@/components/common/date-range-filter'
 import { listArtisanJobs, deleteJob, cancelJob, type AdminJob } from '@/lib/api'
 import { getAdminUser, ApiError } from '@/lib/api-client'
 import { formatDateTime } from '@/lib/format-date'
@@ -62,6 +63,9 @@ const DELETABLE_JOB_STATUSES = ['completed', 'cancelled', 'expired', 'refunded']
 // States the backend allows an admin to cancel (the remedy for stuck jobs).
 const CANCELLABLE_JOB_STATUSES = ['queued', 'pending_admin', 'admin_assigned', 'open_for_bids', 'bids_received', 'confirmed']
 
+// Status values the filter accepts; also validates ?status= deep links.
+const JOB_STATUS_FILTERS = ['all', 'queued', 'pending_admin', 'admin_assigned', 'open_for_bids', 'bids_received', 'confirmed', 'en_route', 'arrived', 'in_progress', 'completed', 'cancelled', 'disputed'] as const
+
 export default function ArtisanJobsPage() {
   const router = useRouter()
   const adminUser = getAdminUser()
@@ -85,7 +89,9 @@ export default function ArtisanJobsPage() {
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
-  const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setPage(1) })
+  const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setPage(1), readUrl: true })
+  // Trip Outcomes deep-links here with ?status=…
+  useLinkedParam('status', JOB_STATUS_FILTERS, setStatusFilter)
   const requestSequence = useRef(0)
 
   const fetchJobs = useCallback(() => {

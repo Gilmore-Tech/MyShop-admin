@@ -14,10 +14,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { useDateRange, PageSizeSelect } from '@/components/common/table-controls'
+import { useLinkedParam } from '@/components/common/date-range-filter'
 import { listRides, type AdminRide } from '@/lib/api'
 import { paymentMethodLabel } from '@/lib/payment-labels'
 import { formatDateTime } from '@/lib/format-date'
 import { formatGhs } from '@/lib/money'
+
+// Status values the filter accepts; also validates ?status= deep links.
+const RIDE_STATUS_FILTERS = ['all', 'requested', 'accepted', 'driver_en_route', 'in_progress', 'completed', 'cancelled', 'disputed'] as const
 
 export default function RidesPage() {
   const router = useRouter()
@@ -29,7 +33,9 @@ export default function RidesPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [limit, setLimit] = useState(15)
   const [loading, setLoading] = useState(true)
-  const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setPage(1) })
+  const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setPage(1), readUrl: true })
+  // Trip Outcomes deep-links here with ?status=…
+  useLinkedParam('status', RIDE_STATUS_FILTERS, setStatusFilter)
   const requestSequence = useRef(0)
 
   const fetch = useCallback(() => {
