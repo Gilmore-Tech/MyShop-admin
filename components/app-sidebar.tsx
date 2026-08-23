@@ -223,6 +223,7 @@ export default function AppSidebar() {
           title: 'Operations', href: '/live-map', icon: Radio,
           children: [
             { title: 'Live Monitoring', href: '/live-map',  permission: 'view_live_map' },
+            { title: 'Online Providers', href: '/online-providers', permission: 'view_live_map' },
             { title: 'Activity Feed',   href: '/activity',  permission: 'view_activity' },
             { title: 'Emergency Alerts',href: '/emergency', permission: 'view_emergency', badge: unacknowledgedEmergencies ?? undefined },
           ],
@@ -232,6 +233,9 @@ export default function AppSidebar() {
           children: [
             { title: 'Analytics', href: '/analytics', permission: 'view_analytics' },
             { title: 'Reports',   href: '/reports',   permission: 'view_reports' },
+            { title: 'Revenue by Date', href: '/insights/revenue', permission: 'view_revenue_report' },
+            { title: 'Trip Outcomes', href: '/insights/trips', permission: 'view_reports' },
+            { title: 'Leaderboards', href: '/insights/leaderboards', permission: 'view_reports' },
           ],
         },
       ],
@@ -260,6 +264,7 @@ export default function AppSidebar() {
           children: [
             { title: 'Transactions',  href: '/payments/transactions', permission: 'view_payments' },
             { title: 'Revenue',       href: '/payments/revenue',      permission: 'view_payments' },
+            { title: 'Commission Ledger', href: '/payments/commission-ledger', permission: 'view_payments' },
             { title: 'Batch Payout History', href: '/payments/batch-payouts', permission: 'view_payments' },
             { title: 'Clawbacks',     href: '/payments/clawbacks',    permission: 'view_payments' },
             { title: 'Webhook Failures', href: '/payments/webhook-failures', permission: 'view_payments' },

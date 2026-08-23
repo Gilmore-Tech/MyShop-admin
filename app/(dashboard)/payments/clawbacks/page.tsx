@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PaymentsTabs } from '@/components/payments/payments-tabs'
 import { Textarea } from '@/components/ui/textarea'
 import {
   escalateClawback,
@@ -93,7 +93,9 @@ export default function ClawbacksPage() {
   const [truncated, setTruncated] = useState(false)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(15)
-  const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setSelectedGroupKey(null) })
+  // Deep links from the Commission Ledger ("Debtors by date") carry ?from=&to=
+  // so both pages show the same settlement day.
+  const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setSelectedGroupKey(null), readUrl: true })
   const dateFiltered = useMemo(
     () => (from || to ? clawbacks.filter(item => isWithinRange(item, from, to)) : clawbacks),
     [clawbacks, from, to],
@@ -171,15 +173,7 @@ export default function ClawbacksPage() {
       <div>
         <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
 
-        <Tabs defaultValue="clawbacks" className="mb-6">
-          <TabsList className="bg-white">
-            <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Payment Activity</Link></TabsTrigger>
-            <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Money Summary</Link></TabsTrigger>
-            <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Provider Payments</Link></TabsTrigger>
-            <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Money Owed</Link></TabsTrigger>
-            <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Payment Errors</Link></TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <PaymentsTabs active="clawbacks" />
 
         <div className="mb-5 flex items-start gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -389,6 +383,14 @@ function DebtDetailsSheet({
                   <div><p className="text-xs text-gray-500">Role on the app</p><p className="font-medium">{providerRoleLabel(group.providerType)}</p></div>
                   <div className="sm:col-span-2"><p className="text-xs text-gray-500">Provider ID</p><p className="break-all font-mono text-xs">{group.providerId || 'Not provided'}</p></div>
                 </div>
+                {group.providerId && (
+                  <Link
+                    href={`/payments/commission-ledger?providerId=${encodeURIComponent(group.providerId)}${group.providerType ? `&providerType=${encodeURIComponent(group.providerType.toLowerCase())}` : ''}`}
+                    className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                  >
+                    Open in Commission Ledger <ArrowUpRight className="h-3 w-3" />
+                  </Link>
+                )}
               </section>
 
               <section className="grid grid-cols-3 gap-3">

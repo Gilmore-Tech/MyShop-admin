@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
-import Link from 'next/link'
 import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PaymentsTabs } from '@/components/payments/payments-tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -96,15 +95,7 @@ export default function RevenuePage() {
     <div>
       <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
 
-      <Tabs defaultValue="revenue" className="mb-6">
-        <TabsList className="bg-white">
-          <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Payment Activity</Link></TabsTrigger>
-          <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Money Summary</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Provider Payments</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Money Owed</Link></TabsTrigger>
-          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Payment Errors</Link></TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <PaymentsTabs active="revenue" />
 
       <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex items-end gap-3 flex-wrap">
         <div>

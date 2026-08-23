@@ -52,6 +52,18 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+// ── Generic table export ──────────────────────────────────────────────────────
+
+export type CsvCell = Cell
+
+/**
+ * Download any on-screen table as CSV. `filename` gets the date stamp and
+ * `.csv` appended so callers only pass the report slug (e.g. "revenue-by-date").
+ */
+export function exportTableCsv(filename: string, headers: string[], rows: Cell[][]): void {
+  downloadCsv(`myshop-${filename}-${today()}.csv`, toCsv(headers, rows))
+}
+
 // ── Per-report builders ───────────────────────────────────────────────────────
 
 export function exportOverviewCsv(data: OverviewReport, userTotal: number | null): void {
