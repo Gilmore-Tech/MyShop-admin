@@ -35,33 +35,40 @@ function BoundaryOverlay({ boundary, colour, editable, onChange }: BoundaryOverl
 
   useEffect(() => {
     if (!map) return
-    const polygons = boundary.coordinates.map((polygon) => new google.maps.Polygon({
-      map,
-      paths: polygon.map((ring) => ring.slice(0, -1).map(([lng, lat]) => ({ lat, lng }))),
-      editable,
-      draggable: false,
-      clickable: false,
-      strokeColor: colour,
-      strokeOpacity: 0.95,
-      strokeWeight: editable ? 3 : 2,
-      fillColor: colour,
-      fillOpacity: editable ? 0.25 : 0.12,
-      zIndex: editable ? 10 : 1,
-    }))
+    const polygons = boundary.coordinates.map((polygon) => {
+      const paths = polygon.map((ring) => new google.maps.MVCArray(
+        ring.slice(0, -1).map(([lng, lat]) => new google.maps.LatLng(lat, lng)),
+      ))
+      const overlay = new google.maps.Polygon({
+        editable,
+        draggable: false,
+        clickable: false,
+        strokeColor: colour,
+        strokeOpacity: 0.95,
+        strokeWeight: editable ? 3 : 2,
+        fillColor: colour,
+        fillOpacity: editable ? 0.25 : 0.12,
+        zIndex: editable ? 10 : 1,
+      })
+      overlay.setPaths(new google.maps.MVCArray(paths))
+      overlay.setMap(map)
+      return { overlay, paths }
+    })
 
     const listeners: google.maps.MapsEventListener[] = []
     const emit = () => {
       if (!callbackRef.current) return
-      const coordinates = polygons.map((polygon) =>
-        polygon.getPaths().getArray().map((path) => normalisePath(path)),
+      const coordinates = polygons.map(({ paths }) =>
+        paths.map((path) => normalisePath(path)),
       )
-      if (coordinates.every((polygon) => polygon.every((ring) => ring.length >= 4))) {
+      if (coordinates.every((polygon) =>
+        polygon.length > 0 && polygon.every((ring) => ring.length >= 4))) {
         callbackRef.current({ type: 'MultiPolygon', coordinates })
       }
     }
     if (editable) {
-      for (const polygon of polygons) {
-        polygon.getPaths().forEach((path) => {
+      for (const { paths } of polygons) {
+        paths.forEach((path) => {
           listeners.push(path.addListener('insert_at', emit))
           listeners.push(path.addListener('set_at', emit))
           listeners.push(path.addListener('remove_at', emit))
@@ -70,7 +77,7 @@ function BoundaryOverlay({ boundary, colour, editable, onChange }: BoundaryOverl
     }
     return () => {
       listeners.forEach((listener) => listener.remove())
-      polygons.forEach((polygon) => polygon.setMap(null))
+      polygons.forEach(({ overlay }) => overlay.setMap(null))
     }
   }, [boundary, colour, editable, map])
 
