@@ -55,6 +55,13 @@ import {
   type SaveDistanceSafeguardDraftInput,
 } from './ride-distance-safeguard-contract'
 import {
+  normaliseRideTollPolicyPreview,
+  normaliseRideTollPolicyState,
+  type RideTollPolicyPreview,
+  type RideTollPolicyState,
+  type SaveRideTollPolicyDraftInput,
+} from './ride-toll-policy-contract'
+import {
   normaliseAdminRideListResponse,
   type AdminRideListResponse as NormalisedAdminRideListResponse,
 } from './admin-ride-contract'
@@ -2479,6 +2486,58 @@ export async function deactivateDistanceSafeguard(input: {
     reason: input.reason.trim(),
   })
   return normaliseDistanceSafeguardState(raw)
+}
+
+// ── Ride toll policy ─────────────────────────────────────────────────────────
+// Exact-Super-Admin-only complete-revision workflow. Publishing is always
+// bound to a server preview token; there is deliberately no direct enable or
+// disable endpoint.
+
+const RIDE_TOLL_POLICY_PATH = '/admin/ride-toll-policy'
+
+export async function getRideTollPolicyState(): Promise<RideTollPolicyState> {
+  return normaliseRideTollPolicyState(await api.get<unknown>(RIDE_TOLL_POLICY_PATH))
+}
+
+export async function saveRideTollPolicyDraft(
+  input: SaveRideTollPolicyDraftInput,
+): Promise<RideTollPolicyState> {
+  const raw = await api.put<unknown>(`${RIDE_TOLL_POLICY_PATH}/draft`, {
+    expectedRevision: input.expectedRevision,
+    enabled: input.enabled,
+    effectiveFrom: input.effectiveFrom,
+    reason: input.reason.trim(),
+    zones: input.zones.map((zone) => ({
+      stableKey: zone.stableKey,
+      label: zone.label.trim(),
+      amountPesewas: zone.amountPesewas,
+      applicationMode: zone.applicationMode,
+      boundary: zone.boundary,
+    })),
+  })
+  return normaliseRideTollPolicyState(raw)
+}
+
+export async function previewRideTollPolicyDraft(
+  expectedRevision: number,
+): Promise<RideTollPolicyPreview> {
+  const raw = await api.post<unknown>(`${RIDE_TOLL_POLICY_PATH}/preview`, {
+    expectedRevision,
+  })
+  return normaliseRideTollPolicyPreview(raw)
+}
+
+export async function publishRideTollPolicy(input: {
+  expectedRevision: number
+  previewToken: string
+  reason: string
+}): Promise<RideTollPolicyState> {
+  const raw = await api.post<unknown>(`${RIDE_TOLL_POLICY_PATH}/publish`, {
+    expectedRevision: input.expectedRevision,
+    previewToken: input.previewToken,
+    reason: input.reason.trim(),
+  })
+  return normaliseRideTollPolicyState(raw)
 }
 
 // ── Driver tier verification ──────────────────────────────────────────────────
