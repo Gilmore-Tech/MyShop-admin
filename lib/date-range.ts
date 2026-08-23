@@ -1,6 +1,25 @@
 export const GHANA_TIME_ZONE = 'Africa/Accra' as const
 
-export type DateRangePreset = 'today' | 'week' | 'month' | 'custom' | 'all'
+/**
+ * Rolling presets (`week`, `month`, `year`) count back from today; calendar
+ * presets (`this_week`, `this_month`, `this_year`) start at the period boundary
+ * stakeholders think in ("this month's revenue"). Weeks start on Monday to match
+ * Postgres DATE_TRUNC('week') used by the grouped reports.
+ */
+export type DateRangePreset =
+  | 'today'
+  | 'week'
+  | 'month'
+  | 'year'
+  | 'this_week'
+  | 'this_month'
+  | 'this_year'
+  | 'custom'
+  | 'all'
+
+export const DATE_RANGE_PRESETS: readonly DateRangePreset[] = [
+  'today', 'this_week', 'this_month', 'this_year', 'week', 'month', 'year', 'custom', 'all',
+]
 
 export interface InclusiveDateRange {
   from?: string
@@ -54,6 +73,16 @@ export function resolveInclusiveDateRange(
   if (preset === 'today') return { from: today, to: today }
   if (preset === 'week') return { from: shiftDateKey(today, -6), to: today }
   if (preset === 'month') return { from: shiftDateKey(today, -29), to: today }
+  if (preset === 'year') return { from: shiftDateKey(today, -364), to: today }
+  if (preset === 'this_week') {
+    // Monday-start week, matching DATE_TRUNC('week') in the grouped reports.
+    const [year, month, day] = today.split('-').map(Number)
+    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay() // Sun=0
+    const daysSinceMonday = (weekday + 6) % 7
+    return { from: shiftDateKey(today, -daysSinceMonday), to: today }
+  }
+  if (preset === 'this_month') return { from: `${today.slice(0, 7)}-01`, to: today }
+  if (preset === 'this_year') return { from: `${today.slice(0, 4)}-01-01`, to: today }
   if (preset === 'custom') {
     // A cleared/crafted custom range must never broaden into an unfiltered
     // request. Fail closed to the current Ghana calendar day.
@@ -87,8 +116,12 @@ export function defaultCustomDateRange(
 
 export function dateRangeLabel(preset: DateRangePreset): string {
   if (preset === 'today') return 'Today (GMT)'
+  if (preset === 'this_week') return 'This week'
+  if (preset === 'this_month') return 'This month'
+  if (preset === 'this_year') return 'This year'
   if (preset === 'week') return 'Last 7 days'
   if (preset === 'month') return 'Last 30 days'
+  if (preset === 'year') return 'Last 12 months'
   if (preset === 'custom') return 'Custom range'
   return 'All time'
 }
@@ -106,5 +139,5 @@ export function isInstantInInclusiveDateRange(
 }
 
 export function isDateRangePreset(value: string | null): value is DateRangePreset {
-  return value === 'today' || value === 'week' || value === 'month' || value === 'custom' || value === 'all'
+  return value != null && (DATE_RANGE_PRESETS as readonly string[]).includes(value)
 }

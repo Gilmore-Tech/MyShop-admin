@@ -34,16 +34,23 @@ test('webhook failure page is payment-scoped and deliberately read-only', () => 
 })
 
 test('the reconciliation queue is reachable from every payment navigation surface', () => {
-  const paths = [
-    '../components/app-sidebar.tsx',
+  // The sidebar links it directly; every Payments page renders the shared
+  // tab strip, which is the single place the tab list lives.
+  const sidebar = readFileSync(new URL('../components/app-sidebar.tsx', import.meta.url), 'utf8')
+  assert.match(sidebar, /\/payments\/webhook-failures/)
+
+  const tabs = readFileSync(new URL('../components/payments/payments-tabs.tsx', import.meta.url), 'utf8')
+  assert.match(tabs, /href: '\/payments\/webhook-failures'/)
+
+  const pages = [
     '../app/(dashboard)/payments/transactions/page.tsx',
     '../app/(dashboard)/payments/revenue/page.tsx',
+    '../app/(dashboard)/payments/commission-ledger/page.tsx',
     '../app/(dashboard)/payments/batch-payouts/page.tsx',
     '../app/(dashboard)/payments/clawbacks/page.tsx',
   ]
-
-  for (const path of paths) {
+  for (const path of pages) {
     const source = readFileSync(new URL(path, import.meta.url), 'utf8')
-    assert.match(source, /\/payments\/webhook-failures/)
+    assert.match(source, /<PaymentsTabs active="[a-z-]+" \/>/, `${path} must render the shared Payments tab strip`)
   }
 })

@@ -2,11 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
-import Link from 'next/link'
 import {
   Clock, CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw,
 } from 'lucide-react'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PaymentsTabs } from '@/components/payments/payments-tabs'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { PageHeader } from '@/components/common/page-header'
@@ -66,15 +65,7 @@ export default function BatchPayoutsPage() {
     <div>
       <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
 
-      <Tabs defaultValue="batch-payouts" className="mb-6">
-        <TabsList className="bg-white">
-          <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Payment Activity</Link></TabsTrigger>
-          <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Money Summary</Link></TabsTrigger>
-          <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Provider Payments</Link></TabsTrigger>
-          <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Money Owed</Link></TabsTrigger>
-          <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Payment Errors</Link></TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <PaymentsTabs active="batch-payouts" />
 
       {/* Release containment: historical visibility remains read-only. */}
       <div className="bg-slate-900 text-white rounded-lg p-4 mb-6 flex items-center justify-between flex-wrap gap-3">

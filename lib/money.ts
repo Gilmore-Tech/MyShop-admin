@@ -27,6 +27,16 @@ export function formatGhs(pesewas: number | null | undefined, opts: FormatGhsOpt
 }
 
 /**
+ * Bridge for the one legacy endpoint (`/admin/reports/revenue`) that returns
+ * GHS floats: convert to integer pesewas so every screen formats through
+ * `formatGhs`. Null/NaN pass through as null so callers render "GHS —".
+ */
+export function ghsToPesewas(ghs: number | null | undefined): number | null {
+  if (ghs == null || Number.isNaN(ghs)) return null
+  return Math.round(ghs * 100)
+}
+
+/**
  * Convenience for transaction rows: returns the amount with the correct sign
  * based on whether the row represents money flowing in or out of the platform's
  * perspective. Spec §4.1.
