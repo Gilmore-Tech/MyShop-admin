@@ -122,7 +122,7 @@ export default function TripOutcomesPage() {
   }
 
   const caption = report
-    ? `${dateRangeLabel(period.preset)} · ${rows.length} period${rows.length === 1 ? '' : 's'} · grouped by ${groupBy}`
+    ? `${dateRangeLabel(period.preset)} - ${rows.length} period${rows.length === 1 ? '' : 's'} - grouped by ${groupBy}`
     : dateRangeLabel(period.preset)
 
   return (

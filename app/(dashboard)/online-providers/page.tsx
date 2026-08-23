@@ -177,9 +177,9 @@ export default function OnlineProvidersPage() {
         />
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <StatCard icon={Car} label="Drivers online" value={counts.driversOnline.toLocaleString()} sub={`${counts.driversOnBooking} on a ride · ${Math.max(0, counts.driversOnline - counts.driversOnBooking)} idle`} loading={loading && !data} />
+          <StatCard icon={Car} label="Drivers online" value={counts.driversOnline.toLocaleString()} sub={`${counts.driversOnBooking} on a ride - ${Math.max(0, counts.driversOnline - counts.driversOnBooking)} idle`} loading={loading && !data} />
           <StatCard icon={Navigation} label="Drivers on a ride" value={counts.driversOnBooking.toLocaleString()} sub="Accepted through in progress" loading={loading && !data} />
-          <StatCard icon={Wrench} label="Artisans online" value={counts.artisansOnline.toLocaleString()} sub={`${counts.artisansOnBooking} on a job · ${Math.max(0, counts.artisansOnline - counts.artisansOnBooking)} idle`} loading={loading && !data} />
+          <StatCard icon={Wrench} label="Artisans online" value={counts.artisansOnline.toLocaleString()} sub={`${counts.artisansOnBooking} on a job - ${Math.max(0, counts.artisansOnline - counts.artisansOnBooking)} idle`} loading={loading && !data} />
           <StatCard icon={Radio} label="Artisans on a job" value={counts.artisansOnBooking.toLocaleString()} sub="Confirmed through marked complete" loading={loading && !data} />
         </div>
 

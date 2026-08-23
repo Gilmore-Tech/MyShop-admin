@@ -582,7 +582,7 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                           <>
                             <span>
                               {routePoints.length} points
-                              {routeMeta.distanceKm != null ? ` · ${routeMeta.distanceKm.toFixed(2)} km recorded` : ''}
+                              {routeMeta.distanceKm != null ? ` - ${routeMeta.distanceKm.toFixed(2)} km recorded` : ''}
                               {' '}during the trip
                             </span>
                             <span>Pickup leg is not recorded</span>

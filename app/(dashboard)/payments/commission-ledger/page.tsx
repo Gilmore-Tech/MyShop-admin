@@ -112,7 +112,7 @@ export default function CommissionLedgerPage() {
       render: r => (
         <div className="min-w-[160px]">
           <p className="font-medium text-gray-900">{r.fullName ?? 'Name not provided'}</p>
-          <p className="text-xs text-gray-500">{roleLabel(r.providerType)}{r.phone ? ` · ${r.phone}` : ''}</p>
+          <p className="text-xs text-gray-500">{roleLabel(r.providerType)}{r.phone ? ` - ${r.phone}` : ''}</p>
         </div>
       ),
     },
@@ -161,7 +161,7 @@ export default function CommissionLedgerPage() {
   }
 
   const caption = report
-    ? `${dateRangeLabel(period.preset)} · ${report.total.toLocaleString()} ${view === 'provider' ? 'provider' : 'day'}${report.total === 1 ? '' : 's'}`
+    ? `${dateRangeLabel(period.preset)} - ${report.total.toLocaleString()} ${view === 'provider' ? 'provider' : 'day'}${report.total === 1 ? '' : 's'}`
     : dateRangeLabel(period.preset)
 
   return (
@@ -231,7 +231,7 @@ export default function CommissionLedgerPage() {
 
         {unbalanced > 0 && (
           <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-4 py-2.5">
-            {unbalanced} row{unbalanced === 1 ? '' : 's'} do not reconcile (commission − relief should equal netted + cash debt + withheld). Report this to engineering before relying on the figures.
+            {unbalanced} row{unbalanced === 1 ? '' : 's'} do not reconcile (commission - relief should equal netted + cash debt + withheld). Report this to engineering before relying on the figures.
           </div>
         )}
 
@@ -342,7 +342,7 @@ function ProviderBookingsSheet({ provider, from, to, onClose }: {
             <SheetHeader className="border-b p-6">
               <SheetTitle>Commission by booking - {provider.name ?? roleLabel(provider.type)}</SheetTitle>
               <SheetDescription>
-                {roleLabel(provider.type)}{provider.phone ? ` · ${provider.phone}` : ''} · settled {from && to ? `${formatDate(from)} to ${formatDate(to)}` : 'in the selected period'}
+                {roleLabel(provider.type)}{provider.phone ? ` - ${provider.phone}` : ''} - settled {from && to ? `${formatDate(from)} to ${formatDate(to)}` : 'in the selected period'}
               </SheetDescription>
             </SheetHeader>
             <div className="p-6">

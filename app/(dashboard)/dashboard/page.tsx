@@ -106,7 +106,7 @@ function LiveTile({ label, value, sub, loading, href }: {
   const body = (
     <>
       <p className={`text-xl font-bold leading-tight tabular-nums ${loading ? 'text-gray-300' : 'text-gray-900'}`}>
-        {loading ? '-' : value == null ? '—' : value.toLocaleString()}
+        {loading ? '-' : value == null ? '-' : value.toLocaleString()}
       </p>
       <p className="text-[11px] text-gray-500 font-medium mt-0.5 truncate">{label}</p>
       {sub && <p className="text-[11px] text-gray-400 truncate">{sub}</p>}
@@ -381,7 +381,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between px-5 py-3.5">
             <div>
               <h2 className="text-sm font-semibold text-gray-800">Trips by outcome</h2>
-              <p className="text-xs text-gray-400">Bookings requested · {rangeLabel}</p>
+              <p className="text-xs text-gray-400">Bookings requested - {rangeLabel}</p>
             </div>
             {can('view_reports') && (
               <Link href="/insights/trips" className="text-xs font-medium" style={{ color: '#F5A623' }}>By date</Link>
@@ -439,7 +439,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-1">
             <div>
               <h2 className="text-sm font-semibold text-gray-800">Growth Trends</h2>
-              <p className="text-xs text-gray-400">Collections, commission and payouts · {rangeLabel}</p>
+              <p className="text-xs text-gray-400">Collections, commission and payouts - {rangeLabel}</p>
             </div>
             {can('view_payments') && (
               <Link href="/payments/revenue" className="text-xs font-medium" style={{ color: '#F5A623' }}>Money summary</Link>
@@ -472,7 +472,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between px-5 py-3.5">
             <div>
               <h2 className="text-sm font-semibold text-gray-800">Recent Platform Activity</h2>
-              <p className="text-xs text-gray-400">Platform events · {rangeLabel}</p>
+              <p className="text-xs text-gray-400">Platform events - {rangeLabel}</p>
             </div>
             <Link href="/activity" className="text-xs font-medium" style={{ color: '#F5A623' }}>View Full Logs</Link>
           </div>

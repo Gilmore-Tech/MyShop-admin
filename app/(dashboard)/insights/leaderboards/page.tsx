@@ -193,7 +193,7 @@ export default function LeaderboardsPage() {
     return sorted.map(row => ({
       id: row.providerId,
       name: row.fullName,
-      detail: [row.phone, row.regionName].filter(Boolean).join(' · ') || undefined,
+      detail: [row.phone, row.regionName].filter(Boolean).join(' - ') || undefined,
       metric: providerMetricLabel(row, providerRank, noun),
       metricValue: providerMetric(row, providerRank),
       rating: row.avgRating,
@@ -212,7 +212,7 @@ export default function LeaderboardsPage() {
       .map(row => ({
         id: row.clientId,
         name: row.fullName,
-        detail: [row.phone, row.lastBookingAt ? `last booking ${formatDate(row.lastBookingAt)}` : null].filter(Boolean).join(' · ') || undefined,
+        detail: [row.phone, row.lastBookingAt ? `last booking ${formatDate(row.lastBookingAt)}` : null].filter(Boolean).join(' - ') || undefined,
         metric: clientMetricLabel(row, clientRank),
         metricValue: clientMetric(row, clientRank),
         facts: [
@@ -263,7 +263,7 @@ export default function LeaderboardsPage() {
   const totalLabel = isClients
     ? `${clientEntries.length} client${clientEntries.length === 1 ? '' : 's'}`
     : providers ? `${providers.total.toLocaleString()} ${tab}` : ''
-  const caption = `${dateRangeLabel(period.preset)}${totalLabel ? ` · ${totalLabel}` : ''}`
+  const caption = `${dateRangeLabel(period.preset)}${totalLabel ? ` - ${totalLabel}` : ''}`
 
   return (
     <PageGuard permission="view_reports">
