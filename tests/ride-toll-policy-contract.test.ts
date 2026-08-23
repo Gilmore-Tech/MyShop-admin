@@ -264,7 +264,10 @@ test('admin surface is exact-root gated and has no direct charging activation pa
   const sidebar = readFileSync(new URL('../components/app-sidebar.tsx', import.meta.url), 'utf8')
 
   assert.match(page, /<SuperAdminPageGuard>/)
-  assert.match(page, /isDraftMaker/)
+  assert.doesNotMatch(page, /isDraftMaker/)
+  assert.doesNotMatch(page, /different (?:exact )?Super Administrator/i)
+  assert.match(page, /one-time preview token, revision,/)
+  assert.match(page, /fingerprint, overlap checks and audit reason remain required/)
   assert.match(page, /previewOverlaps\.length > 0/)
   assert.match(page, /Generate server preview/)
   assert.match(page, /RIDE_TOLLS_ENABLED/)

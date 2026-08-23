@@ -43,7 +43,7 @@ import {
   publishRideTollPolicy,
   saveRideTollPolicyDraft,
 } from '@/lib/api'
-import { ApiError, getAdminUser } from '@/lib/api-client'
+import { ApiError } from '@/lib/api-client'
 import { formatDateTime } from '@/lib/format-date'
 import { formatGhs } from '@/lib/money'
 import {
@@ -275,7 +275,6 @@ function RideTollZonesContent() {
   const [sample, setSample] = useState<SampleForm>(EMPTY_SAMPLE)
   const [publishOpen, setPublishOpen] = useState(false)
   const [publishReason, setPublishReason] = useState('')
-  const currentAdminId = getAdminUser()?.id ?? null
 
   const replaceState = useCallback((next: RideTollPolicyState) => {
     setState(next)
@@ -322,7 +321,6 @@ function RideTollZonesContent() {
       boundary,
     }]
   }), [form])
-  const isDraftMaker = Boolean(state?.draft && currentAdminId && state.draft.actor.id === currentAdminId)
   const busy = operation !== null
 
   const previewOverlaps = useMemo(
@@ -407,7 +405,7 @@ function RideTollZonesContent() {
     setNotice(null)
     try {
       replaceState(await saveRideTollPolicyDraft(validation.payload))
-      setNotice('Complete draft saved. A different Super Administrator must preview and publish it.')
+      setNotice('Complete draft saved. Generate the server preview, review it, and publish when ready.')
     } catch (caught) {
       if (needsReload(caught)) {
         await load('The policy changed while you were editing. Review the latest revision before continuing.')
@@ -441,7 +439,7 @@ function RideTollZonesContent() {
   }
 
   async function publish() {
-    if (!state || !preview || isDraftMaker || publishReason.trim().length < 8) return
+    if (!state || !preview || publishReason.trim().length < 8) return
     setOperation('publish')
     setError(null)
     try {
@@ -452,7 +450,7 @@ function RideTollZonesContent() {
       }))
       setPublishOpen(false)
       setPublishReason('')
-      setNotice('Policy published. Its effective time and the independent runtime switch still control charging.')
+      setNotice('Policy published. Its effective time and the separate runtime switch still control charging.')
     } catch (caught) {
       if (needsReload(caught)) {
         setPublishOpen(false)
@@ -896,14 +894,13 @@ function RideTollZonesContent() {
               <p role="alert" className="text-sm text-red-600">Enter valid latitude/longitude sample coordinates.</p>
             )}
 
-            {isDraftMaker && (
-              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                You created this draft. Maker-checker control requires a different exact Super Administrator to log in, generate their own preview token and publish it.
-              </div>
-            )}
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+              Review this exact saved revision before publishing. The one-time preview token, revision,
+              fingerprint, overlap checks and audit reason remain required.
+            </div>
 
             <div className="flex justify-end">
-              <Button disabled={busy || isDraftMaker || previewOverlaps.length > 0} onClick={() => setPublishOpen(true)}>
+              <Button disabled={busy || previewOverlaps.length > 0} onClick={() => setPublishOpen(true)}>
                 <Send className="mr-2 h-4 w-4" /> Publish reviewed policy
               </Button>
             </div>
@@ -921,14 +918,14 @@ function RideTollZonesContent() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label htmlFor="toll-publish-reason">Independent review reason</Label>
+            <Label htmlFor="toll-publish-reason">Review and publication reason</Label>
             <Textarea
               id="toll-publish-reason"
               rows={4}
               maxLength={MAX_REASON}
               value={publishReason}
               disabled={busy}
-              placeholder="What did you independently verify before publishing?"
+              placeholder="What did you verify before publishing?"
               onChange={(event) => setPublishReason(event.target.value)}
             />
             {publishReason.trim().length > 0 && publishReason.trim().length < 8 && (
