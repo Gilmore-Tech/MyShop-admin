@@ -487,7 +487,12 @@ and the panel's permission picker saves cleanly — **no frontend change needed*
 
 ---
 
-## 10. Per-vertical revenue breakdown on `GET /v1/admin/reports/revenue`  ⛔ requested (new)
+## 10. Per-vertical revenue breakdown on `GET /v1/admin/reports/revenue`  ✅ shipped
+
+> **Shipped (Aug 2026).** `byVertical.rides` / `byVertical.artisans` are returned per period, and the
+> dashboard work on `feat/admin-dashboard-reports` extended both the combined point and each vertical with
+> `promoGhs`, `loyaltyGhs`, `subsidyGhs`, `commissionReliefGhs`, `netCommissionAfterPromoGhs` (plus top-level
+> `netRevenueAfterPromoGhs`) and accepted `groupBy=year`. The text below is kept for history.
 
 The Reports page now splits provider performance into two verticals — **Rides** (drivers)
 and **Artisan Services** (artisans). The provider report (`/admin/reports/providers`) and
@@ -684,6 +689,20 @@ defence-in-depth on the server.
 ---
 
 ## Done
+- **Dashboard stakeholder requests (Aug 2026, `myshop` branch `feat/admin-dashboard-reports`):**
+  - `GET /v1/admin/rides/:id` now returns `gpsTrail` (read from the PostGIS LineString via `ST_AsGeoJSON`),
+    `gpsTrailPointCount`, `gpsTrailDistanceKm`, `pickupLat/Lng`, `dropoffLat/Lng`. This was the root cause of
+    "No recorded GPS route is available for this ride" — the trail was persisted but never selected. The
+    trail is still only recorded while `in_progress` (it feeds the final-fare distance), so the pickup leg
+    is never drawn; the admin copy says so.
+  - `GET /v1/admin/reports/revenue`: promo/subsidy/relief fields + `groupBy=year` (see §10).
+  - New: `GET /v1/admin/reports/bookings/outcomes`, `GET /v1/admin/reports/providers/leaderboard`,
+    `GET /v1/admin/reports/clients/top`, `GET /v1/admin/reports/commission-ledger`,
+    `GET /v1/admin/providers/online` (+ `/counts`). Shapes are documented in `admin-module.md` → Reports and
+    mirrored by `lib/*-contract.ts` in this repo.
+  - Not added: a plain index on `clawbacks.payment_id` — the partial unique index
+    `clawbacks_cash_commission_payment_key` already covers the ledger's `payment_id = … AND source =
+    'CASH_COMMISSION'` lookup.
 - Ride detail `GET /v1/admin/rides/:id` — deployed.
 - Batch payouts `GET /v1/admin/payouts/batches` + `POST .../force` — deployed.
 - Jobs payment fields on `/admin/jobs` (+ detail) — shipped.
