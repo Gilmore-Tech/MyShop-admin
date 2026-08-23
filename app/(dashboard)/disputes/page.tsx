@@ -143,7 +143,7 @@ export default function DisputesPage() {
 
         <div className="mb-4 text-xs text-gray-500 bg-amber-50 rounded-lg px-4 py-2.5 flex items-center gap-2">
           <span className="text-amber-600 font-semibold">Rule:</span>
-          Clients may raise a dispute for <strong>24 hours</strong> from ride completion or client-confirmed artisan completion. Provider payout is held for 2 hours; only this payment is blocked when a dispute is open.
+          Clients may raise a dispute for <strong>2 hours</strong> from ride completion or client-confirmed artisan completion. The corresponding provider amount remains held during that window and stays blocked while a dispute is open.
         </div>
 
         <div className="flex items-center gap-3 mb-4 flex-wrap">
