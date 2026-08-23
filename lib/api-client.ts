@@ -260,7 +260,6 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   RIDE_FARE_POLICY_REVISION_CONFLICT: 'This fare policy changed in the meantime. The latest revision must be reviewed.',
   RIDE_TOLL_POLICY_REVISION_CONFLICT: 'The toll policy changed in the meantime. Reload and review the latest revision.',
   RIDE_TOLL_DRAFT_REQUIRED: 'Save a complete toll-policy draft before previewing or publishing.',
-  RIDE_TOLL_MAKER_CHECKER_REQUIRED: 'The administrator who created this draft cannot publish it. A different Super Administrator must review and publish it.',
   RIDE_TOLL_PREVIEW_INVALID: 'Generate a fresh preview of this exact toll-policy draft before publishing.',
   RIDE_TOLL_PREVIEW_STALE: 'The toll-policy draft changed after preview. Reload and generate a fresh preview.',
   RIDE_TOLL_PREVIEW_USED: 'That toll-policy preview was already used. Generate a fresh preview before publishing.',
