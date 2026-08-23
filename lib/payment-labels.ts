@@ -50,6 +50,7 @@ const STATUS_LABELS: Record<string, string> = {
   outstanding: 'Amount due',
   escalated: 'Sent for follow-up',
   written_off: 'Cleared',
+  reconciliation_required: 'Financial review required',
   mixed: 'Different statuses',
 }
 

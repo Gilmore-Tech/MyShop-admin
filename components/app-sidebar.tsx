@@ -16,7 +16,7 @@ import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
 import { type Permission, type CategoryScope, roleLabel } from '@/lib/roles'
 import { userLandingPath } from '@/lib/user-scope'
 
-type ChildItem = { title: string; href: string; permission?: Permission; badge?: number; badgeVariant?: 'red' | 'amber'; category?: CategoryScope }
+type ChildItem = { title: string; href: string; permission?: Permission; badge?: number; badgeVariant?: 'red' | 'amber'; category?: CategoryScope; superAdmin?: boolean }
 
 type NavItem = {
   title: string
@@ -46,13 +46,14 @@ function Badge({ count, variant = 'red' }: { count: number; variant?: 'red' | 'a
 
 // A child is visible when the user holds its permission (if any) and it isn't
 // constrained to the *other* category than the user's scope.
-function childAllowed(c: ChildItem, can: (p: Permission) => boolean, userCategory: CategoryScope | null): boolean {
+function childAllowed(c: ChildItem, can: (p: Permission) => boolean, userCategory: CategoryScope | null, isSuperAdmin: boolean): boolean {
+  if (c.superAdmin && !isSuperAdmin) return false
   if (c.permission && !can(c.permission)) return false
   if (c.category && userCategory && c.category !== userCategory) return false
   return true
 }
 
-function NavLink({ item, can, userCategory }: { item: NavItem; can: (p: Permission) => boolean; userCategory: CategoryScope | null }) {
+function NavLink({ item, can, userCategory, isSuperAdmin }: { item: NavItem; can: (p: Permission) => boolean; userCategory: CategoryScope | null; isSuperAdmin: boolean }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(() =>
     item.children?.some(c => pathname.startsWith(c.href)) ?? false
@@ -61,7 +62,7 @@ function NavLink({ item, can, userCategory }: { item: NavItem; can: (p: Permissi
     || (item.href.startsWith('/users/') && pathname.startsWith('/users'))
 
   if (item.children) {
-    const visibleChildren = item.children.filter(c => childAllowed(c, can, userCategory))
+    const visibleChildren = item.children.filter(c => childAllowed(c, can, userCategory, isSuperAdmin))
     // Hide the whole group if permissions filter out every child
     if (visibleChildren.length === 0) return null
 
@@ -245,6 +246,7 @@ export default function AppSidebar() {
           children: [
             { title: 'All Rides',          href: '/rides',         permission: 'view_rides', category: 'rides' },
             { title: 'Ride Tiers',         href: '/ride-categories', permission: 'view_ride_categories', category: 'rides' },
+            { title: 'Toll Zones',          href: '/ride-toll-zones', category: 'rides', superAdmin: true },
             { title: 'Artisan Jobs',       href: '/artisan-jobs',  permission: 'view_jobs', category: 'artisan' },
             { title: 'Manual Assignment',  href: '/artisan-jobs/manual-assignment', permission: 'view_jobs', category: 'artisan', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
             ...(FEATURES.highBidReview
@@ -325,7 +327,7 @@ export default function AppSidebar() {
     if (item.superAdmin) return isSuperAdmin
     if (item.category && category && item.category !== category) return false
     if (item.children) {
-      return item.children.some(c => childAllowed(c, can, category))
+      return item.children.some(c => childAllowed(c, can, category, isSuperAdmin))
     }
     return !item.permission || can(item.permission)
   }
@@ -354,7 +356,7 @@ export default function AppSidebar() {
             <p className="text-[10px] font-semibold text-gray-300 uppercase tracking-widest px-3 mb-1.5">
               {section.label}
             </p>
-            {section.items.map(item => <NavLink key={item.href} item={item} can={can} userCategory={category} />)}
+            {section.items.map(item => <NavLink key={item.href} item={item} can={can} userCategory={category} isSuperAdmin={isSuperAdmin} />)}
           </div>
         ))}
       </nav>

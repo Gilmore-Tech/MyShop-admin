@@ -17,6 +17,7 @@
     "test:ride-pricing": "node --experimental-strip-types --test tests/ride-pricing-contract.test.ts",
     "test:admin-rides": "node --experimental-strip-types --test tests/admin-ride-list-contract.test.ts",
     "test:ride-fare-policy": "node --experimental-strip-types --test tests/ride-distance-safeguard-contract.test.ts",
+    "test:ride-toll-policy": "node --experimental-strip-types --test tests/ride-toll-policy-contract.test.ts",
     "test:provider-verification": "node --experimental-strip-types --test tests/provider-verification-contract.test.ts"
   },
   "dependencies": {
