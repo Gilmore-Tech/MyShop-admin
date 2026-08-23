@@ -36,6 +36,7 @@ import { RidePricingBreakdown } from '@/components/rides/ride-pricing-breakdown'
 import { getRideDetail, cancelRide, forceCompleteRide, type RideDetail, type RideGpsPoint } from '@/lib/api'
 import { getAdminUser, ApiError } from '@/lib/api-client'
 import { can } from '@/lib/roles'
+import { rideRouteAvailability, type RouteAvailability } from '@/lib/ride-gps-trail-contract'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -109,11 +110,34 @@ function RouteMarker({ label, color }: { label: string; color: string }) {
   )
 }
 
-function DriverRouteMap({ points, active }: { points: RideGpsPoint[]; active: boolean }) {
+// Why nothing is drawn, in words an operator can act on. The backend only
+// records the trail while the trip is in progress (the pickup leg is never
+// stored), so "no route" on a pre-trip or early-cancelled ride is expected.
+const ROUTE_EMPTY_COPY: Record<Exclude<RouteAvailability, 'available'>, string> = {
+  recording: 'Waiting for enough driver location updates to draw the route.',
+  not_started: 'Route recording starts when the trip begins. Nothing is recorded while the driver is on the way to pickup.',
+  cancelled_before_start: 'This ride was cancelled before the trip started, so no route was recorded.',
+  missing: 'No GPS route was recorded for this ride.',
+}
+
+function DriverRouteMap({
+  points, active, availability, pickup, dropoff,
+}: {
+  points: RideGpsPoint[]
+  active: boolean
+  availability: RouteAvailability
+  pickup: { lat: number; lng: number } | null
+  dropoff: { lat: number; lng: number } | null
+}) {
   const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
   const mapsMapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? 'DEMO_MAP_ID'
   const first = points[0]
   const latest = points[points.length - 1]
+  const boundsPoints = useMemo<RideGpsPoint[]>(() => [
+    ...points,
+    ...(pickup ? [{ ...pickup, recordedAt: null }] : []),
+    ...(dropoff ? [{ ...dropoff, recordedAt: null }] : []),
+  ], [points, pickup, dropoff])
 
   if (!mapsApiKey) {
     return (
@@ -126,14 +150,12 @@ function DriverRouteMap({ points, active }: { points: RideGpsPoint[]; active: bo
     )
   }
 
-  if (points.length < 2) {
+  if (availability !== 'available') {
     return (
       <div className="flex h-40 items-center justify-center px-6 text-center">
         <div>
           <Navigation className="mx-auto h-6 w-6 text-gray-300" />
-          <p className="mt-2 text-sm text-gray-400">
-            {active ? 'Waiting for enough driver location updates to draw the route.' : 'No recorded GPS route is available for this ride.'}
-          </p>
+          <p className="mt-2 text-sm text-gray-400">{ROUTE_EMPTY_COPY[availability]}</p>
         </div>
       </div>
     )
@@ -151,17 +173,27 @@ function DriverRouteMap({ points, active }: { points: RideGpsPoint[]; active: bo
           scaleControl
           style={{ width: '100%', height: '100%' }}
         >
-          <FitRouteBounds points={points} />
+          <FitRouteBounds points={boundsPoints} />
           <Polyline
             path={points.map(point => ({ lat: point.lat, lng: point.lng }))}
             strokeColor="#2563EB"
             strokeOpacity={0.9}
             strokeWeight={5}
           />
-          <AdvancedMarker position={{ lat: first.lat, lng: first.lng }} title="Route started">
+          {pickup && (
+            <AdvancedMarker position={pickup} title="Pickup">
+              <RouteMarker label="P" color="#6B7280" />
+            </AdvancedMarker>
+          )}
+          {dropoff && (
+            <AdvancedMarker position={dropoff} title="Dropoff">
+              <RouteMarker label="D" color="#6B7280" />
+            </AdvancedMarker>
+          )}
+          <AdvancedMarker position={{ lat: first.lat, lng: first.lng }} title="Trip started">
             <RouteMarker label="S" color="#16A34A" />
           </AdvancedMarker>
-          <AdvancedMarker position={{ lat: latest.lat, lng: latest.lng }} title={active ? 'Latest driver location' : 'Route ended'}>
+          <AdvancedMarker position={{ lat: latest.lat, lng: latest.lng }} title={active ? 'Latest driver location' : 'Trip ended'}>
             <RouteMarker label={active ? 'LIVE' : 'E'} color={active ? '#DC2626' : '#2563EB'} />
           </AdvancedMarker>
         </Map>
@@ -323,6 +355,11 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
 
   const legacyFare = ride?.finalFarePesewas ?? ride?.estimatedFarePesewas
   const routePoints = useMemo(() => ride?.gpsTrail ?? [], [ride?.gpsTrail])
+  const routeMeta = ride?.gpsTrailMeta ?? { pointCount: 0, distanceKm: null, pickup: null, dropoff: null }
+  const routeAvailability = ride
+    ? rideRouteAvailability({ status: ride.status, startedAt: ride.startedAt, pointCount: routePoints.length })
+    : 'missing'
+  const routeHasTimestamps = routePoints.some(point => point.recordedAt)
 
   return (
     <PageGuard permission="view_rides">
@@ -518,20 +555,39 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                             <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> Live
                           </span>
                         )}
-                        <span>{routePoints.length} location update{routePoints.length === 1 ? '' : 's'}</span>
+                        <span>{routePoints.length} route point{routePoints.length === 1 ? '' : 's'}</span>
                       </div>
                     </div>
                     <p className="text-xs text-gray-500">
-                      The blue line shows the path recorded from the driver&apos;s GPS updates.
+                      The blue line is the path recorded from the driver&apos;s GPS while the trip was in progress; P and D mark the booked pickup and dropoff.
                       {routeTrackingActive ? ' It refreshes every 15 seconds.' : ''}
                     </p>
                   </CardHeader>
                   <CardContent className="p-0">
-                    <DriverRouteMap points={routePoints} active={routeTrackingActive} />
+                    <DriverRouteMap
+                      points={routePoints}
+                      active={routeTrackingActive}
+                      availability={routeAvailability}
+                      pickup={routeMeta.pickup}
+                      dropoff={routeMeta.dropoff}
+                    />
                     {routePoints.length > 0 && (
                       <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-gray-50 px-4 py-2 text-[11px] text-gray-500">
-                        <span>First update: {fmtDate(routePoints[0].recordedAt)}</span>
-                        <span>Latest update: {fmtDate(routePoints[routePoints.length - 1].recordedAt)}</span>
+                        {routeHasTimestamps ? (
+                          <>
+                            <span>First update: {fmtDate(routePoints[0].recordedAt)}</span>
+                            <span>Latest update: {fmtDate(routePoints[routePoints.length - 1].recordedAt)}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>
+                              {routePoints.length} points
+                              {routeMeta.distanceKm != null ? ` · ${routeMeta.distanceKm.toFixed(2)} km recorded` : ''}
+                              {' '}during the trip
+                            </span>
+                            <span>Pickup leg is not recorded</span>
+                          </>
+                        )}
                       </div>
                     )}
                   </CardContent>
