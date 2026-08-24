@@ -2,37 +2,28 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
-import { PageGuard } from '@/components/common/page-guard'
 import { useRole } from '@/hooks/use-role'
+import { PageGuard } from '@/components/common/page-guard'
 import {
-  ShieldOff, ShieldCheck, Loader2, RefreshCw, Save, AlertCircle, XOctagon, Settings2,
+  ShieldOff, ShieldCheck, Loader2, Save, AlertCircle, XOctagon, Settings2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { PageHeader } from '@/components/common/page-header'
+import { FilterBar } from '@/components/common/filter-bar'
+import { DataTable, AvatarCell } from '@/components/common/data-table'
+import { EmptyState } from '@/components/common/empty-state'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { formatDateTime } from '@/lib/format-date'
 import {
   listProviderSuspensions, liftProviderSuspension, getAllConfig, updateConfig,
   type SuspensionListItem,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
-
-function initials(name: string | null) {
-  if (!name) return '?'
-  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-}
-
-function formatDate(iso: string) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-}
 
 // ── Cancellation policy editor ────────────────────────────────────────────────
 // Tunes the two platform_config keys the auto-suspension engine reads. Standardised
@@ -49,7 +40,7 @@ function validatePositiveInt(value: string, min: number, max: number): string | 
   if (!str) return 'Required'
   if (!/^\d+$/.test(str)) return 'Must be a whole number'
   const n = Number(str)
-  if (n < min || n > max) return `Must be ${min}–${max}`
+  if (n < min || n > max) return `Must be ${min}-${max}`
   return null
 }
 
@@ -101,7 +92,7 @@ function CancellationPolicyCard({ canEdit }: { canEdit: boolean }) {
     <Card className="mb-6">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Settings2 className="h-4 w-4 text-gray-400" /> Cancellation Policy
+          <Settings2 className="h-4 w-4 text-gray-400" /> Cancellation policy
         </CardTitle>
         <CardDescription>
           A driver is auto-suspended after this many cancellations within the rolling window.
@@ -109,7 +100,10 @@ function CancellationPolicyCard({ canEdit }: { canEdit: boolean }) {
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div className="h-20 flex items-center text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading current policy…</div>
+          <div className="flex flex-wrap items-start gap-6">
+            <div className="space-y-1.5"><Skeleton className="h-3 w-28 bg-gray-100" /><Skeleton className="h-9 w-40 bg-gray-100" /></div>
+            <div className="space-y-1.5"><Skeleton className="h-3 w-28 bg-gray-100" /><Skeleton className="h-9 w-40 bg-gray-100" /></div>
+          </div>
         ) : (
           <div className="flex flex-wrap items-start gap-6">
             <div className="space-y-1.5">
@@ -133,9 +127,9 @@ function CancellationPolicyCard({ canEdit }: { canEdit: boolean }) {
             {canEdit && (
               <div className="space-y-1.5">
                 <Label className="text-xs text-transparent select-none">Save</Label>
-                <Button onClick={handleSave} disabled={!canSave} className="gap-1.5 text-white" style={{ backgroundColor: '#F5A623' }}>
+                <Button onClick={handleSave} disabled={!canSave} variant="brand" className="gap-1.5">
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  {saving ? 'Saving…' : 'Save Policy'}
+                  {saving ? 'Saving...' : 'Save policy'}
                 </Button>
               </div>
             )}
@@ -151,18 +145,18 @@ function CancellationPolicyCard({ canEdit }: { canEdit: boolean }) {
   )
 }
 
-// ── Lift confirmation modal ───────────────────────────────────────────────────
-function LiftModal({ item, onClose, onLifted }: {
+// ── Lift confirmation dialog ───────────────────────────────────────────────────
+function LiftDialog({ item, onClose, onLifted }: {
   item: SuspensionListItem
   onClose: () => void
   onLifted: () => void
 }) {
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   async function handleLift() {
-    setLoading(true); setError('')
+    setLoading(true); setError(null)
     try {
       await liftProviderSuspension(item.providerId, item.suspensionId, note)
       onLifted()
@@ -173,32 +167,28 @@ function LiftModal({ item, onClose, onLifted }: {
   }
 
   return (
-    <Dialog open onOpenChange={open => { if (!open) onClose() }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="text-emerald-700">Lift suspension for {item.fullName ?? 'this driver'}</DialogTitle>
-          <DialogDescription>
-            Restores the driver to approved status and resets their rolling cancellation count, so they can go online again. An optional note is recorded in the audit log.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-2 py-1">
-          <textarea
-            className="w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-24 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-200"
-            placeholder="Note (optional)…"
-            value={note}
-            onChange={e => { setNote(e.target.value); setError('') }}
-          />
-          {error && <p className="text-xs text-red-600">{error}</p>}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
-          <Button onClick={handleLift} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-            {loading ? 'Lifting…' : 'Lift Suspension'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open
+      onClose={onClose}
+      title={`Lift suspension for ${item.fullName ?? 'this driver'}?`}
+      description="Restores the driver to approved status and resets their rolling cancellation count, so they can go online again. An optional note is recorded in the audit log."
+      confirmLabel={`Lift suspension for ${item.fullName ?? 'this driver'}`}
+      onConfirm={() => { void handleLift() }}
+      loading={loading}
+      error={error}
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="lift-note" className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Note (optional)</Label>
+        <textarea
+          id="lift-note"
+          className="w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-24 resize-none focus:outline-none focus:ring-2 focus:ring-gray-200"
+          placeholder="Add an optional note..."
+          value={note}
+          disabled={loading}
+          onChange={e => { setNote(e.target.value); setError(null) }}
+        />
+      </div>
+    </ConfirmDialog>
   )
 }
 
@@ -211,7 +201,6 @@ export default function SuspensionsPage() {
   const [items, setItems] = useState<SuspensionListItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
   const [providerType, setProviderType] = useState<'driver' | 'artisan'>('driver')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -231,7 +220,6 @@ export default function SuspensionsPage() {
       .then(res => {
         setItems(res.items)
         setTotal(res.total)
-        setTotalPages(res.totalPages)
       })
       .catch(err => {
         setItems([])
@@ -248,117 +236,89 @@ export default function SuspensionsPage() {
     <PageGuard permission="view_users">
     <div>
       <PageHeader
-        title="Cancellation Suspensions"
-        subtitle="Providers auto-suspended for exceeding the cancellation limit"
-        actions={
-          <Button variant="outline" size="sm" onClick={fetchSuspensions} className="gap-2">
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </Button>
-        }
+        title="Suspensions"
+        subtitle="Automatic cancellation suspensions and manual lifts"
       />
 
       {canViewConfig && <CancellationPolicyCard canEdit={canViewConfig} />}
 
-      <div className="flex items-center gap-3 mb-4">
+      <FilterBar onRefresh={fetchSuspensions} refreshing={loading} meta={`${total} suspended`}>
         <Select value={providerType} onValueChange={v => setProviderType(v as 'driver' | 'artisan')}>
-          <SelectTrigger className="w-36 bg-white"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-9 w-36 bg-white"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="driver">Drivers</SelectItem>
             <SelectItem value="artisan">Artisans</SelectItem>
           </SelectContent>
         </Select>
-        <div className="ml-auto text-sm text-gray-500">{total} suspended</div>
-      </div>
+      </FilterBar>
 
-      {error && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50">
-              <TableHead>{providerType === 'driver' ? 'Driver' : 'Artisan'}</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>Cancellations (30d)</TableHead>
-              <TableHead>Reason</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Suspended</TableHead>
-              <TableHead className="text-right">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              [...Array(6)].map((_, i) => (
-                <TableRow key={i}>
-                  {[...Array(7)].map((_, j) => (
-                    <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : items.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-gray-400 text-sm">
-                  <ShieldOff className="h-8 w-8 mx-auto mb-2 text-gray-200" />
-                  No {providerType}s are currently cancellation-suspended.
-                </TableCell>
-              </TableRow>
+      <DataTable
+        columns={[
+          {
+            key: 'provider',
+            header: providerType === 'driver' ? 'Driver' : 'Artisan',
+            render: item => <AvatarCell name={item.fullName} sub={item.phone ? <span className="font-mono">{item.phone}</span> : undefined} />,
+          },
+          {
+            key: 'cancellations',
+            header: 'Cancellations (30d)',
+            render: item => (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600">
+                <XOctagon className="h-3.5 w-3.5" />{item.cancellationCount30d}
+              </span>
+            ),
+          },
+          {
+            key: 'reason',
+            header: 'Reason',
+            className: 'max-w-xs truncate',
+            render: item => item.reason
+              ? <span className="text-sm text-gray-600" title={item.reason}>{item.reason}</span>
+              : <span className="text-gray-400 italic">-</span>,
+          },
+          {
+            key: 'type',
+            header: 'Type',
+            render: item => (
+              <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                {item.isAutomatic ? 'Automatic' : 'Manual'}
+              </span>
+            ),
+          },
+          {
+            key: 'suspended',
+            header: 'Suspended',
+            render: item => <span className="text-sm text-gray-500">{formatDateTime(item.suspendedAt)}</span>,
+          },
+          {
+            key: 'action',
+            header: '',
+            align: 'right',
+            render: item => canLift ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 h-7 text-xs"
+                onClick={e => { e.stopPropagation(); setLifting(item) }}
+              >
+                <ShieldCheck className="h-3.5 w-3.5" /> Lift
+              </Button>
             ) : (
-              items.map(item => (
-                <TableRow key={item.suspensionId} className="hover:bg-gray-50">
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-gray-100 text-gray-600 text-xs font-bold">{initials(item.fullName)}</AvatarFallback>
-                      </Avatar>
-                      <p className="font-medium text-sm text-gray-900">{item.fullName ?? 'Unknown'}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm text-gray-500 font-mono">{item.phone ?? '—'}</TableCell>
-                  <TableCell>
-                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600">
-                      <XOctagon className="h-3.5 w-3.5" />{item.cancellationCount30d}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-sm text-gray-600 max-w-xs truncate" title={item.reason ?? ''}>
-                    {item.reason ?? <span className="text-gray-400 italic">—</span>}
-                  </TableCell>
-                  <TableCell>
-                    <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${item.isAutomatic ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
-                      {item.isAutomatic ? 'Automatic' : 'Manual'}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-sm text-gray-500">{formatDate(item.suspendedAt)}</TableCell>
-                  <TableCell className="text-right">
-                    {canLift ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 h-7 text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-                        onClick={() => setLifting(item)}
-                      >
-                        <ShieldCheck className="h-3.5 w-3.5" /> Lift
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-gray-300">—</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
-          <p className="text-xs text-gray-500">
-            {loading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : `Page ${page} of ${totalPages} (${total} total)`}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage(p => p - 1)}>Previous</Button>
-            <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage(p => p + 1)}>Next</Button>
-          </div>
-        </div>
-      </div>
+              <span className="text-xs text-gray-300">-</span>
+            ),
+          },
+        ]}
+        rows={items}
+        rowKey={item => item.suspensionId}
+        loading={loading}
+        error={error || null}
+        onRetry={fetchSuspensions}
+        empty={<EmptyState icon={ShieldOff} title={`No ${providerType}s are currently cancellation-suspended`} />}
+        pagination={{ page, pageSize: LIMIT, total, onPage: setPage }}
+      />
 
       {lifting && (
-        <LiftModal
+        <LiftDialog
           item={lifting}
           onClose={() => setLifting(null)}
           onLifted={() => { setLifting(null); fetchSuspensions() }}

@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Search,
-  RefreshCw,
   KeyRound,
   Smartphone,
   AlertTriangle,
@@ -19,9 +17,14 @@ import {
 } from 'lucide-react'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
+import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
+import { DataTable, AvatarCell } from '@/components/common/data-table'
+import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
+import { PageSkeleton } from '@/components/common/load-state'
+import { DetailSheet } from '@/components/common/detail-sheet'
 import { StatusBadge } from '@/components/common/status-badge'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -30,22 +33,9 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from '@/components/ui/table'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle
-} from '@/components/ui/sheet'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { formatDateTime, timeAgo } from '@/lib/format-date'
 import {
   listSessionRecoveryRequests,
   getSessionRecoveryRequestDetail,
@@ -72,30 +62,9 @@ const STATUS_OPTIONS: Array<{
   { value: 'all', label: 'All' }
 ]
 
-function formatDateTime(iso: string | null) {
-  if (!iso) return '-'
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
-
-function ageLabel(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const m = Math.floor(diff / 60_000)
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ${m % 60}m ago`
-  const d = Math.floor(h / 24)
-  return `${d}d ${h % 24}h ago`
-}
-
 function shortDevice(id: string | null): string {
   if (!id) return '-'
-  return id.length > 12 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id
+  return id.length > 12 ? `${id.slice(0, 6)}...${id.slice(-4)}` : id
 }
 
 export default function AccountRecoveryPage() {
@@ -109,7 +78,6 @@ export default function AccountRecoveryPage() {
   const [items, setItems] = useState<SessionRecoveryRequest[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
   const [statusFilter, setStatusFilter] = useState<
     'all' | SessionRecoveryStatus
   >('pending')
@@ -157,11 +125,9 @@ export default function AccountRecoveryPage() {
         })
         setItems(res.items)
         setTotal(res.total)
-        setTotalPages(res.totalPages)
       } catch (err) {
         setItems([])
         setTotal(0)
-        setTotalPages(1)
         setError(
           err instanceof ApiError
             ? err.message
@@ -191,13 +157,14 @@ export default function AccountRecoveryPage() {
       <PageGuard permission="view_session_recovery">
         <div>
           <PageHeader
-            title="Account Recovery"
-            subtitle="This release-gated feature is unavailable."
+            title="Device recovery"
+            subtitle="Approve moving an account to a new phone"
           />
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Session recovery requires an enabled release gate and a global Super
-            Admin or Operations role.
-          </div>
+          <EmptyState
+            variant="unavailable"
+            title="This feature isn't available"
+            description="Session recovery requires an enabled release gate and a global Super Admin or Operations role."
+          />
         </div>
       </PageGuard>
     )
@@ -207,24 +174,8 @@ export default function AccountRecoveryPage() {
     <PageGuard permission="view_session_recovery">
       <div>
         <PageHeader
-          title="Account Recovery"
-          subtitle="Review and act on requests from users locked out by another device"
-          actions={
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => load()}
-                disabled={loading}
-                className="gap-1.5"
-              >
-                <RefreshCw
-                  className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`}
-                />{' '}
-                Refresh
-              </Button>
-            </div>
-          }
+          title="Device recovery"
+          subtitle="Approve moving an account to a new phone"
         />
 
         {flash && (
@@ -264,23 +215,15 @@ export default function AccountRecoveryPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <div className="relative flex-1 min-w-48 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-            <Input
-              placeholder="Search by phone…"
-              className="pl-9"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
+        <FilterBar onRefresh={() => load()} refreshing={loading} meta={`${total} request${total === 1 ? '' : 's'}`}>
+          <FilterSearch value={searchInput} onChange={setSearchInput} placeholder="Search by phone..." />
           <Select
             value={statusFilter}
             onValueChange={(v) =>
               setStatusFilter(v as 'all' | SessionRecoveryStatus)
             }
           >
-            <SelectTrigger className="w-44 bg-white">
+            <SelectTrigger className="h-9 w-44 bg-white">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -291,10 +234,7 @@ export default function AccountRecoveryPage() {
               ))}
             </SelectContent>
           </Select>
-          <div className="ml-auto text-sm text-gray-500">
-            {total} request{total === 1 ? '' : 's'}
-          </div>
-        </div>
+        </FilterBar>
 
         {error && (
           <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -302,151 +242,85 @@ export default function AccountRecoveryPage() {
           </div>
         )}
 
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50">
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Raised
-                </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  User
-                </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Role
-                </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Phone
-                </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  New device
-                </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Logged-in device
-                </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Status
-                </TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    {Array.from({ length: 8 }).map((_, j) => (
-                      <TableCell key={j}>
-                        <div className="h-4 bg-gray-100 rounded animate-pulse" />
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : items.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={8}
-                    className="text-center py-12 text-gray-400"
-                  >
-                    <KeyRound className="h-8 w-8 mx-auto mb-2 text-gray-200" />
-                    No recovery requests{' '}
-                    {statusFilter !== 'all'
-                      ? `with status "${statusFilter}"`
-                      : 'found'}
-                    .
-                  </TableCell>
-                </TableRow>
-              ) : (
-                items.map((r) => (
-                  <TableRow
-                    key={r.id}
-                    className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => setOpenId(r.id)}
-                  >
-                    <TableCell className="text-sm text-gray-500 whitespace-nowrap">
-                      <div>{formatDateTime(r.createdAt)}</div>
-                      <div className="text-[10px] text-gray-400">
-                        {ageLabel(r.createdAt)}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {r.fullName ?? (
-                        <span className="text-gray-400 italic">
-                          Unknown user
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {r.role ? (
-                        <StatusBadge status={r.role} />
-                      ) : (
-                        <span className="text-gray-300 text-xs">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm font-mono text-gray-600 flex items-center gap-1.5">
-                      <Phone className="h-3 w-3 text-gray-400" />
-                      {r.phone}
-                    </TableCell>
-                    <TableCell
-                      className="text-xs font-mono text-gray-500"
-                      title={r.requestingDeviceId ?? undefined}
-                    >
-                      {shortDevice(r.requestingDeviceId)}
-                      {r.requestingIp && (
-                        <div className="text-[10px] text-gray-400">
-                          {r.requestingIp}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell
-                      className="text-xs font-mono text-gray-500"
-                      title={r.currentSessionDeviceId ?? ''}
-                    >
-                      {shortDevice(r.currentSessionDeviceId)}
-                      {r.currentSessionLoggedInAt && (
-                        <div className="text-[10px] text-gray-400">
-                          since {ageLabel(r.currentSessionLoggedInAt)}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={r.status} />
-                    </TableCell>
-                    <TableCell>
-                      <ChevronRight className="h-4 w-4 text-gray-400" />
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-          <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
-            <p className="text-xs text-gray-500">
-              {loading ? (
-                <Loader2 className="h-3 w-3 animate-spin inline" />
-              ) : (
-                `Page ${page} of ${totalPages} (${total} total)`
-              )}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1 || loading}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages || loading}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        </div>
+        <DataTable
+          columns={[
+            {
+              key: 'raised',
+              header: 'Raised',
+              render: r => (
+                <span className="whitespace-nowrap">
+                  <span className="block">{formatDateTime(r.createdAt)}</span>
+                  <span className="block text-[10px] text-gray-400">{timeAgo(r.createdAt)}</span>
+                </span>
+              ),
+            },
+            {
+              key: 'user',
+              header: 'User',
+              render: r => <AvatarCell name={r.fullName} />,
+            },
+            {
+              key: 'role',
+              header: 'Role',
+              render: r => r.role ? <StatusBadge status={r.role} /> : <span className="text-gray-300 text-xs">-</span>,
+            },
+            {
+              key: 'phone',
+              header: 'Phone',
+              render: r => (
+                <span className="font-mono flex items-center gap-1.5">
+                  <Phone className="h-3 w-3 text-gray-400" />{r.phone}
+                </span>
+              ),
+            },
+            {
+              key: 'new_device',
+              header: 'New device',
+              render: r => (
+                <span className="text-xs font-mono text-gray-500" title={r.requestingDeviceId ?? undefined}>
+                  {shortDevice(r.requestingDeviceId)}
+                  {r.requestingIp && <span className="block text-[10px] text-gray-400">{r.requestingIp}</span>}
+                </span>
+              ),
+            },
+            {
+              key: 'current_device',
+              header: 'Logged-in device',
+              render: r => (
+                <span className="text-xs font-mono text-gray-500" title={r.currentSessionDeviceId ?? undefined}>
+                  {shortDevice(r.currentSessionDeviceId)}
+                  {r.currentSessionLoggedInAt && (
+                    <span className="block text-[10px] text-gray-400">since {timeAgo(r.currentSessionLoggedInAt)}</span>
+                  )}
+                </span>
+              ),
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              render: r => <StatusBadge status={r.status} />,
+            },
+            {
+              key: 'chevron',
+              header: '',
+              className: 'w-10',
+              render: () => <ChevronRight className="h-4 w-4 text-gray-400" />,
+            },
+          ]}
+          rows={items}
+          rowKey={r => r.id}
+          loading={loading}
+          error={null}
+          onRowClick={r => setOpenId(r.id)}
+          rowAriaLabel={r => `Open recovery request for ${r.phone}`}
+          empty={
+            <EmptyState
+              icon={KeyRound}
+              title={`No recovery requests${statusFilter !== 'all' ? ` with status "${statusFilter}"` : ' found'}`}
+            />
+          }
+          pagination={{ page, pageSize: LIMIT, total, onPage: setPage }}
+        />
 
         <RecoveryDetailDrawer
           requestId={openId}
@@ -578,220 +452,196 @@ function RecoveryDetailDrawer({
   }
 
   return (
-    <Sheet
+    <DetailSheet
       open={!!requestId}
-      onOpenChange={(open) => {
-        if (!open) onClose()
-      }}
-    >
-      <SheetContent className="sm:max-w-2xl overflow-y-auto p-0">
-        <SheetHeader className="px-6 py-4 border-b border-gray-100">
-          <SheetTitle className="text-base">
-            Account recovery request
-          </SheetTitle>
-        </SheetHeader>
-
-        <div className="px-6 py-5 space-y-5">
-          {loading && (
-            <div className="flex items-center gap-2 text-gray-400">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-sm">Loading…</span>
-            </div>
-          )}
-
-          {!loading && loadError && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-              <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700">{loadError}</p>
-            </div>
-          )}
-
-          {!loading && detail && (
-            <>
-              {/* Header summary */}
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {detail.fullName ?? (
-                      <span className="text-gray-400 italic">Unknown user</span>
-                    )}
-                  </p>
-                  <p className="text-xs text-gray-500 font-mono mt-0.5 flex items-center gap-1.5">
-                    <Phone className="h-3 w-3" /> {detail.phone}
-                  </p>
-                </div>
-                <StatusBadge status={detail.status} />
-              </div>
-
-              {/* Two sessions side-by-side */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <SessionPanel
-                  title="New device (requesting)"
-                  rows={[
-                    ['Device ID', detail.requestingDeviceId ?? '-', true],
-                    ['IP', detail.requestingIp ?? '-', false],
-                    ['Raised', formatDateTime(detail.createdAt), false]
-                  ]}
-                />
-                <SessionPanel
-                  title="Logged-in device"
-                  rows={[
-                    ['Role', detail.role ?? '-', false],
-                    ['Device ID', detail.currentSessionDeviceId ?? '-', true],
-                    [
-                      'Device info',
-                      detail.currentSessionDeviceInfo ?? '-',
-                      false
-                    ],
-                    [
-                      'Logged in',
-                      formatDateTime(detail.currentSessionLoggedInAt),
-                      false
-                    ]
-                  ]}
-                />
-              </div>
-
-              {/* Identity panel */}
-              {detail.identity ? (
-                <IdentityPanel detail={detail} />
+      onClose={onClose}
+      size="lg"
+      title={detail?.fullName ?? 'Account recovery request'}
+      subtitle={detail && (
+        <span className="font-mono flex items-center gap-1.5">
+          <Phone className="h-3 w-3" /> {detail.phone}
+        </span>
+      )}
+      status={detail && <StatusBadge status={detail.status} />}
+      footer={
+        !loading && detail && isPending ? (
+          <div className="flex items-center gap-2 w-full">
+            <Button
+              variant="outline"
+              className="flex-1 gap-1.5"
+              onClick={handleDismiss}
+              disabled={submitting != null}
+            >
+              {submitting === 'dismiss' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                  <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm text-amber-800 font-medium">
-                      No matching user record
-                    </p>
-                    <p className="text-xs text-amber-700 mt-0.5">
-                      This phone has no active user account. Approval is
-                      disabled - verify and dismiss instead.
-                    </p>
-                  </div>
-                </div>
+                <XCircle className="h-3.5 w-3.5" />
               )}
-
-              {/* Resolution display when already resolved */}
-              {!isPending && (
-                <div className="bg-gray-50 rounded-lg p-3 space-y-1">
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                    Resolution
-                  </p>
-                  <p className="text-sm text-gray-700">
-                    {detail.resolvedAction === 'revoked'
-                      ? 'Old session revoked.'
-                      : detail.resolvedAction === 'dismissed'
-                        ? 'Dismissed without revoking.'
-                        : detail.status === 'resolving'
-                          ? 'Exact role secured; external session cleanup is retrying automatically.'
-                          : detail.status === 'expired'
-                            ? 'Expired.'
-                            : '-'}
-                  </p>
-                  {detail.resolvedAt && (
-                    <p className="text-xs text-gray-500 flex items-center gap-1.5">
-                      <Clock className="h-3 w-3" />{' '}
-                      {formatDateTime(detail.resolvedAt)}
-                    </p>
-                  )}
-                  {detail.resolutionReason && (
-                    <p className="text-xs text-gray-600 italic mt-1">
-                      &ldquo;{detail.resolutionReason}&rdquo;
-                    </p>
-                  )}
-                  {detail.status === 'resolving' && (
-                    <div className="text-xs text-amber-700 pt-1 space-y-0.5">
-                      <p>Cleanup attempts: {detail.resolutionAttemptCount}</p>
-                      {detail.resolutionNextAttemptAt && (
-                        <p>
-                          Next retry:{' '}
-                          {formatDateTime(detail.resolutionNextAttemptAt)}
-                        </p>
-                      )}
-                      {detail.resolutionLastErrorCode && (
-                        <p className="font-mono">
-                          Last safe error: {detail.resolutionLastErrorCode}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
+              Dismiss
+            </Button>
+            <Button
+              className="flex-1 gap-1.5"
+              variant="brand"
+              disabled={!canApprove || submitting != null}
+              onClick={handleApprove}
+              title={
+                !detail.roleAccountId
+                  ? 'Backend has not supplied the exact role-account ID; shared identity fallback is forbidden.'
+                  : !revokeRole
+                    ? 'Role unknown - cannot revoke.'
+                    : !detail.actionable
+                      ? 'This request has no valid immutable session target.'
+                      : !approvalReasonValid
+                        ? 'Enter at least 5 characters explaining the approval.'
+                        : undefined
+              }
+            >
+              {submitting === 'approve' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5" />
               )}
+              Approve & revoke{' '}
+              {revokeRole ? `${revokeRole} session` : 'session'}
+            </Button>
+          </div>
+        ) : undefined
+      }
+    >
+      <div className="space-y-5">
+        {loading && <PageSkeleton variant="form" />}
 
-              {/* Action form */}
-              {isPending && (
-                <div className="space-y-3 pt-2 border-t border-gray-100">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">
-                      Resolution note{' '}
-                      <span className="text-gray-400">
-                        (required for approval; audit-logged)
-                      </span>
-                    </Label>
-                    <Textarea
-                      placeholder="e.g. Verified caller via WhatsApp video; Ghana Card matches profile."
-                      rows={3}
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                      className="text-sm"
-                    />
-                  </div>
+        {!loading && loadError && (
+          <ErrorState title="Could not load this request" detail={loadError} />
+        )}
 
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      className="flex-1 gap-1.5"
-                      onClick={handleDismiss}
-                      disabled={submitting != null}
-                    >
-                      {submitting === 'dismiss' ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <XCircle className="h-3.5 w-3.5" />
-                      )}
-                      Dismiss
-                    </Button>
-                    <Button
-                      className="flex-1 gap-1.5 text-white"
-                      style={{
-                        backgroundColor: canApprove ? '#10B981' : '#9CA3AF'
-                      }}
-                      disabled={!canApprove || submitting != null}
-                      onClick={handleApprove}
-                      title={
-                        !detail.roleAccountId
-                          ? 'Backend has not supplied the exact role-account ID; shared identity fallback is forbidden.'
-                          : !revokeRole
-                            ? 'Role unknown - cannot revoke.'
-                            : !detail.actionable
-                              ? 'This request has no valid immutable session target.'
-                              : !approvalReasonValid
-                                ? 'Enter at least 5 characters explaining the approval.'
-                                : undefined
-                      }
-                    >
-                      {submitting === 'approve' ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                      )}
-                      Approve & revoke{' '}
-                      {revokeRole ? `${revokeRole} session` : 'session'}
-                    </Button>
-                  </div>
+        {!loading && detail && (
+          <>
+            {/* Two sessions side-by-side */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <SessionPanel
+                title="New device (requesting)"
+                rows={[
+                  ['Device ID', detail.requestingDeviceId ?? '-', true],
+                  ['IP', detail.requestingIp ?? '-', false],
+                  ['Raised', formatDateTime(detail.createdAt), false]
+                ]}
+              />
+              <SessionPanel
+                title="Logged-in device"
+                rows={[
+                  ['Role', detail.role ?? '-', false],
+                  ['Device ID', detail.currentSessionDeviceId ?? '-', true],
+                  [
+                    'Device info',
+                    detail.currentSessionDeviceInfo ?? '-',
+                    false
+                  ],
+                  [
+                    'Logged in',
+                    formatDateTime(detail.currentSessionLoggedInAt),
+                    false
+                  ]
+                ]}
+              />
+            </div>
 
-                  <p className="text-[10px] text-gray-400 leading-snug">
-                    Approval revokes only the old device&apos;s{' '}
-                    {revokeRole ?? 'logged-in'} role session.{' '}
-                    {'Sibling-role sessions remain active.'} The user must still
-                    complete OTP login on the new device.
+            {/* Identity panel */}
+            {detail.identity ? (
+              <IdentityPanel detail={detail} />
+            ) : (
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-amber-800 font-medium">
+                    No matching user record
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    This phone has no active user account. Approval is
+                    disabled - verify and dismiss instead.
                   </p>
                 </div>
-              )}
-            </>
-          )}
-        </div>
-      </SheetContent>
-    </Sheet>
+              </div>
+            )}
+
+            {/* Resolution display when already resolved */}
+            {!isPending && (
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                  Resolution
+                </p>
+                <p className="text-sm text-gray-700">
+                  {detail.resolvedAction === 'revoked'
+                    ? 'Old session revoked.'
+                    : detail.resolvedAction === 'dismissed'
+                      ? 'Dismissed without revoking.'
+                      : detail.status === 'resolving'
+                        ? 'Exact role secured; external session cleanup is retrying automatically.'
+                        : detail.status === 'expired'
+                          ? 'Expired.'
+                          : '-'}
+                </p>
+                {detail.resolvedAt && (
+                  <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                    <Clock className="h-3 w-3" />{' '}
+                    {formatDateTime(detail.resolvedAt)}
+                  </p>
+                )}
+                {detail.resolutionReason && (
+                  <p className="text-xs text-gray-600 italic mt-1">
+                    &ldquo;{detail.resolutionReason}&rdquo;
+                  </p>
+                )}
+                {detail.status === 'resolving' && (
+                  <div className="text-xs text-amber-700 pt-1 space-y-0.5">
+                    <p>Cleanup attempts: {detail.resolutionAttemptCount}</p>
+                    {detail.resolutionNextAttemptAt && (
+                      <p>
+                        Next retry:{' '}
+                        {formatDateTime(detail.resolutionNextAttemptAt)}
+                      </p>
+                    )}
+                    {detail.resolutionLastErrorCode && (
+                      <p className="font-mono">
+                        Last safe error: {detail.resolutionLastErrorCode}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Action form */}
+            {isPending && (
+              <div className="space-y-3 pt-2 border-t border-gray-100">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    Resolution note{' '}
+                    <span className="text-gray-400">
+                      (required for approval; audit-logged)
+                    </span>
+                  </Label>
+                  <Textarea
+                    placeholder="e.g. Verified caller via WhatsApp video; Ghana Card matches profile."
+                    rows={3}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+
+                <p className="text-[10px] text-gray-400 leading-snug">
+                  Approval revokes only the old device&apos;s{' '}
+                  {revokeRole ?? 'logged-in'} role session.{' '}
+                  {'Sibling-role sessions remain active.'} The user must still
+                  complete OTP login on the new device.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </DetailSheet>
   )
 }
 
