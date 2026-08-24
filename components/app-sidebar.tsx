@@ -218,7 +218,7 @@ export default function AppSidebar() {
     {
       label: 'Overview',
       items: [
-        { title: 'Dashboard',  href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
+        { title: 'Home',  href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
         {
           title: 'Operations', href: '/live-map', icon: Radio,
           children: [
