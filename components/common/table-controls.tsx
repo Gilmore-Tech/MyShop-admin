@@ -3,7 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 export { useDateRange } from '@/components/common/date-range-filter'
 export type { DateRangePreset } from '@/lib/date-range'
 
-/** Page-size dropdown ("10 / page", …). */
+/** Page-size dropdown ("10 / page", ...). */
 export function PageSizeSelect({
   value, onChange, options = [10, 15, 20, 25, 50],
 }: {

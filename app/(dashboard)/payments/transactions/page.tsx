@@ -28,6 +28,7 @@ import {
   isDateRangePreset,
   resolveInclusiveDateRange,
   type DateRangePreset,
+  dateBasisCaption,
 } from '@/lib/date-range'
 
 const txTypeColors: Record<string, string> = {
@@ -56,7 +57,7 @@ export default function TransactionsPage() {
   const searchParams = useSearchParams()
   const calendarNow = useGhanaCalendarNow()
 
-  // Filter state is the URL — useSearchParams is the source of truth so links
+  // Filter state is the URL - useSearchParams is the source of truth so links
   // are shareable. Spec §4.1: "Filters debounce 300ms, write to URL".
   const typeFilter = searchParams.get('type') ?? 'all'
   const statusFilter = searchParams.get('status') ?? 'all'
@@ -69,7 +70,7 @@ export default function TransactionsPage() {
   const { from, to } = resolveInclusiveDateRange(dateRange, customFrom, customTo, calendarNow)
 
   // Search has its own local state so typing doesn't cause an immediate URL
-  // write — debounced below.
+  // write - debounced below.
   const [searchInput, setSearchInput] = useState(urlSearch)
 
   const [transactions, setTransactions] = useState<AdminTransaction[]>([])
@@ -106,7 +107,7 @@ export default function TransactionsPage() {
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }, [router, pathname, searchParams])
 
-  // ── Debounced search → URL ─────────────────────────────────────────────────
+  // ── Debounced search -> URL ─────────────────────────────────────────────────
   useEffect(() => {
     if (searchInput === urlSearch) return
     const id = setTimeout(() => {
@@ -195,7 +196,7 @@ export default function TransactionsPage() {
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
           <Input
-            placeholder="Search payment ID, person, booking…"
+            placeholder="Search payment ID, person, booking..."
             className="pl-9"
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
@@ -234,7 +235,7 @@ export default function TransactionsPage() {
           onCustomFromChange={value => setParams({ range: 'custom', from: value || null })}
           onCustomToChange={value => setParams({ range: 'custom', to: value || null })}
         />
-        <span className="text-xs text-gray-500">By transaction record date · refunds use their resolution record · GMT</span>
+        <span className="text-xs text-gray-500">{dateBasisCaption('Transactions', 'recorded')} Refunds count by their resolution date.</span>
         <Button variant="outline" size="sm" onClick={() => fetchTransactions()} disabled={loading} className="gap-1.5">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh

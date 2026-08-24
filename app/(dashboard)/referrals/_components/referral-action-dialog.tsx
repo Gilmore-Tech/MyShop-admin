@@ -115,7 +115,7 @@ export function ReferralActionDialog({
               rows={3}
               maxLength={500}
               disabled={submitting}
-              placeholder="e.g. Awarded in error — referee account was a duplicate test profile."
+              placeholder="e.g. Awarded in error - referee account was a duplicate test profile."
               className="resize-none text-sm"
             />
             <div className="flex items-center justify-between">

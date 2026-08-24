@@ -8,7 +8,7 @@ export interface SegmentedOption<T extends string> {
 }
 
 /**
- * In-page data toggle (gray pill group). Switches what ONE page shows —
+ * In-page data toggle (gray pill group). Switches what ONE page shows -
  * for navigation between sibling pages use `PageTabs`. These two are the only
  * tab patterns in the app.
  */

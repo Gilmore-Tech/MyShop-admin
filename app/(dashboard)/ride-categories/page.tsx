@@ -33,7 +33,7 @@ function pesewasToGhs(pesewas: number): string {
   return (pesewas / 100).toFixed(2)
 }
 
-// Backend slug rule: lowercase kebab-case — /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+// Backend slug rule: lowercase kebab-case - /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 function slugify(name: string) {
@@ -108,7 +108,7 @@ function TierDialog({
     setForm(f => ({
       ...f,
       name: value,
-      // Auto-derive the slug only while creating — don't silently rewrite an
+      // Auto-derive the slug only while creating - don't silently rewrite an
       // existing tier's slug (mobile may hardcode it).
       ...(isEdit ? {} : { slug: slugify(value) }),
     }))

@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 
 /**
  * Page-level loading placeholders. The house rule is skeletons, never
- * spinners — `Loader2` is for the inside of a busy button only.
+ * spinners - `Loader2` is for the inside of a busy button only.
  */
 export function PageSkeleton({ variant = 'table', className }: {
   variant?: 'stats' | 'table' | 'cards' | 'chart' | 'form'

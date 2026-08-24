@@ -32,7 +32,7 @@ export function RewardConfigCard() {
   const [perPoint, setPerPoint] = useState<number>(DEFAULT_PER_POINT)
   const [loading, setLoading] = useState(true)
   // /config exists (the Configuration page uses it), so a failure here is a
-  // permission gap or a transient error — not a missing feature. We keep showing
+  // permission gap or a transient error - not a missing feature. We keep showing
   // the defaults and surface a muted note rather than blocking the card.
   const [liveUnavailable, setLiveUnavailable] = useState(false)
   const [unavailableHint, setUnavailableHint] = useState<string | null>(null)
@@ -113,7 +113,7 @@ export function RewardConfigCard() {
       <CardContent className="pt-5">
         {loading ? (
           <div className="flex items-center gap-2 text-gray-400 text-sm py-2">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading reward config…
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading reward config...
           </div>
         ) : editing ? (
           <div className="space-y-3">
@@ -134,8 +134,8 @@ export function RewardConfigCard() {
                 />
               </div>
               <p className="text-sm text-gray-600 pb-2">
-                = <span className="font-semibold text-gray-900">{draftValid ? formatGhs(draftNum) : '—'}</span>
-                {draftPoints != null && <span className="text-gray-400"> · {draftPoints.toLocaleString('en-GH')} pts</span>}
+                = <span className="font-semibold text-gray-900">{draftValid ? formatGhs(draftNum) : '-'}</span>
+                {draftPoints != null && <span className="text-gray-400"> - {draftPoints.toLocaleString('en-GH')} pts</span>}
               </p>
             </div>
             {saveError && <p className="text-xs text-red-500">{saveError}</p>}
@@ -169,13 +169,13 @@ export function RewardConfigCard() {
                 )}
               </div>
               <p className="text-xs text-gray-400 mt-0.5">
-                ≈ {points != null ? `${points.toLocaleString('en-GH')} loyalty points` : 'points rate unavailable'}
-                {' '}· {formatGhs(perPoint)}/pt
-                {savedFlash && <span className="text-emerald-600 font-medium"> · Saved</span>}
+                approx. {points != null ? `${points.toLocaleString('en-GH')} loyalty points` : 'points rate unavailable'}
+                {' '}- {formatGhs(perPoint)}/pt
+                {savedFlash && <span className="text-emerald-600 font-medium"> - Saved</span>}
               </p>
               {liveUnavailable && (
                 <p className="text-[11px] text-gray-400 mt-1">
-                  Showing default — live value unavailable{unavailableHint ? ` (${unavailableHint})` : ''}.{' '}
+                  Showing default - live value unavailable{unavailableHint ? ` (${unavailableHint})` : ''}.{' '}
                   <button onClick={load} className="text-orange-600 hover:underline">Retry</button>
                 </p>
               )}

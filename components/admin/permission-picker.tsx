@@ -12,7 +12,7 @@ interface PermissionPickerProps {
   disabledKeys?: Permission[]
   /**
    * Permissions to omit entirely from the picker (not grantable via UI). Used to
-   * keep `manage_admins` off-limits so root privilege can never be handed out —
+   * keep `manage_admins` off-limits so root privilege can never be handed out -
    * the single root admin is designated by the `is_super_admin` flag, not this
    * permission. See docs/backend-requests.md §8.
    */

@@ -34,7 +34,7 @@ export default function RidesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setPage(1), readUrl: true })
-  // Trip Outcomes deep-links here with ?status=…
+  // Booking outcomes deep-links here with ?status=...
   useLinkedParam('status', RIDE_STATUS_FILTERS, setStatusFilter)
   const requestSequence = useRef(0)
 
@@ -48,7 +48,7 @@ export default function RidesPage() {
       from,
       to,
       // When the list is narrowed to completed rides, a date range means "rides
-      // that finished in this window" — the same day Payments → Money Owed
+      // that finished in this window" - the same day Payments -> Money Owed
       // stamps the debt on. Filtering those by booking date instead drops every
       // ride booked before midnight and finished after it, which is what made
       // "N rides completed today" and "no debts today" look contradictory.
@@ -88,8 +88,8 @@ export default function RidesPage() {
       render: row => (
         <>
           <p className="font-mono text-sm font-semibold text-gray-900">{row.id.slice(-8).toUpperCase()}</p>
-          {/* A completed ride is dated by when it finished — that is the day it
-              settled, and the day any cash debt is stamped on Payments → Money
+          {/* A completed ride is dated by when it finished - that is the day it
+              settled, and the day any cash debt is stamped on Payments -> Money
               Owed. Showing the booking time here made the two pages look like
               they disagreed. */}
           <p className="text-xs text-gray-400 mt-0.5 whitespace-nowrap">
@@ -130,7 +130,7 @@ export default function RidesPage() {
               driver holds the fare and owes commission back, so a clawback
               should exist; MoMo/card commission is withheld from the payout
               and correctly produces none. A completed ride with no payment
-              row never settled — flag it rather than show "-". */}
+              row never settled - flag it rather than show "-". */}
           <p className="text-xs text-gray-400">
             {paymentMethodLabel(row.paymentMethod)}
             {' - '}

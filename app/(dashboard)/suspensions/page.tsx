@@ -27,7 +27,7 @@ import { ApiError } from '@/lib/api-client'
 
 // ── Cancellation policy editor ────────────────────────────────────────────────
 // Tunes the two platform_config keys the auto-suspension engine reads. Standardised
-// on `cancellation_suspension_count` (the runtime key) — see docs/backend-requests.md §5.
+// on `cancellation_suspension_count` (the runtime key) - see docs/backend-requests.md §5.
 const POLICY_KEYS = {
   count: 'cancellation_suspension_count',
   days:  'cancellation_rolling_period_days',

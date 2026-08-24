@@ -44,7 +44,7 @@ function ExactRoleCell({
   onOpen: () => void
 }) {
   return (
-    <button className="text-left group" onClick={onOpen} title="View exact-role funnel">
+    <button className="text-left group" onClick={onOpen} title="View referral funnel">
       <p className="text-sm font-medium text-gray-900 group-hover:text-primary">
         {person.fullName ?? 'Unknown'}
       </p>
@@ -94,7 +94,7 @@ export default function ReferralsPage() {
       setError(
         caught instanceof ApiError
           ? caught.message
-          : 'Could not load the exact-role referral ledger.',
+          : 'Could not load the referral history.',
       )
     } finally {
       setLoading(false)
@@ -174,7 +174,7 @@ export default function ReferralsPage() {
       <div>
         <PageHeader
           title="Referrals"
-          subtitle="Exact client, driver and artisan referral ownership, plus platform promo attribution"
+          subtitle="Referral history - who invited whom, scoped to the exact client, driver or artisan account, plus platform promo attribution"
         />
 
         <Tabs defaultValue="role-referrals">
@@ -201,7 +201,7 @@ export default function ReferralsPage() {
             <FilterBar
               onRefresh={() => void load()}
               refreshing={loading}
-              meta={`${total} exact-role referral${total === 1 ? '' : 's'}`}
+              meta={`${total} referral${total === 1 ? '' : 's'}`}
             >
               <FilterSearch
                 value={search}
@@ -233,7 +233,7 @@ export default function ReferralsPage() {
               loading={loading}
               error={error}
               onRetry={() => void load()}
-              empty={<EmptyState title="No exact-role referrals match this view." />}
+              empty={<EmptyState title="No referrals match this view." />}
               pagination={{ page, pageSize: limit, total, onPage: setPage }}
             />
 

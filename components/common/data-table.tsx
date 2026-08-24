@@ -41,7 +41,7 @@ const ALIGN = {
 /**
  * THE operational-list table (rides, users, transactions, queues): sticky
  * header, avatar cells, status pills, a kebab row menu, keyboard-operable
- * rows, and built-in loading / error / empty states — an error REPLACES the
+ * rows, and built-in loading / error / empty states - an error REPLACES the
  * body, never sits above an "empty" message. For aggregate reports with
  * totals footers and expandable rows use `ReportTable`.
  */

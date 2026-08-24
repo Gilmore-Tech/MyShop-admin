@@ -147,7 +147,7 @@ export function isDateRangePreset(value: string | null): value is DateRangePrese
  * its basis with `dateBasisCaption` so the nine historical phrasings converge
  * on one sentence shape.
  */
-export type DateBasisEvent = 'requested' | 'paid' | 'recorded' | 'resolved' | 'created' | 'completed' | 'last seen'
+export type DateBasisEvent = 'requested' | 'paid' | 'recorded' | 'resolved' | 'created' | 'completed' | 'settled' | 'last seen'
 
 /** "Bookings are counted by the date they were requested (GMT, Africa/Accra)." */
 export function dateBasisCaption(subjectPlural: string, event: DateBasisEvent): string {

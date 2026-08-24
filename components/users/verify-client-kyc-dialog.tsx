@@ -132,7 +132,7 @@ export function VerifyClientKycDialog({
               : 'bg-red-600 hover:bg-red-700 text-white'}
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            {loading ? 'Submitting…' : `Confirm ${action === 'approve' ? 'Approval' : 'Rejection'}`}
+            {loading ? 'Submitting...' : `Confirm ${action === 'approve' ? 'Approval' : 'Rejection'}`}
           </Button>
         </div>
       </DialogContent>

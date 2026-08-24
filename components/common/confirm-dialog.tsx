@@ -18,7 +18,7 @@ import { ErrorState } from '@/components/common/error-state'
  * - the cancel button is always "Cancel"
  * - destructive actions get a solid red confirm button
  * - actions that need an audit trail collect a reason (default minimum 5
- *   characters, trimmed — pass `minReason` only where the API demands more)
+ *   characters, trimmed - pass `minReason` only where the API demands more)
  */
 export function ConfirmDialog({
   open, onClose, title, description, confirmLabel, onConfirm,

@@ -244,8 +244,8 @@ export default function DashboardPage() {
 
   const rangeLabel = dateRangeLabel(preset)
 
-  // Actionable items — surfaced first so admins see what needs doing. The
-  // audit found the old "Pending KYC reviews" card mislabelled this count
+  // Actionable items - surfaced first so admins see what needs doing. The
+  // audit found the old card mislabelled this count (it is provider verifications)
   // (it is provider verifications); client ID checks get their own card.
   const totalProvidersForBar = (overview?.registeredDrivers ?? 0) + (overview?.registeredArtisans ?? 0)
   const verifiedProviders = Math.max(0, totalProvidersForBar - (overview?.pendingVerifications ?? 0))
@@ -345,7 +345,7 @@ export default function DashboardPage() {
         ))}
       </section>
 
-      {/* ── Live now — real-time workload, independent of the date filter ── */}
+      {/* ── Live now - real-time workload, independent of the date filter ── */}
       <section className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100">
           <div className="flex items-center gap-2">
@@ -395,10 +395,10 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ── Row 2: Trip outcomes + Growth Trends ─────────────────────────── */}
+      {/* ── Row 2: Booking outcomes + money chart ────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
-        {/* Trip outcomes for the range */}
+        {/* Booking outcomes for the range */}
         <div className="lg:col-span-2 bg-white rounded-xl shadow-sm overflow-hidden flex flex-col">
           <div className="flex items-center justify-between px-5 py-3.5">
             <div>
@@ -406,7 +406,7 @@ export default function DashboardPage() {
               <p className="text-xs text-gray-400">Bookings requested - {rangeLabel}</p>
             </div>
             {can('view_reports') && (
-              <Link href="/insights/trips" className="text-xs font-medium" style={{ color: '#F5A623' }}>By date</Link>
+              <Link href="/insights/trips" className="text-xs font-medium text-primary">By date</Link>
             )}
           </div>
           <div className="overflow-x-auto">
@@ -430,7 +430,7 @@ export default function DashboardPage() {
                 ) : !outcomes ? (
                   <tr>
                     <td colSpan={4} className="px-5 py-8 text-center text-sm text-gray-400">
-                      {outcomesUnavailable ? 'Trip outcomes report not yet available' : 'Trip outcomes could not be loaded'}
+                      {outcomesUnavailable ? 'Booking outcomes report not yet available' : 'Booking outcomes could not be loaded'}
                     </td>
                   </tr>
                 ) : (
@@ -456,15 +456,15 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Growth Trends */}
+        {/* Money received & commission earned */}
         <div className="lg:col-span-3 bg-white rounded-xl shadow-sm p-5">
           <div className="flex items-center justify-between mb-1">
             <div>
-              <h2 className="text-sm font-semibold text-gray-800">Growth Trends</h2>
-              <p className="text-xs text-gray-400">Collections, commission and payouts - {rangeLabel}</p>
+              <h2 className="text-sm font-semibold text-gray-800">Money received & commission earned</h2>
+              <p className="text-xs text-gray-400">Daily totals - {rangeLabel}</p>
             </div>
             {can('view_payments') && (
-              <Link href="/insights/revenue" className="text-xs font-medium" style={{ color: '#F5A623' }}>Revenue</Link>
+              <Link href="/insights/revenue" className="text-xs font-medium text-primary">Revenue</Link>
             )}
           </div>
           {growthData.length === 0 && !loadingKpis ? (

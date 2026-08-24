@@ -13,7 +13,7 @@ export interface FormatGhsOptions {
 
 export function formatGhs(pesewas: number | null | undefined, opts: FormatGhsOptions = {}): string {
   const { withPrefix = true, signed = false } = opts
-  if (pesewas == null || Number.isNaN(pesewas)) return withPrefix ? 'GHS —' : '—'
+  if (pesewas == null || Number.isNaN(pesewas)) return withPrefix ? 'GHS -' : '-'
   const value = pesewas / 100
   const formatted = value.toLocaleString('en-GH', {
     minimumFractionDigits: 2,
@@ -29,7 +29,7 @@ export function formatGhs(pesewas: number | null | undefined, opts: FormatGhsOpt
 /**
  * Bridge for the one legacy endpoint (`/admin/reports/revenue`) that returns
  * GHS floats: convert to integer pesewas so every screen formats through
- * `formatGhs`. Null/NaN pass through as null so callers render "GHS —".
+ * `formatGhs`. Null/NaN pass through as null so callers render "GHS -".
  */
 export function ghsToPesewas(ghs: number | null | undefined): number | null {
   if (ghs == null || Number.isNaN(ghs)) return null

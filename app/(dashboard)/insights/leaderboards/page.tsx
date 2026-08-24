@@ -170,7 +170,7 @@ export default function LeaderboardsPage() {
   const [unavailable, setUnavailable] = useState(false)
   const [profile, setProfile] = useState<PlatformUser | null>(null)
   const [services, setServices] = useState<JobCategoryCount[] | null>(null)
-  // Lifetime provider report — the source of the flags (current state, not
+  // Lifetime provider report - the source of the flags (current state, not
   // date-scoped): verification status, flagged extra-charge share, 30-day cancels.
   const [flags, setFlags] = useState<ProviderReport | null>(null)
   const requestSequence = useRef(0)

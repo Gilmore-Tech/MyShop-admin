@@ -190,7 +190,7 @@ export default function HighBidReviewPage() {
                         </div>
                       </div>
 
-                      {/* Bid amount — prominent */}
+                      {/* Bid amount - prominent */}
                       <div className="text-right shrink-0">
                         <p className="text-2xl font-bold text-gray-900">{formatGhs(bid.amountPesewas)}</p>
                         <p className="text-xs text-red-500 font-medium mt-0.5">

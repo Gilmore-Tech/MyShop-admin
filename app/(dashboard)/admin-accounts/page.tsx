@@ -200,7 +200,7 @@ export default function AdminAccountsPage() {
  a.email.toLowerCase().includes(search.toLowerCase())
  )
 
- // permissions is null on first SSR render — wait until hydration resolves
+ // permissions is null on first SSR render - wait until hydration resolves
  // before deciding access, otherwise the root admin briefly sees AccessDenied.
  if (permissions === null) return null
  if (!isSuperAdmin) return <AccessDenied />
