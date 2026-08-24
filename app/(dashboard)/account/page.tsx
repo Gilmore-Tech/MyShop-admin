@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { PageHeader } from '@/components/common/page-header'
 import { changeOwnPassword } from '@/lib/api'
 import { ApiError, getAdminUser, type AdminUser } from '@/lib/api-client'
 
@@ -66,7 +67,9 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center py-8">
+    <div>
+      <PageHeader title="Your account" subtitle="Your admin profile and the one place to change your password" />
+      <div className="flex justify-center py-2">
       <div className="w-full max-w-md">
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
           {/* Header band */}
@@ -89,7 +92,7 @@ export default function AccountPage() {
                 <KeyRound className="h-4 w-4 text-primary" />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-text-primary leading-tight">Change Password</h2>
+                <h2 className="text-sm font-semibold text-text-primary leading-tight">Change password</h2>
                 <p className="text-xs text-text-secondary leading-tight">Update your account password</p>
               </div>
             </div>
@@ -173,16 +176,17 @@ export default function AccountPage() {
               )}
 
               <Button
+                variant="brand"
                 disabled={!canSubmit}
                 onClick={handleSubmit}
-                className="w-full text-white"
-                style={{ backgroundColor: '#F5A623' }}
+                className="w-full"
               >
-                {submitting ? 'Saving…' : 'Change Password'}
+                {submitting ? 'Saving...' : 'Change password'}
               </Button>
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   )
