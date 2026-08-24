@@ -1,38 +1,27 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useCallback, use } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import { StatusBadge } from '@/components/common/status-badge'
+import { PageSkeleton } from '@/components/common/load-state'
+import { ErrorState } from '@/components/common/error-state'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, Loader2, User, Wrench, Tag, MapPin, Clock,
   Calendar, AlertTriangle, CheckCircle, Hammer, ShieldAlert, ImageIcon, X, RefreshCw, CreditCard,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
 import {
   getJobDetail, lockJob, assignJob, forceCompleteJob, unexpireBid, cancelJob,
   type JobDetail, type JobBid,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { formatGhs } from '@/lib/money'
+import { formatDateTime } from '@/lib/format-date'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtGhs(pesewas: number | null | undefined) {
-  if (pesewas == null) return '-'
-  return 'GHS ' + (pesewas / 100).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function fmtDate(iso: string | null | undefined) {
-  if (!iso) return '-'
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-}
 
 function fmtDateShort(iso: string | null | undefined) {
   if (!iso) return null
@@ -111,7 +100,7 @@ function BidCard({ bid, isAssigned, onAssign, assigning, onUnexpire, unexpiring 
           <p className="text-xs text-gray-500">{bid.artisanPhone ?? '-'}</p>
         </div>
         <div className="text-right shrink-0">
-          <p className={`text-sm font-bold ${isExpired ? 'text-gray-400' : 'text-gray-900'}`}>{fmtGhs(bid.amountPesewas)}</p>
+          <p className={`text-sm font-bold ${isExpired ? 'text-gray-400' : 'text-gray-900'}`}>{formatGhs(bid.amountPesewas)}</p>
           <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${statusColors[bid.status] ?? 'bg-gray-100 text-gray-500'}`}>
             {bid.status}
           </span>
@@ -205,105 +194,10 @@ function PhotoGallery({ photos }: { photos: string[] }) {
   )
 }
 
-// ── Force-Complete Dialog ─────────────────────────────────────────────────────
-
-function ForceCompleteDialog({ open, onClose, onConfirm, loading }: {
-  open: boolean
-  onClose: () => void
-  onConfirm: (reason: string) => void
-  loading: boolean
-}) {
-  const [reason, setReason] = useState('')
-  return (
-    <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-orange-600">
-            <ShieldAlert className="h-5 w-5" /> Force Complete Job
-          </DialogTitle>
-          <DialogDescription>
-            This releases payment to the artisan and marks the job complete. Provide a clear reason for the audit log (minimum 5 characters).
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-2 py-1">
-          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</Label>
-          <Textarea
-            placeholder="e.g. Artisan provided photo evidence; client unresponsive for 48+ hours"
-            value={reason}
-            onChange={e => setReason(e.target.value)}
-            rows={3}
-          />
-          <p className="text-[11px] text-gray-400">{reason.length} / min 5 characters</p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button
-            onClick={() => onConfirm(reason)}
-            disabled={loading || reason.trim().length < 5}
-            className="bg-orange-500 hover:bg-orange-600 text-white gap-2"
-          >
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Confirm Force Complete
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ── Cancel Job Dialog ─────────────────────────────────────────────────────────
-
-function CancelJobDialog({ open, onClose, onConfirm, loading }: {
-  open: boolean
-  onClose: () => void
-  onConfirm: (reason: string) => void
-  loading: boolean
-}) {
-  const [reason, setReason] = useState('')
-  return (
-    <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-red-600">
-            <AlertTriangle className="h-5 w-5" /> Cancel Job
-          </DialogTitle>
-          <DialogDescription>
-            This will cancel the job and notify both the client and artisan. Provide a clear reason for the audit log (minimum 10 characters).
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-2 py-1">
-          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</Label>
-          <Textarea
-            placeholder="e.g. Client requested cancellation; no artisan available in region"
-            value={reason}
-            onChange={e => setReason(e.target.value)}
-            rows={3}
-          />
-          <p className={`text-[11px] ${reason.trim().length >= 10 ? 'text-emerald-600' : 'text-gray-400'}`}>
-            {reason.trim().length} / 10 characters minimum
-          </p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Back</Button>
-          <Button
-            onClick={() => onConfirm(reason.trim())}
-            disabled={loading || reason.trim().length < 10}
-            className="bg-red-500 hover:bg-red-600 text-white gap-2"
-          >
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Confirm Cancel
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: jobId } = use(params)
-  const router = useRouter()
 
   const [job, setJob] = useState<JobDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -317,13 +211,16 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelling, setCancelling] = useState(false)
 
-  useEffect(() => {
+  const loadJob = useCallback(() => {
     setLoading(true)
+    setError(null)
     getJobDetail(jobId)
       .then(setJob)
       .catch(e => setError(e instanceof ApiError ? e.message : 'Failed to load job.'))
       .finally(() => setLoading(false))
   }, [jobId])
+
+  useEffect(() => { loadJob() }, [loadJob])
 
   async function handleAssignBid(bid: JobBid) {
     if (!job) return
@@ -404,21 +301,16 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           <div className="mb-4">
             <Link href="/artisan-jobs">
               <Button variant="outline" size="sm" className="gap-1.5">
-                <ArrowLeft className="h-4 w-4" /> Back to Jobs
+                <ArrowLeft className="h-4 w-4" /> Back to jobs
               </Button>
             </Link>
           </div>
         )}
 
-        {loading && (
-          <div className="flex items-center justify-center py-20 gap-3 text-gray-400">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading job…</span>
-          </div>
-        )}
+        {loading && <PageSkeleton variant="cards" />}
 
         {!loading && error && (
-          <div className="bg-white rounded-xl shadow-sm p-10 text-center text-red-500 text-sm">{error}</div>
+          <ErrorState title="Could not load this job" detail={error} onRetry={loadJob} />
         )}
 
         {!loading && job && (
@@ -435,18 +327,18 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                 <div className="flex items-center gap-2">
                   {canForceComplete && (
                     <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white gap-1.5" onClick={() => setForceCompleteOpen(true)}>
-                      <ShieldAlert className="h-3.5 w-3.5" /> Force Complete
+                      <ShieldAlert className="h-3.5 w-3.5" /> Force-complete
                     </Button>
                   )}
                   {canCancel && (
                     <Button size="sm" variant="outline" className="border-red-300 text-red-600 hover:bg-red-50 gap-1.5" onClick={() => setCancelOpen(true)}>
-                      <X className="h-3.5 w-3.5" /> Cancel Job
+                      <X className="h-3.5 w-3.5" /> Cancel job
                     </Button>
                   )}
                   {canAssign && (
                     <Link href="/artisan-jobs/manual-assignment">
                       <Button size="sm" variant="outline" className="gap-1.5">
-                        <Hammer className="h-3.5 w-3.5" /> Manual Assignment
+                        <Hammer className="h-3.5 w-3.5" /> Manual assignment
                       </Button>
                     </Link>
                   )}
@@ -471,13 +363,13 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                     )}
                   </div>
                   <p className="text-sm text-gray-400 mt-1">
-                    {job.category?.name ?? 'Uncategorised'} - Created {fmtDate(job.createdAt)}
+                    {job.category?.name ?? 'Uncategorised'} - Created {formatDateTime(job.createdAt)}
                   </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t border-gray-100">
-                <Stat label="Agreed Price" value={fmtGhs(job.agreedPricePesewas)} />
+                <Stat label="Agreed Price" value={formatGhs(job.agreedPricePesewas)} />
                 <Stat label="Payment" value={paymentMethodLabel(job.paymentMethod) ?? (job.paymentStatus ? cap(job.paymentStatus) : '-')} />
                 <Stat label="Bids" value={String(job.bids.length)} />
                 <Stat label="Idle" value={isStale ? `${job.hoursInactive}h` : '-'} accent={isStale ? 'text-red-600' : undefined} />
@@ -492,7 +384,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
-              {/* Left column — job info + timeline */}
+              {/* Left column - job info + timeline */}
               <div className="lg:col-span-2 space-y-4">
 
                 {/* Job overview */}
@@ -516,18 +408,18 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                       </div>
                       <div>
                         <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Agreed Price</p>
-                        <p className="text-sm font-bold text-gray-900">{fmtGhs(job.agreedPricePesewas)}</p>
+                        <p className="text-sm font-bold text-gray-900">{formatGhs(job.agreedPricePesewas)}</p>
                         {job.originalBidPesewas && job.originalBidPesewas !== job.agreedPricePesewas && (
-                          <p className="text-[11px] text-gray-400">Original bid: {fmtGhs(job.originalBidPesewas)}</p>
+                          <p className="text-[11px] text-gray-400">Original bid: {formatGhs(job.originalBidPesewas)}</p>
                         )}
                       </div>
                       <div>
                         <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Min Bid (category)</p>
-                        <p className="text-sm text-gray-600">{fmtGhs(job.category.minBidPesewas)}</p>
+                        <p className="text-sm text-gray-600">{formatGhs(job.category.minBidPesewas)}</p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">High-Bid Flag</p>
-                        <p className="text-sm text-gray-600">{fmtGhs(job.category.highBidFlagPesewas)}</p>
+                        <p className="text-sm text-gray-600">{formatGhs(job.category.highBidFlagPesewas)}</p>
                       </div>
                     </div>
                     {job.addressText && (
@@ -539,7 +431,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                     {job.scheduledFor && (
                       <div className="flex items-center gap-2">
                         <Calendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                        <p className="text-sm text-gray-700">Scheduled: {fmtDate(job.scheduledFor)}</p>
+                        <p className="text-sm text-gray-700">Scheduled: {formatDateTime(job.scheduledFor)}</p>
                       </div>
                     )}
                   </CardContent>
@@ -571,7 +463,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                     <CardContent className="space-y-2">
                       <div className="flex items-center justify-between">
                         <p className="text-sm text-gray-700">Additional amount</p>
-                        <p className="text-sm font-bold text-amber-600">{fmtGhs(job.supplementRequest.additionalAmountPesewas)}</p>
+                        <p className="text-sm font-bold text-amber-600">{formatGhs(job.supplementRequest.additionalAmountPesewas)}</p>
                       </div>
                       <p className="text-xs text-gray-600 italic">&ldquo;{job.supplementRequest.reason}&rdquo;</p>
                       <div className="flex items-center justify-between text-xs text-gray-400">
@@ -600,12 +492,12 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-gray-500">Amount paid</span>
-                      <span className="text-gray-800 font-medium">{job.amountPaidPesewas != null ? fmtGhs(job.amountPaidPesewas) : '-'}</span>
+                      <span className="text-gray-800 font-medium">{job.amountPaidPesewas != null ? formatGhs(job.amountPaidPesewas) : '-'}</span>
                     </div>
                     {job.paidAt && (
                       <div className="flex items-center justify-between">
                         <span className="text-gray-500">Paid</span>
-                        <span className="text-gray-700">{fmtDate(job.paidAt)}</span>
+                        <span className="text-gray-700">{formatDateTime(job.paidAt)}</span>
                       </div>
                     )}
                   </CardContent>
@@ -639,7 +531,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
               </div>
 
-              {/* Right column — parties + bids */}
+              {/* Right column - parties + bids */}
               <div className="space-y-4">
 
                 {/* Client */}
@@ -717,17 +609,32 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           </div>
         )}
 
-        <ForceCompleteDialog
+        <ConfirmDialog
           open={forceCompleteOpen}
           onClose={() => setForceCompleteOpen(false)}
+          title="Force-complete this job?"
+          description="This releases payment to the artisan and marks the job complete."
+          confirmLabel="Force-complete job"
           onConfirm={handleForceComplete}
           loading={forcingComplete}
+          error={actionError}
+          requireReason
+          minReason={5}
+          reasonPlaceholder="e.g. Artisan provided photo evidence; client unresponsive for 48+ hours"
         />
-        <CancelJobDialog
+        <ConfirmDialog
           open={cancelOpen}
           onClose={() => setCancelOpen(false)}
+          title="Cancel this job?"
+          description="This cancels the job and notifies both the client and artisan."
+          confirmLabel="Cancel job"
           onConfirm={handleCancelJob}
+          destructive
           loading={cancelling}
+          error={actionError}
+          requireReason
+          minReason={10}
+          reasonPlaceholder="e.g. Client requested cancellation; no artisan available in region"
         />
       </div>
     </PageGuard>

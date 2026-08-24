@@ -203,7 +203,7 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
       if (user.role !== providerType) throw new Error('The selected role account does not match this editor.')
       const url = await uploadProviderPhoto(providerType, user.roleAccountId, file)
       setPhotoUrl(url)
-      // Upload is an exact-role, audited server-side assignment. Refresh the
+      // Upload is a per-role, audited server-side assignment. Refresh the
       // parent sheet immediately; the URL is never echoed into profile PATCH.
       const refreshed = await getUser(user.role, user.roleAccountId)
       onSaved(refreshed)
@@ -215,7 +215,7 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
     }
   }
 
-  // Build the PATCH body from only the fields that actually changed — keeps the
+  // Build the PATCH body from only the fields that actually changed - keeps the
   // request minimal (no accidental overwrites) and avoids NO_UPDATE_FIELDS.
   const changedKeys = useMemo(() => {
     return fields.filter(f => (form[f.key] ?? '') !== (initial[f.key] ?? '')).map(f => f.key)
@@ -323,7 +323,7 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
                           onClick={() => fileInputRef.current?.click()}
                         >
                           {uploadingPhoto ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
-                          {uploadingPhoto ? 'Uploading…' : photo ? 'Replace' : 'Upload'}
+                          {uploadingPhoto ? 'Uploading...' : photo ? 'Replace' : 'Upload'}
                         </Button>
                       </>
                     ) : (
@@ -390,11 +390,11 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
           </div>
 
           <div className="mt-4">
-            <Label className="text-xs text-gray-500">Reason <span className="text-gray-400">(optional — recorded in the audit log)</span></Label>
+            <Label className="text-xs text-gray-500">Reason <span className="text-gray-400">(optional - recorded in the audit log)</span></Label>
             <textarea
               className="mt-1 w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-16 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200"
               maxLength={1000}
-              placeholder="e.g. Corrected vehicle plate after document review…"
+              placeholder="e.g. Corrected vehicle plate after document review..."
               value={reason}
               onChange={e => setReason(e.target.value)}
             />
@@ -411,7 +411,7 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
             className="bg-orange-500 hover:bg-orange-600 text-white"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            {loading ? 'Saving…' : 'Save changes'}
+            {loading ? 'Saving...' : 'Save changes'}
           </Button>
         </DialogFooter>
       </DialogContent>

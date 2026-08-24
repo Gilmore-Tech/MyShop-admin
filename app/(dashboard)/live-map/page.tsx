@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { PageGuard } from '@/components/common/page-guard'
+import { StatCard } from '@/components/common/stat-card'
 import { APIProvider, Map, AdvancedMarker, AdvancedMarkerAnchorPoint, ColorScheme } from '@vis.gl/react-google-maps'
 import {
   Car, Wrench, Search, X, RefreshCw, Activity, MapPin,
@@ -154,14 +155,14 @@ function RidesTable() {
           </SelectTrigger>
           <SelectContent>
             {RIDE_STATUSES.map(s => (
-              <SelectItem key={s} value={s}>{s === 'all' ? 'All Statuses' : s.replace(/_/g, ' ')}</SelectItem>
+              <SelectItem key={s} value={s}>{s === 'all' ? 'All statuses' : s.replace(/_/g, ' ')}</SelectItem>
             ))}
           </SelectContent>
         </Select>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
           <Input
-            placeholder="Search client or driver…"
+            placeholder="Search client or driver..."
             className="pl-8 h-8 text-sm w-52 bg-gray-50"
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
@@ -201,7 +202,7 @@ function RidesTable() {
             )}
             {!loading && rides.map(r => (
               <tr key={r.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-4 py-3 font-mono text-xs text-gray-500">{r.id.slice(0, 8)}…</td>
+                <td className="px-4 py-3 font-mono text-xs text-gray-500">{r.id.slice(0, 8)}...</td>
                 <td className="px-4 py-3 text-gray-800 font-medium">{r.clientName ?? '-'}</td>
                 <td className="px-4 py-3 text-gray-600">{r.driverName ?? '-'}</td>
                 <td className="px-4 py-3 text-gray-500 text-xs max-w-[200px]">
@@ -265,14 +266,14 @@ function JobsTable() {
           </SelectTrigger>
           <SelectContent>
             {JOB_STATUSES.map(s => (
-              <SelectItem key={s} value={s}>{s === 'all' ? 'All Statuses' : s.replace(/_/g, ' ')}</SelectItem>
+              <SelectItem key={s} value={s}>{s === 'all' ? 'All statuses' : s.replace(/_/g, ' ')}</SelectItem>
             ))}
           </SelectContent>
         </Select>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
           <Input
-            placeholder="Search client or artisan…"
+            placeholder="Search client or artisan..."
             className="pl-8 h-8 text-sm w-52 bg-gray-50"
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
@@ -292,7 +293,7 @@ function JobsTable() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              {['Job ID', 'Client', 'Artisan', 'Category', 'Status', 'Agreed Price', 'Supplement', 'Payment', 'Created'].map(h => (
+              {['Job ID', 'Client', 'Artisan', 'Category', 'Status', 'Agreed price', 'Extra charges', 'Payment', 'Created'].map(h => (
                 <th key={h} className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -312,7 +313,7 @@ function JobsTable() {
             )}
             {!loading && jobs.map(j => (
               <tr key={j.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-4 py-3 font-mono text-xs text-gray-500">{j.id.slice(0, 8)}…</td>
+                <td className="px-4 py-3 font-mono text-xs text-gray-500">{j.id.slice(0, 8)}...</td>
                 <td className="px-4 py-3 text-gray-800 font-medium">{j.clientName ?? '-'}</td>
                 <td className="px-4 py-3 text-gray-600">{j.artisanName ?? '-'}</td>
                 <td className="px-4 py-3 text-gray-500">{j.categoryName ?? '-'}</td>
@@ -392,12 +393,12 @@ export default function LiveMapPage() {
     })
   }, [])
 
-  // Fallback poll (no-op while auto-refresh is globally disabled — see
+  // Fallback poll (no-op while auto-refresh is globally disabled - see
   // AUTO_REFRESH_DISABLED). Live updates come from the WebSocket below.
   useAutoRefresh(loadMarkers, 30_000)
 
   useEffect(() => {
-    // WebSocket — subscribe to real-time marker updates
+    // WebSocket - subscribe to real-time marker updates
     const token = typeof window !== 'undefined' ? localStorage.getItem('myshop_admin_token') : null
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'https://myshop-api-2hy2.onrender.com'
     const socket: Socket = io(wsUrl, {
@@ -441,7 +442,7 @@ export default function LiveMapPage() {
 
   return (
     <PageGuard permission="view_live_map">
-      {/* Outer wrapper — scrollable so the table can live below the map */}
+      {/* Outer wrapper - scrollable so the table can live below the map */}
       <div className="-m-6 flex flex-col min-h-[calc(100vh-4rem)]">
 
         {/* ── Map section (fixed height) ──────────────────────────────────── */}
@@ -451,26 +452,14 @@ export default function LiveMapPage() {
           <div className="shrink-0 bg-white shadow-sm z-10">
             <div className="flex items-center justify-between px-5 pt-4 pb-3">
               <div>
-                <h1 className="text-xl font-bold text-gray-900 leading-tight">Live Operations Map</h1>
-                <p className="text-sm text-gray-400 mt-0.5">Real-time tracking</p>
+                <h1 className="text-xl font-bold text-gray-900 leading-tight">Live map</h1>
+                <p className="text-sm text-gray-400 mt-0.5">Where online providers and active bookings are right now</p>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-                    <Car className="h-3.5 w-3.5 text-gray-600" />
-                    <span className="text-sm font-semibold text-gray-700">{rideCount}</span>
-                    <span className="text-xs text-gray-400">rides</span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-                    <Wrench className="h-3.5 w-3.5 text-gray-600" />
-                    <span className="text-sm font-semibold text-gray-700">{jobCount}</span>
-                    <span className="text-xs text-gray-400">jobs</span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5">
-                    <Activity className="h-3.5 w-3.5 text-gray-400" />
-                    <span className="text-sm font-semibold text-gray-700">{markers.length}</span>
-                    <span className="text-xs text-gray-400">total</span>
-                  </div>
+                  <StatCard compact icon={Car} label="Rides" value={rideCount} />
+                  <StatCard compact icon={Wrench} label="Jobs" value={jobCount} />
+                  <StatCard compact icon={Activity} label="Total" value={markers.length} />
                 </div>
                 <div className="flex items-center gap-1.5 text-xs font-medium rounded-lg px-2.5 py-1.5 text-gray-600 bg-gray-100">
                   <span className={`w-1.5 h-1.5 rounded-full inline-block bg-gray-400 ${wsConnected ? 'animate-pulse' : ''}`} />
@@ -489,9 +478,9 @@ export default function LiveMapPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="both">Rides + Artisan Jobs</SelectItem>
-                  <SelectItem value="ride">Rides Only</SelectItem>
-                  <SelectItem value="job">Artisan Jobs Only</SelectItem>
+                  <SelectItem value="both">Rides + artisan jobs</SelectItem>
+                  <SelectItem value="ride">Rides only</SelectItem>
+                  <SelectItem value="job">Artisan jobs only</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -500,9 +489,9 @@ export default function LiveMapPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Active</SelectItem>
-                  <SelectItem value="en_route">En Route</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="all">All active</SelectItem>
+                  <SelectItem value="en_route">En route</SelectItem>
+                  <SelectItem value="in_progress">In progress</SelectItem>
                   <SelectItem value="arrived">Arrived</SelectItem>
                 </SelectContent>
               </Select>
@@ -510,7 +499,7 @@ export default function LiveMapPage() {
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                 <Input
-                  placeholder="Search provider or booking ID…"
+                  placeholder="Search provider or booking ID..."
                   className="pl-8 h-8 text-sm w-56 bg-gray-50"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
@@ -593,7 +582,7 @@ export default function LiveMapPage() {
                 <div className="px-5 py-4 flex items-start justify-between">
                   <div>
                     <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-0.5">Booking ID</p>
-                    <p className="font-semibold text-sm text-gray-900 font-mono">{selected.bookingId.slice(0, 12)}…</p>
+                    <p className="font-semibold text-sm text-gray-900 font-mono">{selected.bookingId.slice(0, 12)}...</p>
                   </div>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-gray-600" onClick={() => setSelected(null)}>
                     <X className="h-4 w-4" />
@@ -696,9 +685,9 @@ export default function LiveMapPage() {
                   )}
 
                   {!selected.detail && (
-                    <div className="flex items-center gap-2.5 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2.5">
-                      <span className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 border-t-gray-500 animate-spin shrink-0" />
-                      Loading booking details…
+                    <div className="space-y-1.5 bg-gray-50 rounded-lg px-3 py-2.5">
+                      <div className="h-3 w-24 bg-gray-200 rounded animate-pulse" />
+                      <div className="h-3 w-40 bg-gray-200 rounded animate-pulse" />
                     </div>
                   )}
                 </div>
@@ -715,7 +704,7 @@ export default function LiveMapPage() {
             onClick={() => setTableOpen(v => !v)}
           >
             <div className="flex items-center gap-3">
-              <h2 className="text-base font-bold text-gray-900">All Bookings</h2>
+              <h2 className="text-base font-bold text-gray-900">All bookings</h2>
               <span className="text-xs text-gray-400 font-normal">All rides &amp; artisan jobs - every status</span>
             </div>
             {tableOpen ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
@@ -738,7 +727,7 @@ export default function LiveMapPage() {
                     {tab === 'rides' ? (
                       <span className="flex items-center gap-1.5"><Car className="h-3.5 w-3.5" /> Rides</span>
                     ) : (
-                      <span className="flex items-center gap-1.5"><Wrench className="h-3.5 w-3.5" /> Artisan Jobs</span>
+                      <span className="flex items-center gap-1.5"><Wrench className="h-3.5 w-3.5" /> Artisan jobs</span>
                     )}
                   </button>
                 ))}

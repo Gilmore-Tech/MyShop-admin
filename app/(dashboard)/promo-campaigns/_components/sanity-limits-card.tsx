@@ -1,10 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Loader2, Pencil, ShieldCheck, X } from 'lucide-react'
+import { Loader2, Pencil, ShieldCheck, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ErrorState } from '@/components/common/error-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PageSkeleton } from '@/components/common/load-state'
+import { StatCard } from '@/components/common/stat-card'
 import { useRole } from '@/hooks/use-role'
 import { updatePromoCampaignSanityLimits, type PromoCampaignSanityLimits } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
@@ -104,9 +107,7 @@ export function SanityLimitsCard({
       </div>
 
       {loading && !limits ? (
-        <div className="mt-3 flex items-center gap-2 text-gray-400">
-          <Loader2 className="h-4 w-4 animate-spin" /> <span className="text-sm">Loading limits…</span>
-        </div>
+        <PageSkeleton variant="stats" className="mt-3" />
       ) : !limits ? (
         <p className="mt-3 text-sm text-gray-400">Sanity limits are unavailable right now.</p>
       ) : editing ? (
@@ -129,14 +130,9 @@ export function SanityLimitsCard({
               <Input type="number" min={1} max={100} step={1} value={reliefPercent} onChange={e => setReliefPercent(e.target.value)} disabled={saving} />
             </div>
           </div>
-          {error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
-              <p className="text-xs text-red-700">{error}</p>
-            </div>
-          )}
+          {error && <ErrorState compact title="Could not save" detail={error} />}
           <div className="flex justify-end">
-            <Button size="sm" disabled={saving} onClick={() => void save()} className="gap-2 text-white" style={{ backgroundColor: '#F5A623' }}>
+            <Button size="sm" variant="brand" disabled={saving} onClick={() => void save()} className="gap-2">
               {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               Save limits
             </Button>
@@ -144,21 +140,12 @@ export function SanityLimitsCard({
         </div>
       ) : (
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <LimitStat label="Max discount" value={`${limits.promoMaxDiscountPercent}%`} />
-          <LimitStat label="Max fixed discount" value={formatGhs(limits.promoMaxFixedDiscountPesewas)} />
-          <LimitStat label="Max duration" value={`${limits.promoMaxDurationDays} days`} />
-          <LimitStat label="Max commission relief" value={`${limits.promoMaxCommissionReliefPercent}%`} />
+          <StatCard compact label="Max discount" value={`${limits.promoMaxDiscountPercent}%`} />
+          <StatCard compact label="Max fixed discount" value={formatGhs(limits.promoMaxFixedDiscountPesewas)} />
+          <StatCard compact label="Max duration" value={`${limits.promoMaxDurationDays} days`} />
+          <StatCard compact label="Max commission relief" value={`${limits.promoMaxCommissionReliefPercent}%`} />
         </div>
       )}
-    </div>
-  )
-}
-
-function LimitStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
-      <p className="text-[10px] uppercase tracking-wide text-gray-400">{label}</p>
-      <p className="mt-0.5 text-sm font-semibold tabular-nums text-gray-800">{value}</p>
     </div>
   )
 }

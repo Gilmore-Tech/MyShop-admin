@@ -15,11 +15,12 @@ import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PageSizeSelect } from '@/components/common/table-controls'
 import { DateRangeFilter } from '@/components/common/date-range-filter'
-import { listTransactions, type AdminTransaction } from '@/lib/api'
+import { getOverviewReport, listTransactions, type AdminTransaction, type OverviewReport } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatTransactionAmount } from '@/lib/money'
 import { paymentMethodLabel, paymentStatusLabel, transactionTypeLabel } from '@/lib/payment-labels'
 import { formatDateTime } from '@/lib/format-date'
+import { PAYMENT_SUCCESS_TARGET_PCT } from '@/lib/targets'
 import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
 import { useGhanaCalendarNow } from '@/hooks/use-ghana-calendar-now'
 import {
@@ -27,6 +28,7 @@ import {
   isDateRangePreset,
   resolveInclusiveDateRange,
   type DateRangePreset,
+  dateBasisCaption,
 } from '@/lib/date-range'
 
 const txTypeColors: Record<string, string> = {
@@ -55,7 +57,7 @@ export default function TransactionsPage() {
   const searchParams = useSearchParams()
   const calendarNow = useGhanaCalendarNow()
 
-  // Filter state is the URL — useSearchParams is the source of truth so links
+  // Filter state is the URL - useSearchParams is the source of truth so links
   // are shareable. Spec §4.1: "Filters debounce 300ms, write to URL".
   const typeFilter = searchParams.get('type') ?? 'all'
   const statusFilter = searchParams.get('status') ?? 'all'
@@ -68,7 +70,7 @@ export default function TransactionsPage() {
   const { from, to } = resolveInclusiveDateRange(dateRange, customFrom, customTo, calendarNow)
 
   // Search has its own local state so typing doesn't cause an immediate URL
-  // write — debounced below.
+  // write - debounced below.
   const [searchInput, setSearchInput] = useState(urlSearch)
 
   const [transactions, setTransactions] = useState<AdminTransaction[]>([])
@@ -78,7 +80,18 @@ export default function TransactionsPage() {
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<AdminTransaction | null>(null)
   const [limit, setLimit] = useState(15)
+  const [overview, setOverview] = useState<OverviewReport | null>(null)
   const requestSequence = useRef(0)
+
+  // The ONE payment-success source (overview report), scoped to the same
+  // dates as the list; target from lib/targets so every page quotes 98%.
+  useEffect(() => {
+    let cancelled = false
+    getOverviewReport({ from, to })
+      .then(data => { if (!cancelled) setOverview(data) })
+      .catch(() => { if (!cancelled) setOverview(null) })
+    return () => { cancelled = true }
+  }, [from, to])
 
   // ── URL writers ────────────────────────────────────────────────────────────
   const setParams = useCallback((updates: Record<string, string | null>) => {
@@ -94,7 +107,7 @@ export default function TransactionsPage() {
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }, [router, pathname, searchParams])
 
-  // ── Debounced search → URL ─────────────────────────────────────────────────
+  // ── Debounced search -> URL ─────────────────────────────────────────────────
   useEffect(() => {
     if (searchInput === urlSearch) return
     const id = setTimeout(() => {
@@ -165,15 +178,25 @@ export default function TransactionsPage() {
   return (
      <PageGuard permission="view_payments">
     <div>
-      <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
+      <PageHeader
+        title="Transactions"
+        subtitle="Every payment in and out of the platform"
+        tabs={<PaymentsTabs />}
+      />
 
-      <PaymentsTabs active="transactions" />
+      {overview?.period && overview.period.paymentSuccessRatePct != null && (
+        <div className="mb-4 bg-white rounded-xl shadow-sm px-4 py-3 flex items-center gap-3 flex-wrap text-sm">
+          <span className="font-semibold text-gray-900 tabular-nums">Payment success {overview.period.paymentSuccessRatePct}%</span>
+          <span className="text-gray-500">{overview.period.successfulPayments} of {overview.period.totalPayments} payments in this period</span>
+          <span className="ml-auto text-xs text-gray-400">Target {PAYMENT_SUCCESS_TARGET_PCT}%</span>
+        </div>
+      )}
 
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
           <Input
-            placeholder="Search payment ID, person, booking…"
+            placeholder="Search payment ID, person, booking..."
             className="pl-9"
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
@@ -212,7 +235,7 @@ export default function TransactionsPage() {
           onCustomFromChange={value => setParams({ range: 'custom', from: value || null })}
           onCustomToChange={value => setParams({ range: 'custom', to: value || null })}
         />
-        <span className="text-xs text-gray-500">By transaction record date · refunds use their resolution record · GMT</span>
+        <span className="text-xs text-gray-500">{dateBasisCaption('Transactions', 'recorded')} Refunds count by their resolution date.</span>
         <Button variant="outline" size="sm" onClick={() => fetchTransactions()} disabled={loading} className="gap-1.5">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh

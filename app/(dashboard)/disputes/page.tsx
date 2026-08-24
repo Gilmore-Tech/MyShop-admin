@@ -1,22 +1,20 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
-import {
-  Search, RefreshCw, Scale, ChevronRight, CheckCircle2,
-} from 'lucide-react'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
+import { ChevronRight, CheckCircle2, Scale } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { PageHeader } from '@/components/common/page-header'
+import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
+import { DataTable } from '@/components/common/data-table'
+import { EmptyState } from '@/components/common/empty-state'
 import { StatusBadge } from '@/components/common/status-badge'
 import { getDisputes, type Dispute } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatGhs } from '@/lib/money'
+import { formatDateTime } from '@/lib/format-date'
 
 // Spec: docs/admin-frontend-spec-payment-panel.md §4.3.
 
@@ -30,13 +28,6 @@ function ageLabel(iso: string): string {
   if (h < 24) return `${Math.floor(h)}h ${Math.round((h - Math.floor(h)) * 60)}m old`
   const d = Math.floor(h / 24)
   return `${d}d ${Math.floor(h - d * 24)}h old`
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
 }
 
 interface ResolvedFlash {
@@ -107,19 +98,8 @@ export default function DisputesPage() {
     <PageGuard permission="view_disputes">
       <div>
         <PageHeader
-          title="Disputes & Refunds"
-          subtitle="Review evidence and resolve client-raised disputes"
-          actions={
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-3 text-sm text-gray-500 bg-white rounded-lg px-3 py-1.5">
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />{openCount} Open</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />{underReviewCount} In Review</span>
-              </div>
-              <Button variant="outline" size="sm" onClick={load} className="gap-2">
-                <RefreshCw className="h-3.5 w-3.5" /> Refresh
-              </Button>
-            </div>
-          }
+          title="Disputes"
+          subtitle="Open and resolved disputes across rides and artisan jobs"
         />
 
         {flash && (
@@ -129,7 +109,7 @@ export default function DisputesPage() {
               {flash.mode === 'REJECT'
                 ? 'Dispute rejected - no refund issued.'
                 : flash.status === 'refund_pending'
-                  ? `Refund approved - ${formatGhs(flash.refundedPesewas)} is being processed. No provider clawback exists until repayment succeeds.`
+                  ? `Refund approved - ${formatGhs(flash.refundedPesewas)} is being processed. The provider is not charged until the refund succeeds.`
                 : flash.refundedPesewas != null
                   ? `Refund update - ${formatGhs(flash.refundedPesewas)}.`
                   : 'Dispute resolved.'}
@@ -146,17 +126,18 @@ export default function DisputesPage() {
           Clients may raise a dispute for <strong>2 hours</strong> from ride completion or client-confirmed artisan completion. The corresponding provider amount remains held during that window and stays blocked while a dispute is open.
         </div>
 
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <div className="relative flex-1 min-w-48 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-            <Input placeholder="Search by ID, client, provider…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
+        <FilterBar
+          onRefresh={load}
+          refreshing={loading}
+          meta={`${openCount} open - ${underReviewCount} in review - ${sorted.length} shown`}
+        >
+          <FilterSearch value={search} onChange={setSearch} placeholder="Search by ID, client, provider..." />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-44 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-44 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="under_review">Under Review</SelectItem>
+              <SelectItem value="under_review">Under review</SelectItem>
               <SelectItem value="refund_pending">Refund processing</SelectItem>
               <SelectItem value="refund_failed">Refund needs attention</SelectItem>
               <SelectItem value="resolved_refund">Resolved (full refund)</SelectItem>
@@ -164,97 +145,82 @@ export default function DisputesPage() {
               <SelectItem value="resolved_no_refund">Resolved (no refund)</SelectItem>
             </SelectContent>
           </Select>
-          <div className="ml-auto text-sm text-gray-400">{sorted.length} disputes</div>
-        </div>
+        </FilterBar>
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-        )}
-
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50">
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Dispute</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Raised</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Provider</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Amount</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    {Array.from({ length: 9 }).map((_, j) => (
-                      <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : sorted.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center py-12 text-gray-400">
-                    <Scale className="h-8 w-8 mx-auto mb-2 text-gray-200" />
-                    {search || statusFilter !== 'all' ? 'No results match your filters.' : 'No disputes found.'}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                sorted.map(d => {
-                  const isActive = d.status === 'open' || d.status === 'under_review'
-                  return (
-                    <TableRow key={d.id} className="hover:bg-gray-50">
-                      <TableCell className="font-mono text-sm font-semibold text-orange-600">
-                        <Link href={`/disputes/${d.id}`} className="hover:underline">
-                          {d.id.slice(0, 8)}…
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-500 whitespace-nowrap">
-                        <div>{formatDate(d.createdAt)}</div>
-                        {isActive && (
-                          <div
-                            className={`text-[10px] mt-0.5 ${
-                              'text-gray-400'
-                            }`}
-                          >
-                            {ageLabel(d.createdAt)}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                          {d.type}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-sm">{d.clientName ?? <span className="text-gray-400 italic">-</span>}</TableCell>
-                      <TableCell className="text-sm">{d.providerName ?? <span className="text-gray-400 italic">-</span>}</TableCell>
-                      <TableCell className="text-sm text-gray-500 max-w-48 truncate">{d.description ?? '-'}</TableCell>
-                      <TableCell className="text-right text-sm font-medium tabular-nums">{formatGhs(d.amountPesewas)}</TableCell>
-                      <TableCell><StatusBadge status={d.status} /></TableCell>
-                      <TableCell>
-                        <Link
-                          href={`/disputes/${d.id}`}
-                          className="text-orange-500 hover:text-orange-700 inline-flex items-center"
-                          aria-label={`Open dispute ${d.id}`}
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          </Table>
-          <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
-            <p className="text-xs text-gray-400">
-              {loading ? 'Loading…' : `Showing ${sorted.length} of ${items.length} disputes (oldest first)`}
-            </p>
-          </div>
-        </div>
+        <DataTable
+          columns={[
+            {
+              key: 'dispute',
+              header: 'Dispute',
+              render: d => <span className="font-mono text-sm font-semibold text-primary">{d.id.slice(0, 8)}...</span>,
+            },
+            {
+              key: 'raised',
+              header: 'Raised',
+              render: d => {
+                const isActive = d.status === 'open' || d.status === 'under_review'
+                return (
+                  <span className="whitespace-nowrap">
+                    <span className="block">{formatDateTime(d.createdAt)}</span>
+                    {isActive && <span className="block text-[10px] text-gray-400">{ageLabel(d.createdAt)}</span>}
+                  </span>
+                )
+              },
+            },
+            {
+              key: 'type',
+              header: 'Type',
+              render: d => <StatusBadge status={d.type} />,
+            },
+            {
+              key: 'client',
+              header: 'Client',
+              render: d => d.clientName ?? <span className="text-gray-400 italic">-</span>,
+            },
+            {
+              key: 'provider',
+              header: 'Provider',
+              render: d => d.providerName ?? <span className="text-gray-400 italic">-</span>,
+            },
+            {
+              key: 'description',
+              header: 'Description',
+              className: 'max-w-48 truncate',
+              render: d => <span className="text-sm text-gray-500">{d.description ?? '-'}</span>,
+            },
+            {
+              key: 'amount',
+              header: 'Amount',
+              align: 'right',
+              render: d => <span className="font-medium">{formatGhs(d.amountPesewas)}</span>,
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              render: d => <StatusBadge status={d.status} />,
+            },
+            {
+              key: 'chevron',
+              header: '',
+              className: 'w-10',
+              render: () => <ChevronRight className="h-4 w-4 text-gray-300" />,
+            },
+          ]}
+          rows={sorted}
+          rowKey={d => d.id}
+          loading={loading}
+          error={error || null}
+          onRetry={load}
+          rowHref={d => `/disputes/${d.id}`}
+          rowAriaLabel={d => `Open dispute ${d.id.slice(0, 8)}`}
+          empty={
+            <EmptyState
+              icon={Scale}
+              title={search || statusFilter !== 'all' ? 'No results match your filters' : 'No disputes found'}
+            />
+          }
+          caption={loading ? 'Loading...' : `Showing ${sorted.length} of ${items.length} disputes (oldest first)`}
+        />
       </div>
     </PageGuard>
   )

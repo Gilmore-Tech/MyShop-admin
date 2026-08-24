@@ -8,6 +8,7 @@ import {
   ArrowLeft, AlertTriangle, Loader2, Scale, MapPin, User as UserIcon,
   Wrench, Car, Clock, Receipt, CheckCircle2, XCircle, Info,
 } from 'lucide-react'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
@@ -70,6 +71,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -134,6 +136,17 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
     return null
   }
 
+  // The resolve button validates and opens the confirm dialog; the money only
+  // moves from the dialog's confirm (an irreversible action never fires from
+  // an inline form button - approved redesign, high-risk flow standard).
+  function requestResolve() {
+    if (!detail) return
+    const validationError = validate()
+    if (validationError) { setSubmitError(validationError); return }
+    setSubmitError('')
+    setConfirmOpen(true)
+  }
+
   async function handleSubmit() {
     if (!detail) return
     const validationError = validate()
@@ -170,7 +183,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
         if (err.code === 'CASH_REFUND_DESTINATION_REQUIRED') {
           setSubmitError('The client must OTP-verify a refund MoMo destination before approval.')
         } else if (err.code === 'PAYOUT_OUTCOME_PENDING') {
-          setSubmitError('The provider payout outcome is still being reconciled. Try again after reconciliation.')
+          setSubmitError('The provider payout is still under financial review. Try again shortly.')
         } else if (err.code === 'DISPUTE_ALREADY_RESOLVED' || err.status === 409) {
           setSubmitError('This dispute has already been resolved.')
         } else if (err.code === 'REFUND_AMOUNT_REQUIRED') {
@@ -190,7 +203,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
     <PageGuard permission="resolve_dispute">
       <div className="space-y-4">
         <PageHeader
-          title={detail ? `Dispute #${detail.id.slice(0, 8)}…` : 'Dispute'}
+          title={detail ? `Dispute #${detail.id.slice(0, 8)}...` : 'Dispute'}
           subtitle={detail?.description ?? 'Review evidence and resolve'}
           actions={
             <Link href="/disputes">
@@ -204,7 +217,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
         {loading && (
           <div className="flex items-center justify-center py-20 gap-3 text-gray-400">
             <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading dispute…</span>
+            <span className="text-sm">Loading dispute...</span>
           </div>
         )}
 
@@ -254,14 +267,14 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                         style={{ width: '100%', height: '100%' }}
                       >
                         <FitBounds points={allPoints} />
-                        {/* Optimal route — dashed blue */}
+                        {/* Optimal route - dashed blue */}
                         <Polyline
                           path={toPath(detail.optimalRoute as { lat: number; lng: number }[])}
                           strokeColor="#3B82F6"
                           strokeOpacity={0}
                           icons={DASHED_LINE_ICONS}
                         />
-                        {/* Actual GPS trail — solid red */}
+                        {/* Actual GPS trail - solid red */}
                         <Polyline
                           path={toPath(detail.gpsTrail as { lat: number; lng: number }[])}
                           strokeColor="#EF4444"
@@ -395,7 +408,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                     <div className="flex items-start gap-2 text-sm text-emerald-700">
                       <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
                       <span>
-                        OTP verified: {paymentMethodLabel(detail.refundDestination.method)} •••• {detail.refundDestination.accountLast4 ?? '----'}
+                        OTP verified: {paymentMethodLabel(detail.refundDestination.method)} **** {detail.refundDestination.accountLast4 ?? '----'}
                         {detail.refundDestination.locked ? ' (locked for processing)' : ''}
                       </span>
                     </div>
@@ -511,12 +524,16 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                     </Link>
                     <Button
                       size="sm"
+                      variant={mode === 'REJECT' ? 'destructive' : 'brand'}
                       disabled={submitting || (mode !== 'REJECT' && detail.refundDestination?.required && !detail.refundDestination.verified)}
-                      onClick={handleSubmit}
-                      className="flex-1 text-white"
-                      style={{ backgroundColor: mode === 'REJECT' ? '#EF4444' : '#10B981' }}
+                      onClick={requestResolve}
+                      className="flex-1"
                     >
-                      {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Resolve'}
+                      {mode === 'REJECT'
+                        ? 'Reject dispute'
+                        : mode === 'REFUND_PARTIAL'
+                          ? `Refund ${partialAmountGhs ? `GHS ${Number(partialAmountGhs).toFixed(2)}` : 'partially'}`
+                          : `Refund ${maxRefundPesewas != null ? formatGhs(maxRefundPesewas) : 'in full'}`}
                     </Button>
                   </div>
 
@@ -536,6 +553,33 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
           </div>
         )}
       </div>
+      {detail && (
+        <ConfirmDialog
+          open={confirmOpen}
+          onClose={() => { if (!submitting) setConfirmOpen(false) }}
+          title={mode === 'REJECT'
+            ? 'Reject this dispute?'
+            : mode === 'REFUND_PARTIAL'
+              ? `Refund GHS ${Number(partialAmountGhs || 0).toFixed(2)} to the client?`
+              : `Refund ${maxRefundPesewas != null ? formatGhs(maxRefundPesewas) : 'the full amount'} to the client?`}
+          description={mode === 'REJECT'
+            ? 'No refund - the provider keeps the full earning. This cannot be undone and is recorded in the audit log.'
+            : 'The client gets this money back and the provider\u2019s earning is reduced. This cannot be undone and is recorded in the audit log.'}
+          confirmLabel={mode === 'REJECT'
+            ? 'Reject dispute'
+            : mode === 'REFUND_PARTIAL'
+              ? `Refund GHS ${Number(partialAmountGhs || 0).toFixed(2)}`
+              : `Refund ${maxRefundPesewas != null ? formatGhs(maxRefundPesewas) : 'in full'}`}
+          destructive={mode === 'REJECT'}
+          loading={submitting}
+          error={submitError || null}
+          onConfirm={() => { void handleSubmit() }}
+        >
+          <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+            <span className="font-semibold text-gray-800">Your note:</span> {notes.trim() || '-'}
+          </div>
+        </ConfirmDialog>
+      )}
     </PageGuard>
   )
 }

@@ -164,7 +164,7 @@ export default function OnlineProvidersPage() {
     <PageGuard permission="view_live_map">
       <div>
         <PageHeader
-          title="Online Providers"
+          title="Online providers"
           subtitle="Who is online right now and whether they are on a booking"
           actions={
             <>

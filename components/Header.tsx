@@ -166,6 +166,28 @@ function adminInitials(name: string) {
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 
+/** "Good morning, Ayiks" + the full date - the app's one greeting (per the approved redesign). */
+function Greeting({ name }: { name: string | null }) {
+  const [now, setNow] = useState<Date | null>(null)
+  useEffect(() => {
+    setNow(new Date())
+    const id = window.setInterval(() => setNow(new Date()), 60_000)
+    return () => window.clearInterval(id)
+  }, [])
+  if (!now) return <div />
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Africa/Accra' }).format(now))
+  const part = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'
+  const firstName = name?.trim().split(' ')[0]
+  return (
+    <div className="min-w-0">
+      <p className="text-sm font-bold text-gray-900 truncate">Good {part}{firstName ? `, ${firstName}` : ''}</p>
+      <p className="text-[11px] text-gray-400">
+        {now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Accra' })}
+      </p>
+    </div>
+  )
+}
+
 export default function Header() {
   const router = useRouter()
   const [admin, setAdmin] = useState<AdminUser | null>(null)
@@ -222,6 +244,7 @@ export default function Header() {
   return (
     <header className="bg-white sticky top-0 z-40">
       <div className="h-16 flex items-center px-6 gap-6">
+        <Greeting name={admin?.fullName ?? null} />
 
       <div className="flex items-center gap-3 ml-auto">
         {/* Notification bell */}

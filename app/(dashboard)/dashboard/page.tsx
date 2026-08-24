@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  AlertTriangle, CheckCircle2, Phone, Navigation, TriangleAlert, ChevronRight,
-  UserCheck, TrendingUp, Scale, Car, Wrench, Radio, RefreshCw, Trophy, Receipt, Route, CalendarRange,
+  AlertTriangle, CheckCircle2, Phone, Navigation, ChevronRight,
+  UserCheck, TrendingUp, Scale, Car, Wrench, RefreshCw, Receipt, IdCard, Download,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -12,7 +12,7 @@ import {
 } from 'recharts'
 import {
   getOverviewReport, getRevenueReport, getRecentActivity, getEmergencyAlerts, acknowledgeEmergency,
-  getBookingOutcomesReport, getOnlineProviderCounts,
+  getBookingOutcomesReport, getClientKycQueue, getOnlineProviderCounts,
   type OverviewReport, type RevenueDataPoint, type ActivityItem, type EmergencyAlert,
   type BookingOutcomesReport, type OnlineProviderCounts,
 } from '@/lib/api'
@@ -24,8 +24,10 @@ import { useDateRange } from '@/components/common/date-range-filter'
 import { StatCard, SectionLabel } from '@/components/common/stat-card'
 import { dateRangeLabel } from '@/lib/date-range'
 import { useRole } from '@/hooks/use-role'
+import { exportOverviewCsv } from '@/lib/report-export'
+import { PAYMENT_SUCCESS_TARGET_PCT } from '@/lib/targets'
+import { Button } from '@/components/ui/button'
 import { useAutoRefresh, AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
-import type { Permission } from '@/lib/roles'
 
 // ─── Activity helpers ─────────────────────────────────────────────────────────
 
@@ -71,10 +73,12 @@ function Avatar({ initials }: { initials: string }) {
 
 // ─── Actionable "needs attention" card ────────────────────────────────────────
 function AttentionCard({
-  icon: Icon, label, value, href, cta, accent, loading,
+  icon: Icon, label, value, href, cta, accent, loading, progress,
 }: {
   icon: React.ElementType; label: string; value: number; href: string
   cta: string; accent: 'red' | 'amber'; loading: boolean
+  /** Folded-in context bar, e.g. share of providers already verified. */
+  progress?: { pct: number; label: string }
 }) {
   const active = value > 0
   const tone = accent === 'red'
@@ -90,6 +94,14 @@ function AttentionCard({
       <div className="flex-1 min-w-0">
         <p className={`text-2xl font-bold leading-tight ${loading ? 'text-gray-300' : s.num}`}>{loading ? '-' : value}</p>
         <p className="text-xs text-gray-500 font-medium mt-0.5">{label}</p>
+        {progress && !loading && (
+          <>
+            <div className="h-1.5 rounded-full bg-gray-200/70 mt-2 overflow-hidden">
+              <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, progress.pct))}%` }} />
+            </div>
+            <p className="text-[11px] text-gray-500 mt-1">{progress.label}</p>
+          </>
+        )}
       </div>
       <span className={`flex items-center gap-0.5 text-xs font-semibold shrink-0 ${s.cta}`}>
         <span className="hidden sm:inline">{active ? cta : 'All clear'}</span>
@@ -129,6 +141,7 @@ export default function DashboardPage() {
   const [liveCounts, setLiveCounts] = useState<OnlineProviderCounts | null>(null)
   const [liveUnavailable, setLiveUnavailable] = useState(false)
   const [liveUpdatedAt, setLiveUpdatedAt] = useState<Date | null>(null)
+  const [kycWaiting, setKycWaiting] = useState<number | null>(null)
   const [loadingKpis, setLoadingKpis] = useState(true)
   const [loadingOutcomes, setLoadingOutcomes] = useState(true)
   const [loadingActivity, setLoadingActivity] = useState(true)
@@ -181,6 +194,14 @@ export default function DashboardPage() {
   }, [from, to])
 
   useEffect(() => {
+    let cancelled = false
+    getClientKycQueue()
+      .then(items => { if (!cancelled) setKycWaiting(items.length) })
+      .catch(() => { if (!cancelled) setKycWaiting(null) })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
     getEmergencyAlerts()
       .then(setEmergencies)
       .catch(() => setEmergencies(null))
@@ -223,10 +244,23 @@ export default function DashboardPage() {
 
   const rangeLabel = dateRangeLabel(preset)
 
-  // Actionable items — surfaced first so admins see what needs doing.
+  // Actionable items - surfaced first so admins see what needs doing. The
+  // audit found the old card mislabelled this count (it is provider verifications)
+  // (it is provider verifications); client ID checks get their own card.
+  const totalProvidersForBar = (overview?.registeredDrivers ?? 0) + (overview?.registeredArtisans ?? 0)
+  const verifiedProviders = Math.max(0, totalProvidersForBar - (overview?.pendingVerifications ?? 0))
   const attention = [
-    { label: 'Pending KYC reviews', value: overview?.pendingVerifications ?? 0, href: '/verifications', icon: AlertTriangle, accent: 'amber' as const, cta: 'Review queue' },
-    { label: 'Open disputes',       value: overview?.openDisputes ?? 0,         href: '/disputes',      icon: Scale,         accent: 'red'   as const, cta: 'Resolve' },
+    {
+      label: 'Provider verifications waiting', value: overview?.pendingVerifications ?? 0,
+      href: '/verifications', icon: AlertTriangle, accent: 'amber' as const, cta: 'Review',
+      progress: overview && totalProvidersForBar > 0
+        ? { pct: (verifiedProviders / totalProvidersForBar) * 100, label: `${verifiedProviders.toLocaleString()} of ${totalProvidersForBar.toLocaleString()} providers verified` }
+        : undefined,
+    },
+    ...(kycWaiting != null
+      ? [{ label: 'Client ID checks waiting', value: kycWaiting, href: '/users/clients/kyc-queue', icon: IdCard, accent: 'amber' as const, cta: 'Review' }]
+      : []),
+    { label: 'Open disputes', value: overview?.openDisputes ?? 0, href: '/disputes', icon: Scale, accent: 'red' as const, cta: 'Resolve' },
   ]
 
   // Revenue for the selected range. Gross = platform commission on pre-promo
@@ -241,9 +275,9 @@ export default function DashboardPage() {
   const primaryKpis = [
     { label: 'Ride requests', value: overview?.period ? overview.period.ridesCreated.toLocaleString() : '-', sub: overview ? `${overview.activeRides} active now` : undefined, icon: Navigation, href: '/rides' },
     { label: 'Job requests', value: overview?.period ? overview.period.jobsCreated.toLocaleString() : '-', sub: overview ? `${overview.activeJobs} active now` : undefined, icon: UserCheck, href: '/artisan-jobs' },
-    { label: 'Gross revenue', value: grossRevenuePesewas != null ? formatGhs(grossRevenuePesewas) : '-', sub: promoPesewas != null ? `Promo funded ${formatGhs(promoPesewas)}` : 'Commission on pre-promo fares', icon: TrendingUp, href: '/insights/revenue' },
-    { label: 'Net revenue', value: netRevenuePesewas != null ? formatGhs(netRevenuePesewas) : '-', sub: 'After promos and commission relief', icon: Receipt, href: '/insights/revenue' },
-    { label: 'Payment success', value: overview?.period?.paymentSuccessRatePct != null ? overview.period.paymentSuccessRatePct + '%' : '-', sub: overview?.period ? `${overview.period.successfulPayments} of ${overview.period.totalPayments} payments` : rangeLabel, icon: CheckCircle2, href: '/payments/transactions' },
+    { label: 'Commission earned', value: grossRevenuePesewas != null ? formatGhs(grossRevenuePesewas) : '-', sub: promoPesewas != null ? `Promo funded ${formatGhs(promoPesewas)}` : '20% of pre-promo fares', icon: TrendingUp, href: '/insights/revenue' },
+    { label: 'Kept after promos', value: netRevenuePesewas != null ? formatGhs(netRevenuePesewas) : '-', sub: 'Commission minus promo money MyShop funded', icon: Receipt, href: '/insights/revenue' },
+    { label: 'Payment success', value: overview?.period?.paymentSuccessRatePct != null ? overview.period.paymentSuccessRatePct + '%' : '-', sub: overview?.period ? `${overview.period.successfulPayments} of ${overview.period.totalPayments} - target ${PAYMENT_SUCCESS_TARGET_PCT}%` : rangeLabel, icon: CheckCircle2, href: '/payments/transactions' },
   ]
 
   const activeEmergencies = (emergencies ?? []).filter(alert =>
@@ -254,20 +288,10 @@ export default function DashboardPage() {
 
   const growthData = revenueData.map(d => ({
     date: formatDayShort(d.period),
-    'Collections (GHS)': d.collectionsGhs,
-    'Commission (GHS)':  d.commissionGhs,
-    'Payouts (GHS)':     d.payoutsGhs,
+    'Money received': d.collectionsGhs,
+    'Commission earned': d.commissionGhs,
   }))
 
-  const totalProviders = (overview?.registeredDrivers ?? 0) + (overview?.registeredArtisans ?? 0)
-  const compliance = {
-    verified: overview ? totalProviders - overview.pendingVerifications : 0,
-    total: totalProviders,
-    kyc: overview?.pendingVerifications ?? 0,
-    clearance: overview
-      ? Math.round(((totalProviders - overview.pendingVerifications) / Math.max(totalProviders, 1)) * 100)
-      : 0,
-  }
 
   const outcomeRows = useMemo(() => {
     const t = outcomes?.totals
@@ -286,31 +310,42 @@ export default function DashboardPage() {
     ]
   }, [outcomes])
 
-  const exploreAll: { title: string; href: string; icon: React.ElementType; permission: Permission }[] = [
-    { title: 'Revenue by Date', href: '/insights/revenue', icon: CalendarRange, permission: 'view_revenue_report' },
-    { title: 'Trip Outcomes', href: '/insights/trips', icon: Route, permission: 'view_reports' },
-    { title: 'Leaderboards', href: '/insights/leaderboards', icon: Trophy, permission: 'view_reports' },
-    { title: 'Online Providers', href: '/online-providers', icon: Radio, permission: 'view_live_map' },
-    { title: 'Commission Ledger', href: '/payments/commission-ledger', icon: Receipt, permission: 'view_payments' },
-  ]
-  const explore = exploreAll.filter(item => can(item.permission))
 
   return (
     <div className="flex flex-col gap-6">
 
-      {/* ── Page title ───────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Operations Overview</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Daily performance and live operations - Ashanti Region pilot</p>
-        </div>
-        <div>
-          {dateControl}
-          <p className="text-[11px] text-gray-400 mt-1 text-right">Calendar dates use GMT (Africa/Accra)</p>
+      {/* ── Top row: what needs doing, plus the reporting period ─────────── */}
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <SectionLabel>Needs attention</SectionLabel>
+        <div className="flex items-start gap-2">
+          <div>
+            {dateControl}
+            <p className="text-[11px] text-gray-400 mt-1 text-right">Calendar dates use GMT (Africa/Accra)</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => overview && exportOverviewCsv(overview, null)}
+            disabled={!overview}
+          >
+            <Download className="h-3.5 w-3.5" /> Download CSV
+          </Button>
         </div>
       </div>
 
-      {/* ── Live now — real-time workload, independent of the date filter ── */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 -mt-2">
+        {attention.map(a => (
+          <AttentionCard
+            key={a.label}
+            icon={a.icon} label={a.label} value={a.value}
+            href={a.href} cta={a.cta} accent={a.accent} loading={loadingKpis}
+            progress={'progress' in a ? a.progress : undefined}
+          />
+        ))}
+      </section>
+
+      {/* ── Live now - real-time workload, independent of the date filter ── */}
       <section className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100">
           <div className="flex items-center gap-2">
@@ -345,19 +380,6 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ── Needs attention — actionable items first ─────────────────────── */}
-      <section className="space-y-2.5">
-        <SectionLabel>Needs attention</SectionLabel>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {attention.map(a => (
-            <AttentionCard
-              key={a.label}
-              icon={a.icon} label={a.label} value={a.value}
-              href={a.href} cta={a.cta} accent={a.accent} loading={loadingKpis}
-            />
-          ))}
-        </div>
-      </section>
 
       {/* ── Selected-period performance ──────────────────────────────────── */}
       <section className="space-y-2.5">
@@ -373,18 +395,18 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ── Row 2: Trip outcomes + Growth Trends ─────────────────────────── */}
+      {/* ── Row 2: Booking outcomes + money chart ────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
-        {/* Trip outcomes for the range */}
+        {/* Booking outcomes for the range */}
         <div className="lg:col-span-2 bg-white rounded-xl shadow-sm overflow-hidden flex flex-col">
           <div className="flex items-center justify-between px-5 py-3.5">
             <div>
-              <h2 className="text-sm font-semibold text-gray-800">Trips by outcome</h2>
+              <h2 className="text-sm font-semibold text-gray-800">Booking outcomes</h2>
               <p className="text-xs text-gray-400">Bookings requested - {rangeLabel}</p>
             </div>
             {can('view_reports') && (
-              <Link href="/insights/trips" className="text-xs font-medium" style={{ color: '#F5A623' }}>By date</Link>
+              <Link href="/insights/trips" className="text-xs font-medium text-primary">By date</Link>
             )}
           </div>
           <div className="overflow-x-auto">
@@ -408,7 +430,7 @@ export default function DashboardPage() {
                 ) : !outcomes ? (
                   <tr>
                     <td colSpan={4} className="px-5 py-8 text-center text-sm text-gray-400">
-                      {outcomesUnavailable ? 'Trip outcomes report not yet available' : 'Trip outcomes could not be loaded'}
+                      {outcomesUnavailable ? 'Booking outcomes report not yet available' : 'Booking outcomes could not be loaded'}
                     </td>
                   </tr>
                 ) : (
@@ -434,15 +456,15 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Growth Trends */}
+        {/* Money received & commission earned */}
         <div className="lg:col-span-3 bg-white rounded-xl shadow-sm p-5">
           <div className="flex items-center justify-between mb-1">
             <div>
-              <h2 className="text-sm font-semibold text-gray-800">Growth Trends</h2>
-              <p className="text-xs text-gray-400">Collections, commission and payouts - {rangeLabel}</p>
+              <h2 className="text-sm font-semibold text-gray-800">Money received & commission earned</h2>
+              <p className="text-xs text-gray-400">Daily totals - {rangeLabel}</p>
             </div>
             {can('view_payments') && (
-              <Link href="/payments/revenue" className="text-xs font-medium" style={{ color: '#F5A623' }}>Money summary</Link>
+              <Link href="/insights/revenue" className="text-xs font-medium text-primary">Revenue</Link>
             )}
           </div>
           {growthData.length === 0 && !loadingKpis ? (
@@ -455,9 +477,8 @@ export default function DashboardPage() {
                 <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} />
                 <Tooltip formatter={value => [`GHS ${Number(value).toFixed(2)}`, undefined]} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Line type="monotone" dataKey="Collections (GHS)" stroke="#F5A623" strokeWidth={2} dot={growthData.length === 1 ? { r: 3 } : false} />
-                <Line type="monotone" dataKey="Commission (GHS)"  stroke="#10B981" strokeWidth={2} dot={growthData.length === 1 ? { r: 3 } : false} />
-                <Line type="monotone" dataKey="Payouts (GHS)"     stroke="#3B82F6" strokeWidth={2} dot={growthData.length === 1 ? { r: 3 } : false} />
+                <Line type="monotone" dataKey="Money received" stroke="#C27D12" strokeWidth={2} dot={growthData.length === 1 ? { r: 3 } : false} />
+                <Line type="monotone" dataKey="Commission earned" stroke="#2F6FAD" strokeWidth={2} dot={growthData.length === 1 ? { r: 3 } : false} />
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -649,60 +670,9 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Compliance Status */}
-          <div className="bg-white rounded-xl shadow-sm p-5 flex flex-col gap-3">
-            <div>
-              <h2 className="text-sm font-semibold text-gray-800">Compliance Status</h2>
-              <p className="text-xs text-gray-400">Provider verification</p>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs text-gray-500">Providers verified</span>
-                <span className="text-sm font-bold text-gray-800 tabular-nums">{compliance.verified.toLocaleString()} <span className="text-xs font-normal text-gray-400">of {compliance.total.toLocaleString()}</span></span>
-              </div>
-              <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                <div
-                  className="h-2 rounded-full"
-                  style={{ width: `${compliance.clearance}%`, backgroundColor: '#F5A623' }}
-                />
-              </div>
-              <p className="text-xs text-gray-400 mt-1">{compliance.clearance}% cleared</p>
-            </div>
-            {compliance.kyc > 0 && (
-              <div className="rounded-lg bg-amber-50 px-3 py-2.5 flex items-start gap-2.5">
-                <TriangleAlert className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-semibold text-amber-700">{compliance.kyc} pending reviews</p>
-                  <p className="text-xs text-amber-600 mt-0.5">Manual review required before activation.</p>
-                </div>
-              </div>
-            )}
-            <Link href="/verifications" className="flex items-center gap-1 text-xs font-medium" style={{ color: '#F5A623' }}>
-              View Verification Queue <ChevronRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
         </div>
       </div>
 
-      {/* ── Explore — the deeper reports ─────────────────────────────────── */}
-      {explore.length > 0 && (
-        <section className="space-y-2.5">
-          <SectionLabel>Explore</SectionLabel>
-          <div className="flex flex-wrap gap-2">
-            {explore.map(item => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="inline-flex items-center gap-2 bg-white rounded-lg shadow-sm px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <item.icon className="h-3.5 w-3.5 text-gray-500" />
-                {item.title}
-                <ChevronRight className="h-3.5 w-3.5 text-gray-300" />
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
     </div>
   )
 }

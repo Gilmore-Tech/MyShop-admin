@@ -11,7 +11,7 @@ const BANNER_STYLES = {
 export default function EnvBanner() {
   const env = getDeployEnv()
 
-  // Production runs clean — no banner, no tag.
+  // Production runs clean - no banner, no tag.
   if (env === 'PROD') return null
 
   const style = BANNER_STYLES[env]

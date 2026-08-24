@@ -2,13 +2,14 @@
 
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Download, Trophy, Car, Wrench, Users, Medal } from 'lucide-react'
+import { Download, Trophy, Car, Wrench, Users, Medal, Hammer } from 'lucide-react'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { StatCard } from '@/components/common/stat-card'
 import { PeriodControls, usePeriod } from '@/components/common/period-controls'
 import { LeaderboardList, type LeaderboardEntry } from '@/components/common/leaderboard-list'
 import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
 import { Pager } from '@/components/common/pager'
 import { useAllowedVerticals } from '@/components/common/vertical-tabs'
 import { UserProfileSheet } from '@/components/users/user-profile-sheet'
@@ -17,19 +18,20 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  getProviderLeaderboard, getTopClientsReport, getUser,
-  type ProviderLeaderboardRow, type TopClientRow, type PlatformUser,
+  getJobCategoryReport, getProviderLeaderboard, getProviderReport, getTopClientsReport, getUser,
+  type JobCategoryCount, type ProviderLeaderboardRow, type ProviderReport, type TopClientRow, type PlatformUser,
 } from '@/lib/api'
 import { ApiError, userSafeAdminError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import type { Permission } from '@/lib/roles'
 import { formatGhs } from '@/lib/money'
 import { formatDate } from '@/lib/format-date'
+import { statusLabel } from '@/lib/status-labels'
 import { dateRangeLabel } from '@/lib/date-range'
 import { exportTableCsv } from '@/lib/report-export'
 import { cn } from '@/lib/utils'
 
-type BoardTab = 'drivers' | 'artisans' | 'clients_rides' | 'clients_artisans'
+type BoardTab = 'drivers' | 'artisans' | 'clients_rides' | 'clients_artisans' | 'services'
 
 const PROVIDER_RANKS = [
   { value: 'completed', label: 'Completed bookings' },
@@ -85,6 +87,26 @@ function clientMetricLabel(row: TopClientRow, rank: ClientRank): string {
   return `${row.completedCount.toLocaleString()} completed`
 }
 
+/** Current-state flags decorating the date-scoped ranking (dash when the lifetime report is unavailable). */
+function providerFlagFacts(providerId: string, role: 'driver' | 'artisan', flags: ProviderReport | null): (string | null)[] {
+  if (!flags) return []
+  if (role === 'driver') {
+    const d = flags.drivers.find(x => x.driverId === providerId)
+    if (!d) return []
+    return [
+      d.verificationStatus && d.verificationStatus !== 'approved' ? statusLabel(d.verificationStatus) : null,
+      d.cancellationCount30d > 0 ? `${d.cancellationCount30d} cancels in 30 days` : null,
+    ]
+  }
+  const a = flags.artisans.find(x => x.artisanId === providerId)
+  if (!a) return []
+  return [
+    a.verificationStatus && a.verificationStatus !== 'approved' ? statusLabel(a.verificationStatus) : null,
+    a.supplementRatePct != null ? `${a.supplementRatePct.toFixed(0)}% extra charges` : null,
+    a.flagged ? 'Flagged: high extra charges' : null,
+  ]
+}
+
 function Podium({ entries, loading }: { entries: LeaderboardEntry[]; loading: boolean }) {
   const top = entries.slice(0, 3)
   if (!loading && top.length === 0) return null
@@ -127,6 +149,7 @@ export default function LeaderboardsPage() {
     { id: 'artisans', label: 'Artisans', icon: Wrench, permission: 'view_artisans_report', vertical: 'artisans' },
     { id: 'clients_rides', label: 'Clients - Rides', icon: Users, permission: 'view_reports', vertical: 'rides' },
     { id: 'clients_artisans', label: 'Clients - Artisan Services', icon: Users, permission: 'view_reports', vertical: 'artisans' },
+    { id: 'services', label: 'Busiest services', icon: Hammer, permission: 'view_reports', vertical: 'artisans' },
   ]
   const visibleTabs = tabs.filter(t => can(t.permission) && (allowedVerticals.includes('all') || allowedVerticals.includes(t.vertical)))
   const [tab, setTab] = useState<BoardTab>('drivers')
@@ -135,6 +158,7 @@ export default function LeaderboardsPage() {
   }, [visibleTabs, tab])
 
   const isClients = tab === 'clients_rides' || tab === 'clients_artisans'
+  const isServices = tab === 'services'
   const [providerRank, setProviderRank] = useState<ProviderRank>('completed')
   const [clientRank, setClientRank] = useState<ClientRank>('completed')
   const [minCompleted, setMinCompleted] = useState(0)
@@ -145,11 +169,23 @@ export default function LeaderboardsPage() {
   const [error, setError] = useState('')
   const [unavailable, setUnavailable] = useState(false)
   const [profile, setProfile] = useState<PlatformUser | null>(null)
+  const [services, setServices] = useState<JobCategoryCount[] | null>(null)
+  // Lifetime provider report - the source of the flags (current state, not
+  // date-scoped): verification status, flagged extra-charge share, 30-day cancels.
+  const [flags, setFlags] = useState<ProviderReport | null>(null)
   const requestSequence = useRef(0)
+
+  useEffect(() => {
+    let cancelled = false
+    getProviderReport()
+      .then(report => { if (!cancelled) setFlags(report) })
+      .catch(() => { if (!cancelled) setFlags(null) })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => { setPage(1) }, [tab, from, to, providerRank])
 
-  const reranking = !isClients && providerRank !== 'completed'
+  const reranking = !isClients && !isServices && providerRank !== 'completed'
 
   const load = useCallback(async () => {
     const request = ++requestSequence.current
@@ -157,7 +193,10 @@ export default function LeaderboardsPage() {
     setError('')
     setUnavailable(false)
     try {
-      if (isClients) {
+      if (isServices) {
+        const categories = await getJobCategoryReport({ from, to })
+        if (request === requestSequence.current) setServices([...categories].sort((a, b) => b.jobs - a.jobs))
+      } else if (isClients) {
         const result = await getTopClientsReport({ from, to, vertical: tab === 'clients_rides' ? 'rides' : 'artisans', limit: 100 })
         if (request === requestSequence.current) setClients(result.items)
       } else {
@@ -174,12 +213,13 @@ export default function LeaderboardsPage() {
       if (request !== requestSequence.current) return
       setProviders(null)
       setClients(null)
+      setServices(null)
       if (err instanceof ApiError && err.status === 404) setUnavailable(true)
       else setError(userSafeAdminError(err, 'Failed to load the leaderboard.'))
     } finally {
       if (request === requestSequence.current) setLoading(false)
     }
-  }, [isClients, tab, from, to, page, reranking])
+  }, [isClients, isServices, tab, from, to, page, reranking])
 
   useEffect(() => { load() }, [load])
 
@@ -201,9 +241,18 @@ export default function LeaderboardsPage() {
       facts: [
         providerRank !== 'completed' ? `${row.completedCount} ${noun}` : formatGhs(row.grossFaresPesewas) + ' fares',
         row.cancelledCount > 0 ? `${row.cancelledCount} cancelled` : null,
+        ...providerFlagFacts(row.providerId, tab === 'drivers' ? 'driver' : 'artisan', flags),
       ].filter((f): f is string => Boolean(f)),
     }))
-  }, [providers, providerRank, reranking, noun])
+  }, [providers, providerRank, reranking, noun, tab, flags])
+
+  const serviceEntries = useMemo<LeaderboardEntry[]>(() => (services ?? []).map(c => ({
+    id: c.category,
+    name: c.category,
+    detail: undefined,
+    metric: `${c.jobs.toLocaleString()} job${c.jobs === 1 ? '' : 's'}`,
+    metricValue: c.jobs,
+  })), [services])
 
   const clientEntries = useMemo<LeaderboardEntry[]>(() => {
     const items = (clients ?? []).filter(c => c.completedCount >= minCompleted)
@@ -223,8 +272,8 @@ export default function LeaderboardsPage() {
       }))
   }, [clients, clientRank, minCompleted])
 
-  const entries = isClients ? clientEntries : providerEntries
-  const startRank = isClients || reranking ? 1 : (page - 1) * PAGE_SIZE + 1
+  const entries = isServices ? serviceEntries : isClients ? clientEntries : providerEntries
+  const startRank = isClients || isServices || reranking ? 1 : (page - 1) * PAGE_SIZE + 1
 
   async function openProvider(entry: LeaderboardEntry) {
     const role = tab === 'drivers' ? 'driver' : 'artisan'
@@ -238,6 +287,14 @@ export default function LeaderboardsPage() {
   }
 
   function exportCsv() {
+    if (isServices) {
+      exportTableCsv(
+        'busiest-services',
+        ['Rank', 'Service category', 'Jobs requested'],
+        (services ?? []).map((c, i) => [i + 1, c.category, c.jobs]),
+      )
+      return
+    }
     if (isClients) {
       const rows = (clients ?? []).filter(c => c.completedCount >= minCompleted)
       exportTableCsv(
@@ -252,15 +309,27 @@ export default function LeaderboardsPage() {
     const rows = providers?.items ?? []
     exportTableCsv(
       `leaderboard-${tab}`,
-      ['Rank', 'Name', 'Phone', 'Region', 'Completed', 'Cancelled', 'Gross fares (GHS)', 'Commission (GHS)', 'Earnings (GHS)', 'Avg rating', 'Ratings'],
+      ['Rank', 'Name', 'Phone', 'Region', 'Completed', 'Cancelled', 'Gross fares (GHS)', 'Commission (GHS)', 'Earnings (GHS)', 'Avg rating', 'Ratings', 'Verification', 'Cancels (30d)', 'Extra charges %', 'Flagged'],
       providerEntries.map((e, i) => {
         const r = rows.find(x => x.providerId === e.id)!
-        return [startRank + i, r.fullName, r.phone, r.regionName, r.completedCount, r.cancelledCount, r.grossFaresPesewas / 100, r.commissionPesewas / 100, r.earningsPesewas / 100, r.avgRating ?? '', r.ratingCount]
+        const role = tab === 'drivers' ? 'driver' : 'artisan'
+        const d = role === 'driver' ? flags?.drivers.find(x => x.driverId === r.providerId) : undefined
+        const a = role === 'artisan' ? flags?.artisans.find(x => x.artisanId === r.providerId) : undefined
+        return [
+          startRank + i, r.fullName, r.phone, r.regionName, r.completedCount, r.cancelledCount,
+          r.grossFaresPesewas / 100, r.commissionPesewas / 100, r.earningsPesewas / 100, r.avgRating ?? '', r.ratingCount,
+          statusLabel((d?.verificationStatus ?? a?.verificationStatus) || null) === '-' ? '' : statusLabel((d?.verificationStatus ?? a?.verificationStatus) || null),
+          d?.cancellationCount30d ?? a?.cancellationCount30d ?? '',
+          a?.supplementRatePct != null ? a.supplementRatePct : '',
+          a ? (a.flagged ? 'Yes' : 'No') : '',
+        ]
       }),
     )
   }
 
-  const totalLabel = isClients
+  const totalLabel = isServices
+    ? `${serviceEntries.length} service categor${serviceEntries.length === 1 ? 'y' : 'ies'}`
+    : isClients
     ? `${clientEntries.length} client${clientEntries.length === 1 ? '' : 's'}`
     : providers ? `${providers.total.toLocaleString()} ${tab}` : ''
   const caption = `${dateRangeLabel(period.preset)}${totalLabel ? ` - ${totalLabel}` : ''}`
@@ -301,6 +370,7 @@ export default function LeaderboardsPage() {
           caption={caption}
           extra={
             <>
+              {!isServices && (
               <div>
                 <Label className="text-xs text-gray-500 mb-1 block">Rank by</Label>
                 {isClients ? (
@@ -315,6 +385,7 @@ export default function LeaderboardsPage() {
                   </Select>
                 )}
               </div>
+              )}
               {isClients && (
                 <div>
                   <Label className="text-xs text-gray-500 mb-1 block">Reward shortlist: at least</Label>
@@ -328,18 +399,11 @@ export default function LeaderboardsPage() {
           }
         />
 
-        {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <p className="font-medium">Couldn&apos;t load the leaderboard</p>
-              <p className="text-xs mt-0.5">{error}</p>
-            </div>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={load}>Retry</Button>
-          </div>
-        )}
-
-        {!isClients && providers && (
+        {error ? (
+          <ErrorState title="Could not load the leaderboard" detail={error} onRetry={load} />
+        ) : (
+        <>
+        {!isClients && !isServices && providers && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             <StatCard label={`Active ${tab}`} value={providers.total.toLocaleString()} sub={`Completed at least one ${noun.slice(0, -1)} in the period`} loading={loading} compact />
             <StatCard label={`Total ${noun} completed`} value={(providers.items.reduce((s, r) => s + r.completedCount, 0)).toLocaleString()} sub={reranking ? `Across the top ${RERANK_POOL}` : 'On this page'} loading={loading} compact />
@@ -356,27 +420,31 @@ export default function LeaderboardsPage() {
           </div>
         )}
 
-        {(isClients || page === 1 || reranking) && <Podium entries={entries} loading={loading} />}
+        {(isClients || isServices || page === 1 || reranking) && <Podium entries={entries} loading={loading} />}
 
         <LeaderboardList
           entries={entries}
           loading={loading}
           startRank={startRank}
-          onSelect={isClients ? undefined : openProvider}
+          onSelect={isClients || isServices ? undefined : openProvider}
           empty={unavailable
             ? <EmptyState variant="unavailable" title="Leaderboards are not available yet" description="The server has not been updated with this report. The page will populate automatically once it is deployed." />
-            : <EmptyState title={isClients ? 'No clients with completed bookings in this period' : `No ${tab} completed a ${noun.slice(0, -1)} in this period`} description="Try a wider date range." />}
+            : <EmptyState title={isServices ? 'No jobs requested in this period' : isClients ? 'No clients with completed bookings in this period' : `No ${tab} completed a ${noun.slice(0, -1)} in this period`} description="Try a wider date range." />}
         />
         <p className="mt-2 text-[11px] text-gray-400">
-          {isClients
-            ? 'Ranked by bookings requested in the period. Clients with no completed booking are not listed.'
+          {isServices
+            ? 'Service categories ranked by jobs requested in the period.'
+            : isClients
+            ? 'Ranked by bookings completed, among bookings requested in the period.'
             : reranking
               ? `Re-ranked by ${PROVIDER_RANKS.find(r => r.value === providerRank)?.label.toLowerCase()} among the top ${RERANK_POOL} by completed ${noun}. Providers with no completed ${noun.slice(0, -1)} are not listed.`
               : `Ranked by ${noun} completed in the period (by completion date). Providers with no completed ${noun.slice(0, -1)} are not listed. Click a row to open the profile.`}
         </p>
 
-        {!isClients && !reranking && providers && (
+        {!isClients && !isServices && !reranking && providers && (
           <Pager page={page} pageSize={PAGE_SIZE} total={providers.total} onPage={setPage} />
+        )}
+        </>
         )}
 
         <UserProfileSheet user={profile} onClose={() => setProfile(null)} />

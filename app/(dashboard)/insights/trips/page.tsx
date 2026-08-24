@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, CheckCircle2, XCircle, UserX, Activity, ListChecks, Car, Wrench } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { StatCard } from '@/components/common/stat-card'
@@ -13,12 +13,12 @@ import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { VerticalTabs, type Vertical } from '@/components/common/vertical-tabs'
 import { Button } from '@/components/ui/button'
-import { getBookingOutcomesReport, type BookingOutcomesReport, type BookingOutcomePeriod, type BookingOutcomeCounters } from '@/lib/api'
+import { getBookingOutcomesReport, getDisputeRateReport, type BookingOutcomesReport, type BookingOutcomePeriod, type BookingOutcomeCounters, type DisputeRatePoint } from '@/lib/api'
 import { ApiError, userSafeAdminError } from '@/lib/api-client'
 import { formatDate, formatPeriodLabel } from '@/lib/format-date'
 import { dateRangeLabel, shiftDateKey } from '@/lib/date-range'
 import { exportTableCsv } from '@/lib/report-export'
-import { OUTCOME_SERIES, CHART_GRID, CHART_AXIS_TEXT, CHART_TOOLTIP_STYLE } from '@/lib/chart-palette'
+import { CHART_SERIES, OUTCOME_SERIES, CHART_GRID, CHART_AXIS_TEXT, CHART_TOOLTIP_STYLE } from '@/lib/chart-palette'
 
 function pctLabel(value: number | null): string {
   return value == null ? '-' : `${value.toFixed(1)}%`
@@ -40,7 +40,7 @@ function periodEnd(periodStart: string, groupBy: string): string {
   return start
 }
 
-export default function TripOutcomesPage() {
+export default function BookingOutcomesPage() {
   const router = useRouter()
   const period = usePeriod('this_month', 'day')
   const [vertical, setVertical] = useState<Vertical>('all')
@@ -48,8 +48,18 @@ export default function TripOutcomesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [unavailable, setUnavailable] = useState(false)
+  const [disputeRates, setDisputeRates] = useState<DisputeRatePoint[] | null>(null)
   const requestSequence = useRef(0)
   const { from, to, groupBy } = period
+
+  // Dispute rate belongs with outcomes: it is the quality of those outcomes.
+  useEffect(() => {
+    let cancelled = false
+    getDisputeRateReport({ from, to })
+      .then(points => { if (!cancelled) setDisputeRates(points) })
+      .catch(() => { if (!cancelled) setDisputeRates(null) })
+    return () => { cancelled = true }
+  }, [from, to])
 
   const load = useCallback(async () => {
     const request = ++requestSequence.current
@@ -63,7 +73,7 @@ export default function TripOutcomesPage() {
       if (request !== requestSequence.current) return
       setReport(null)
       if (err instanceof ApiError && err.status === 404) setUnavailable(true)
-      else setError(userSafeAdminError(err, 'Failed to load trip outcomes.'))
+      else setError(userSafeAdminError(err, 'Failed to load booking outcomes.'))
     } finally {
       if (request === requestSequence.current) setLoading(false)
     }
@@ -101,13 +111,13 @@ export default function TripOutcomesPage() {
 
   function exportCsv() {
     exportTableCsv(
-      `trip-outcomes-${groupBy}-${vertical}`,
-      ['Period', 'Vertical', 'Total requested', 'Completed', 'Cancelled', 'Unassigned', 'Still active', 'Completion %', 'Unassigned %'],
+      `booking-outcomes-${groupBy}-${vertical}`,
+      ['Period', 'Service line', 'Total requested', 'Completed', 'Cancelled', 'Unassigned', 'Still active', 'Completion %', 'Unassigned %'],
       rows.flatMap(r => [
         [r.period, vertical === 'all' ? 'All' : vertical === 'rides' ? 'Rides' : 'Artisan Services', r.requested, r.completed, r.cancelled, r.unassigned, r.active, r.completionRatePct ?? '', r.unassignedRatePct ?? ''],
         ...(vertical === 'all' ? [
           [r.period, 'Rides', r.byVertical.rides.requested, r.byVertical.rides.completed, r.byVertical.rides.cancelled, r.byVertical.rides.unassigned, r.byVertical.rides.active, r.byVertical.rides.completionRatePct ?? '', r.byVertical.rides.unassignedRatePct ?? ''],
-          [r.period, 'Artisan Services', r.byVertical.artisans.requested, r.byVertical.artisans.completed, r.byVertical.artisans.cancelled, r.byVertical.artisans.unassigned, r.byVertical.artisans.active, r.byVertical.artisans.completionRatePct ?? '', r.byVertical.artisans.unassignedRatePct ?? ''],
+          [r.period, 'Artisan services', r.byVertical.artisans.requested, r.byVertical.artisans.completed, r.byVertical.artisans.cancelled, r.byVertical.artisans.unassigned, r.byVertical.artisans.active, r.byVertical.artisans.completionRatePct ?? '', r.byVertical.artisans.unassignedRatePct ?? ''],
         ] : []),
       ]),
     )
@@ -130,7 +140,7 @@ export default function TripOutcomesPage() {
     <PageGuard permission="view_reports">
       <div>
         <PageHeader
-          title="Trip Outcomes"
+          title="Booking outcomes"
           subtitle="Every booking requested in a period, by what happened to it - rides and artisan jobs"
           actions={
             <Button variant="outline" size="sm" className="gap-1.5" onClick={exportCsv} disabled={rows.length === 0}>
@@ -148,7 +158,7 @@ export default function TripOutcomesPage() {
         />
 
         {error ? (
-          <ErrorState title="Could not load trip outcomes" detail={error} onRetry={load} />
+          <ErrorState title="Could not load booking outcomes" detail={error} onRetry={load} />
         ) : (
         <>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
@@ -167,11 +177,11 @@ export default function TripOutcomesPage() {
           showFooter
           minWidth={720}
           empty={unavailable
-            ? <EmptyState variant="unavailable" title="Trip outcomes are not available yet" description="The server has not been updated with this report. The page will populate automatically once it is deployed." />
+            ? <EmptyState variant="unavailable" title="Booking outcomes are not available yet" description="The server has not been updated with this report. The page will populate automatically once it is deployed." />
             : <EmptyState title="No bookings requested in this period" description="Try a wider date range." />}
           renderExpanded={row => (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-              {[{ label: 'Rides', icon: Car, data: row.byVertical.rides, target: '/rides' }, { label: 'Artisan Services', icon: Wrench, data: row.byVertical.artisans, target: '/artisan-jobs' }].map(v => (
+              {[{ label: 'Rides', icon: Car, data: row.byVertical.rides, target: '/rides' }, { label: 'Artisan services', icon: Wrench, data: row.byVertical.artisans, target: '/artisan-jobs' }].map(v => (
                 <div key={v.label} className="rounded-lg bg-white border border-gray-100 px-3 py-2">
                   <p className="flex items-center gap-1.5 font-semibold text-gray-700 mb-1.5"><v.icon className="h-3.5 w-3.5 text-gray-400" /> {v.label}</p>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600">
@@ -202,7 +212,8 @@ export default function TripOutcomesPage() {
           </p>
         )}
 
-        <div className="bg-white rounded-xl shadow-sm p-5 mt-6">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-6">
+        <div className="xl:col-span-2 bg-white rounded-xl shadow-sm p-5">
           <h2 className="text-sm font-semibold text-gray-800">Outcome mix over time</h2>
           <p className="text-xs text-gray-400 mb-2">Each bar is the bookings requested in that {groupBy}, split by what happened to them</p>
           {chartData.length === 0 ? (
@@ -227,6 +238,31 @@ export default function TripOutcomesPage() {
               </BarChart>
             </ResponsiveContainer>
           )}
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm p-5">
+          <h2 className="text-sm font-semibold text-gray-800">Dispute rate</h2>
+          <p className="text-xs text-gray-400 mb-2">Share of bookings that raised a dispute, per day</p>
+          {disputeRates === null ? (
+            <div className="flex items-center justify-center h-56 text-sm text-gray-400">Dispute rate is not available for this period</div>
+          ) : disputeRates.length === 0 ? (
+            <div className="flex items-center justify-center h-56 text-sm text-gray-400">No disputes in this range</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={disputeRates.map(d => ({ date: d.date, label: formatPeriodLabel(d.date, 'day'), rate: Math.round(d.rate * 100) / 100 }))} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: CHART_AXIS_TEXT }} interval={Math.max(0, Math.floor(disputeRates.length / 6))} />
+                <YAxis tick={{ fontSize: 11, fill: CHART_AXIS_TEXT }} tickFormatter={v => `${v}%`} />
+                <Tooltip
+                  formatter={(v) => [`${Number(v).toFixed(2)}%`, 'Dispute rate']}
+                  labelFormatter={(_, payload) => formatDate(String(payload?.[0]?.payload?.date ?? ''))}
+                  contentStyle={CHART_TOOLTIP_STYLE}
+                />
+                <Line type="monotone" dataKey="rate" stroke={CHART_SERIES[1]} strokeWidth={2} dot={disputeRates.length === 1 ? { r: 3 } : false} name="Dispute rate" />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
         </div>
       </>
         )}

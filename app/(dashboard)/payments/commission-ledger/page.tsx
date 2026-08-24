@@ -21,7 +21,7 @@ import { ApiError, userSafeAdminError } from '@/lib/api-client'
 import { ledgerRowBalances } from '@/lib/commission-ledger-contract'
 import { formatGhs } from '@/lib/money'
 import { formatDate, formatDateTime } from '@/lib/format-date'
-import { dateRangeLabel } from '@/lib/date-range'
+import { dateRangeLabel, dateBasisCaption } from '@/lib/date-range'
 import { paymentMethodLabel } from '@/lib/payment-labels'
 import { exportTableCsv } from '@/lib/report-export'
 
@@ -88,7 +88,7 @@ export default function CommissionLedgerPage() {
       if (request !== requestSequence.current) return
       setReport(null)
       if (err instanceof ApiError && err.status === 404) setUnavailable(true)
-      else setError(userSafeAdminError(err, 'Failed to load the commission ledger.'))
+      else setError(userSafeAdminError(err, 'Failed to load commission charges.'))
     } finally {
       if (request === requestSequence.current) setLoading(false)
     }
@@ -168,22 +168,15 @@ export default function CommissionLedgerPage() {
     <PageGuard permission="view_payments">
       <div>
         <PageHeader
-          title="Payments"
-          subtitle="See money received, money paid out, refunds, and debts"
+          title="Commission charges"
+          subtitle="The full platform commission on every settled booking, per provider, whether or not a promo applied"
+          tabs={<PaymentsTabs />}
           actions={
             <Button variant="outline" size="sm" className="gap-1.5" onClick={exportCsv} disabled={rows.length === 0}>
               <Download className="h-3.5 w-3.5" /> Export CSV
             </Button>
           }
         />
-        <PaymentsTabs active="commission-ledger" />
-
-        <div className="mb-4">
-          <h2 className="text-base font-semibold text-gray-900">Commission Ledger</h2>
-          <p className="text-sm text-gray-500">
-            The full platform commission on every settled booking, per provider, whether or not a promo applied. On cash bookings the promo MyShop funded is netted against the commission first; only the remainder becomes a debt the provider owes.
-          </p>
-        </div>
 
         <PeriodControls
           period={period}
@@ -253,9 +246,9 @@ export default function CommissionLedgerPage() {
             minWidth={960}
             onRowClick={row => setSelected(row)}
             empty={unavailable
-              ? <EmptyState variant="unavailable" title="The commission ledger is not available yet" description="The server has not been updated with this report. The page will populate automatically once it is deployed." />
-              : <EmptyState title="No settled bookings in this period" description="Try a wider date range or another vertical." />}
-            caption="Dated by settlement (GMT): when the booking's payment was recorded. Click a provider for the per-booking breakdown."
+              ? <EmptyState variant="unavailable" title="Commission charges are not available yet" description="The server has not been updated with this report. The page will populate automatically once it is deployed." />
+              : <EmptyState title="No settled bookings in this period" description="Try a wider date range or another service line." />}
+            caption={`${dateBasisCaption('Charges', 'settled')} Click a provider for the per-booking breakdown.`}
           />
         ) : (
           <ReportTable<CommissionLedgerRow>
@@ -266,9 +259,9 @@ export default function CommissionLedgerPage() {
             showFooter
             minWidth={880}
             empty={unavailable
-              ? <EmptyState variant="unavailable" title="The commission ledger is not available yet" description="The server has not been updated with this report." />
+              ? <EmptyState variant="unavailable" title="Commission charges are not available yet" description="The server has not been updated with this report." />
               : <EmptyState title="No settled bookings in this period" />}
-            caption="Same settlement-date basis as Payments - Money Owed, so a day's Debt recorded here equals that day's total there."
+            caption="Same settlement-date basis as Money owed, so a day's Debt recorded here equals that day's total there."
           />
         )}
 

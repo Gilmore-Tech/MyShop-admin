@@ -2,19 +2,20 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import {
-  AlertTriangle, Calendar, Loader2, Megaphone, Pencil, Plus, RefreshCw, Send,
+  Calendar, Loader2, Megaphone, Pencil, Plus, Send,
 } from 'lucide-react'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { RoleGate } from '@/components/common/role-gate'
+import { DataTable, type DataTableColumn } from '@/components/common/data-table'
+import { FilterBar } from '@/components/common/filter-bar'
+import { ErrorState } from '@/components/common/error-state'
+import { EmptyState } from '@/components/common/empty-state'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { Button } from '@/components/ui/button'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table'
 import {
   getCategories, getPromoCampaignSanityLimits, getRideCategories, listPromoCampaigns,
   submitPromoCampaign,
@@ -34,11 +35,11 @@ import { SanityLimitsCard } from './_components/sanity-limits-card'
 const STATUS_OPTIONS: Array<{ value: 'all' | PromoCampaignStatus; label: string }> = [
   { value: 'all',              label: 'All' },
   { value: 'draft',            label: 'Draft' },
-  { value: 'pending_approval', label: 'Pending Approval' },
+  { value: 'pending_approval', label: 'Pending approval' },
   { value: 'approved',         label: 'Approved' },
   { value: 'paused',           label: 'Paused' },
   { value: 'ended',            label: 'Ended' },
-  { value: 'budget_exhausted', label: 'Budget Exhausted' },
+  { value: 'budget_exhausted', label: 'Budget exhausted' },
 ]
 
 const AUDIENCE_OPTIONS: Array<{ value: 'all' | PromoCampaignAudience; label: string }> = [
@@ -71,7 +72,6 @@ export default function PromoCampaignsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const LIMIT = 20
-  const totalPages = Math.max(1, Math.ceil(total / LIMIT))
 
   const [limits, setLimits] = useState<PromoCampaignSanityLimits | null>(null)
   const [limitsLoading, setLimitsLoading] = useState(true)
@@ -154,30 +154,141 @@ export default function PromoCampaignsPage() {
     }
   }
 
+  const columns: DataTableColumn<PromoCampaign>[] = [
+    {
+      key: 'campaign', header: 'Campaign',
+      render: c => (
+        <div className="flex items-center gap-2.5">
+          {c.bannerUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={c.bannerUrl}
+              alt=""
+              className="h-8 w-20 shrink-0 rounded border border-gray-100 object-cover"
+            />
+          ) : (
+            <div className="flex h-8 w-20 shrink-0 items-center justify-center rounded border border-dashed border-gray-200">
+              <Megaphone className="h-3.5 w-3.5 text-gray-200" />
+            </div>
+          )}
+          <button
+            className="max-w-[180px] truncate text-left text-sm font-semibold text-primary hover:underline"
+            title={c.name}
+            onClick={e => { e.stopPropagation(); setOpenCampaignId(c.id) }}
+          >
+            {c.name}
+          </button>
+        </div>
+      ),
+    },
+    { key: 'audience', header: 'Audience', render: c => <CampaignAudienceBadge audience={c.audience} /> },
+    {
+      key: 'discount', header: 'Discount',
+      render: c => (
+        <>
+          <p className="text-sm text-gray-800">{describeValue(c)}</p>
+          <p className="mt-0.5 text-[10px] text-gray-400">
+            {TYPE_LABELS[c.campaignType]}
+            {c.newClientsOnly ? (isProviderAudience(c.audience) ? ' - new providers' : ' - new clients') : ''}
+          </p>
+        </>
+      ),
+    },
+    { key: 'scope', header: 'Scope', render: c => <span className="text-xs text-gray-600">{SCOPE_LABELS[c.promoScope]}</span> },
+    {
+      key: 'window', header: 'Window',
+      render: c => (
+        <div className="flex items-center gap-1 text-xs text-gray-500">
+          <Calendar className="h-3 w-3 text-gray-400" />
+          {formatDate(c.startsAt)} -&gt; {formatDate(c.endsAt)}
+        </div>
+      ),
+    },
+    { key: 'status', header: 'Status', render: c => <CampaignStatusBadge status={c.status} /> },
+    {
+      key: 'budget', header: 'Budget committed',
+      render: c => {
+        const budgetPct = c.budgetCapPesewas != null && c.budgetCapPesewas > 0
+          ? Math.min(100, Math.round((c.budgetSpentPesewas / c.budgetCapPesewas) * 100))
+          : null
+        return (
+          <>
+            <div className="text-xs text-gray-700">
+              {formatGhs(c.budgetSpentPesewas, { withPrefix: false })}
+              {c.budgetCapPesewas != null
+                ? <span className="text-gray-400"> / {formatGhs(c.budgetCapPesewas, { withPrefix: false })}</span>
+                : <span className="text-gray-400"> / uncapped</span>}
+            </div>
+            {budgetPct != null && (
+              <div className="mt-1 h-1 w-20 overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className={`h-full ${budgetPct >= 90 ? 'bg-red-400' : budgetPct >= 60 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                  style={{ width: `${budgetPct}%` }}
+                />
+              </div>
+            )}
+          </>
+        )
+      },
+    },
+    {
+      key: 'actions', header: '', align: 'right',
+      render: c => (
+        <div className="flex items-center justify-end gap-1">
+          <RoleGate permission="manage_promotions">
+            {(c.status === 'draft' || c.status === 'pending_approval') && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-gray-400 hover:text-gray-700"
+                onClick={e => { e.stopPropagation(); setEditing(c) }}
+                title={c.status === 'pending_approval' ? 'Edit (returns to draft)' : 'Edit draft'}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {c.status === 'draft' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-gray-400 hover:text-primary"
+                disabled={submittingId === c.id}
+                onClick={e => { e.stopPropagation(); void handleQuickSubmit(c) }}
+                title="Submit for approval"
+              >
+                {submittingId === c.id
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Send className="h-3.5 w-3.5" />}
+              </Button>
+            )}
+          </RoleGate>
+        </div>
+      ),
+    },
+  ]
+
   return (
     <PageGuard permission="view_promotions">
       <div>
         <PageHeader
-          title="Promo Campaigns"
-          subtitle="Auto-apply discount campaigns with budgets, banners and maker-checker approval."
+          title="Promo campaigns"
+          subtitle="Auto-apply discount campaigns with budgets and banners - a different admin must approve before they go live."
           actions={
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading} className="gap-1.5">
-                <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            <RoleGate permission="manage_promotions">
+              <Button variant="brand" onClick={() => setCreating(true)} className="gap-2">
+                <Plus className="h-4 w-4" /> New campaign
               </Button>
-              <RoleGate permission="manage_promotions">
-                <Button onClick={() => setCreating(true)} className="gap-2 text-white" style={{ backgroundColor: '#F5A623' }}>
-                  <Plus className="h-4 w-4" /> New Campaign
-                </Button>
-              </RoleGate>
-            </div>
+            </RoleGate>
           }
         />
 
         <SanityLimitsCard limits={limits} loading={limitsLoading} onUpdated={setLimits} />
 
-        {/* Filters */}
-        <div className="mb-4 flex flex-wrap items-center gap-3">
+        <FilterBar
+          onRefresh={() => void load()}
+          refreshing={loading}
+          meta={`${total} campaign${total === 1 ? '' : 's'}`}
+        >
           <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
             <SelectTrigger className="w-44 bg-white"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -194,168 +305,28 @@ export default function PromoCampaignsPage() {
               ))}
             </SelectContent>
           </Select>
-          <div className="ml-auto text-sm text-gray-500">{total} campaign{total === 1 ? '' : 's'}</div>
-        </div>
+        </FilterBar>
 
-        {(error || rowError) && (
-          <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-            <p className="text-sm text-red-700">{error || rowError}</p>
-          </div>
-        )}
+        {rowError && <ErrorState compact title="That action failed" detail={rowError} className="mb-4" />}
 
-        <div className="overflow-hidden rounded-xl bg-white shadow-sm">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50">
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Campaign</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Audience</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Discount</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scope</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Window</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Budget committed</TableHead>
-                <TableHead className="w-24" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <TableRow key={i}>
-                    {Array.from({ length: 8 }).map((_, j) => (
-                      <TableCell key={j}><div className="h-4 animate-pulse rounded bg-gray-100" /></TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : campaigns.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="py-14 text-center text-gray-400">
-                    <Megaphone className="mx-auto mb-2 h-8 w-8 text-gray-200" />
-                    <p className="text-sm">
-                      {statusFilter !== 'all' || audienceFilter !== 'all'
-                        ? 'No campaigns match these filters.'
-                        : 'No promo campaigns yet.'}
-                    </p>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                campaigns.map(c => {
-                  const budgetPct = c.budgetCapPesewas != null && c.budgetCapPesewas > 0
-                    ? Math.min(100, Math.round((c.budgetSpentPesewas / c.budgetCapPesewas) * 100))
-                    : null
-                  return (
-                    <TableRow
-                      key={c.id}
-                      className="cursor-pointer hover:bg-gray-50"
-                      onClick={() => setOpenCampaignId(c.id)}
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-2.5">
-                          {c.bannerUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={c.bannerUrl}
-                              alt=""
-                              className="h-8 w-20 shrink-0 rounded border border-gray-100 object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-8 w-20 shrink-0 items-center justify-center rounded border border-dashed border-gray-200">
-                              <Megaphone className="h-3.5 w-3.5 text-gray-200" />
-                            </div>
-                          )}
-                          <button
-                            className="max-w-[180px] truncate text-left text-sm font-semibold text-orange-600 hover:underline"
-                            title={c.name}
-                            onClick={e => { e.stopPropagation(); setOpenCampaignId(c.id) }}
-                          >
-                            {c.name}
-                          </button>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <CampaignAudienceBadge audience={c.audience} />
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-sm text-gray-800">{describeValue(c)}</p>
-                        <p className="mt-0.5 text-[10px] text-gray-400">
-                          {TYPE_LABELS[c.campaignType]}
-                          {c.newClientsOnly ? (isProviderAudience(c.audience) ? ' - new providers' : ' - new clients') : ''}
-                        </p>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-xs text-gray-600">{SCOPE_LABELS[c.promoScope]}</span>
-                      </TableCell>
-                      <TableCell className="text-xs text-gray-500">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3 text-gray-400" />
-                          {formatDate(c.startsAt)} -&gt; {formatDate(c.endsAt)}
-                        </div>
-                      </TableCell>
-                      <TableCell><CampaignStatusBadge status={c.status} /></TableCell>
-                      <TableCell>
-                        <div className="text-xs text-gray-700">
-                          {formatGhs(c.budgetSpentPesewas, { withPrefix: false })}
-                          {c.budgetCapPesewas != null
-                            ? <span className="text-gray-400"> / {formatGhs(c.budgetCapPesewas, { withPrefix: false })}</span>
-                            : <span className="text-gray-400"> / uncapped</span>}
-                        </div>
-                        {budgetPct != null && (
-                          <div className="mt-1 h-1 w-20 overflow-hidden rounded-full bg-gray-100">
-                            <div
-                              className={`h-full ${budgetPct >= 90 ? 'bg-red-400' : budgetPct >= 60 ? 'bg-amber-400' : 'bg-emerald-400'}`}
-                              style={{ width: `${budgetPct}%` }}
-                            />
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end gap-1">
-                          <RoleGate permission="manage_promotions">
-                            {(c.status === 'draft' || c.status === 'pending_approval') && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-gray-400 hover:text-gray-700"
-                                onClick={e => { e.stopPropagation(); setEditing(c) }}
-                                title={c.status === 'pending_approval' ? 'Edit (returns to draft)' : 'Edit draft'}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                            {c.status === 'draft' && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-gray-400 hover:text-orange-600"
-                                disabled={submittingId === c.id}
-                                onClick={e => { e.stopPropagation(); void handleQuickSubmit(c) }}
-                                title="Submit for approval"
-                              >
-                                {submittingId === c.id
-                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  : <Send className="h-3.5 w-3.5" />}
-                              </Button>
-                            )}
-                          </RoleGate>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          </Table>
-
-          <div className="flex items-center justify-between bg-gray-50 px-4 py-3">
-            <p className="text-xs text-gray-500">
-              {loading ? <Loader2 className="inline h-3 w-3 animate-spin" /> : `Page ${page} of ${totalPages} (${total} total)`}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage(p => p - 1)}>Previous</Button>
-              <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage(p => p + 1)}>Next</Button>
-            </div>
-          </div>
-        </div>
+        <DataTable<PromoCampaign>
+          columns={columns}
+          rows={campaigns}
+          rowKey={c => c.id}
+          loading={loading}
+          error={error || null}
+          onRetry={() => void load()}
+          onRowClick={c => setOpenCampaignId(c.id)}
+          rowAriaLabel={c => `Open campaign ${c.name}`}
+          empty={
+            <EmptyState
+              icon={Megaphone}
+              title={statusFilter !== 'all' || audienceFilter !== 'all' ? 'No campaigns match these filters' : 'No promo campaigns yet'}
+            />
+          }
+          pagination={{ page, pageSize: LIMIT, total, onPage: setPage }}
+          minWidth={860}
+        />
 
         <CampaignFormDialog
           open={creating || !!editing}

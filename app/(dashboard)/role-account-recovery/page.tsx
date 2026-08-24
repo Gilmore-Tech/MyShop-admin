@@ -1,9 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Clock, Loader2, RefreshCw, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, Clock, Loader2, ShieldCheck } from 'lucide-react'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
+import { FilterBar } from '@/components/common/filter-bar'
+import { DataTable, AvatarCell } from '@/components/common/data-table'
+import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
+import { PageSkeleton } from '@/components/common/load-state'
+import { DetailSheet } from '@/components/common/detail-sheet'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -14,23 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { useRole } from '@/hooks/use-role'
+import { formatDateTime } from '@/lib/format-date'
 import {
   acceptProviderRoleAccountRecovery,
   approveClientRoleAccountRecovery,
@@ -51,19 +44,6 @@ const STATUS_OPTIONS: Array<{ value: 'all' | RoleAccountRecoveryStatus; label: s
   { value: 'all', label: 'All' },
 ]
 
-function formatDateTime(value: string | null) {
-  if (!value) return '—'
-  return new Date(value).toLocaleString('en-GB', {
-    timeZone: 'GMT',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  })
-}
-
 function stageCopy(status: RoleAccountRecoveryStatus) {
   switch (status) {
     case 'pending_operations':
@@ -71,11 +51,11 @@ function stageCopy(status: RoleAccountRecoveryStatus) {
     case 'pending_admin_intake':
       return 'Waiting for the named Admin in the provider region.'
     case 'provider_pending_verification':
-      return 'Admin intake is complete. Documents must pass Coordinator validation and RM final approval.'
+      return 'Admin intake is complete. Documents must pass Coordinator validation and Regional Manager final approval.'
     case 'approved':
       return 'The exact role recovery chain is complete.'
     case 'expired':
-      return 'The 90×24-hour recovery window closed before intake or approval.'
+      return 'The 90x24-hour recovery window closed before intake or approval.'
   }
 }
 
@@ -97,7 +77,6 @@ export default function RoleAccountRecoveryPage() {
   const [items, setItems] = useState<RoleAccountRecoveryRequest[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(0)
   const [status, setStatus] = useState<'all' | RoleAccountRecoveryStatus>('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -120,11 +99,9 @@ export default function RoleAccountRecoveryPage() {
         })
         setItems(response.items)
         setTotal(response.total)
-        setTotalPages(response.totalPages)
       } catch (caught) {
         setItems([])
         setTotal(0)
-        setTotalPages(0)
         setError(caught instanceof ApiError ? caught.message : 'Recovery requests could not be loaded.')
       } finally {
         if (!silent) setLoading(false)
@@ -144,10 +121,13 @@ export default function RoleAccountRecoveryPage() {
   if (!FEATURES.roleAccountRecovery || !hasExactAuthority) {
     return (
       <PageGuard permission="view_role_account_recovery">
-        <PageHeader title="Deleted Role Recovery" subtitle="This workflow is release-gated." />
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          This page requires the matching backend and dashboard feature gates plus either global
-          client-recovery authority or the named regional Admin provider-intake authority.
+        <div>
+          <PageHeader title="Deleted account recovery" subtitle="Restore deleted client, driver or artisan accounts" />
+          <EmptyState
+            variant="unavailable"
+            title="This feature isn't available"
+            description="This page requires the matching backend and dashboard feature gates plus either global client-recovery authority or the named regional Admin provider-intake authority."
+          />
         </div>
       </PageGuard>
     )
@@ -157,18 +137,8 @@ export default function RoleAccountRecoveryPage() {
     <PageGuard permission="view_role_account_recovery">
       <div>
         <PageHeader
-          title="Deleted Role Recovery"
-          subtitle={
-            isGlobalClientApprover
-              ? 'Approve OTP-verified client-role recovery requests.'
-              : `Accept OTP-verified provider requests for ${region.name ?? 'your region'} into document revalidation.`
-          }
-          actions={
-            <Button variant="outline" size="sm" onClick={() => load()} disabled={loading}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          }
+          title="Deleted account recovery"
+          subtitle="Restore deleted client, driver or artisan accounts"
         />
 
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
@@ -187,66 +157,77 @@ export default function RoleAccountRecoveryPage() {
             <button className="ml-auto text-xs" onClick={() => setFlash('')}>Dismiss</button>
           </div>
         )}
-        {error && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-            <AlertTriangle className="h-4 w-4" /> {error}
-          </div>
-        )}
-
-        <div className="mb-4 flex items-center gap-3">
+        <FilterBar
+          onRefresh={() => load()}
+          refreshing={loading}
+          meta={
+            isGlobalClientApprover
+              ? 'Approve OTP-verified client-role recovery requests'
+              : `Accept OTP-verified provider requests for ${region.name ?? 'your region'} into document revalidation`
+          }
+        >
           <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
-            <SelectTrigger className="w-60 bg-white"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-9 w-60 bg-white"><SelectValue /></SelectTrigger>
             <SelectContent>
               {STATUS_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <span className="ml-auto text-sm text-gray-500">{total} request{total === 1 ? '' : 's'}</span>
-        </div>
+        </FilterBar>
 
-        <div className="overflow-hidden rounded-xl bg-white shadow-sm">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50">
-                <TableHead>Requested</TableHead>
-                <TableHead>Role account</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Deadline</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Review</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow><TableCell colSpan={6} className="py-12 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-gray-400" /></TableCell></TableRow>
-              ) : items.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="py-12 text-center text-gray-400">No requests in this exact scope.</TableCell></TableRow>
-              ) : items.map((request) => (
-                <TableRow key={request.requestId}>
-                  <TableCell className="text-sm text-gray-600">{formatDateTime(request.requestedAt)}</TableCell>
-                  <TableCell>
-                    <div className="text-sm font-medium">{request.name ?? 'Name unavailable'}</div>
-                    <div className="text-xs capitalize text-gray-500">{request.role}</div>
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">{request.maskedPhone}</TableCell>
-                  <TableCell className="text-sm"><Clock className="mr-1 inline h-3.5 w-3.5" />{formatDateTime(request.recoveryDeadline)}</TableCell>
-                  <TableCell><StatusBadge status={request.status} /></TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => setSelectedId(request.requestId)}>Open</Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <div className="flex items-center justify-between bg-gray-50 px-4 py-3">
-            <span className="text-xs text-gray-500">Page {page} of {Math.max(1, totalPages)}</span>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={loading || page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
-              <Button variant="outline" size="sm" disabled={loading || page >= totalPages} onClick={() => setPage((value) => value + 1)}>Next</Button>
-            </div>
-          </div>
-        </div>
+        <DataTable
+          columns={[
+            {
+              key: 'requested',
+              header: 'Requested',
+              render: request => <span className="text-sm text-gray-600">{formatDateTime(request.requestedAt)}</span>,
+            },
+            {
+              key: 'account',
+              header: 'Role account',
+              render: request => <AvatarCell name={request.name} sub={<span className="capitalize">{request.role}</span>} />,
+            },
+            {
+              key: 'phone',
+              header: 'Phone',
+              render: request => <span className="font-mono text-sm">{request.maskedPhone}</span>,
+            },
+            {
+              key: 'deadline',
+              header: 'Deadline',
+              render: request => (
+                <span className="text-sm inline-flex items-center gap-1">
+                  <Clock className="h-3.5 w-3.5 text-gray-400" />{formatDateTime(request.recoveryDeadline)}
+                </span>
+              ),
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              render: request => <StatusBadge status={request.status} />,
+            },
+            {
+              key: 'review',
+              header: '',
+              align: 'right',
+              render: request => (
+                <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); setSelectedId(request.requestId) }}>
+                  Open
+                </Button>
+              ),
+            },
+          ]}
+          rows={items}
+          rowKey={request => request.requestId}
+          loading={loading}
+          error={error || null}
+          onRetry={() => load()}
+          onRowClick={request => setSelectedId(request.requestId)}
+          rowAriaLabel={request => `Open recovery request for ${request.maskedPhone}`}
+          empty={<EmptyState title="No requests in this exact scope" />}
+          pagination={{ page, pageSize: PAGE_SIZE, total, onPage: setPage }}
+        />
 
         <RecoveryDrawer
           requestId={selectedId}
@@ -336,44 +317,48 @@ function RecoveryDrawer({
   }
 
   return (
-    <Sheet open={!!requestId} onOpenChange={(open) => { if (!open) onClose() }}>
-      <SheetContent className="overflow-y-auto sm:max-w-xl">
-        <SheetHeader><SheetTitle>Deleted role recovery</SheetTitle></SheetHeader>
-        <div className="mt-6 space-y-5">
-          {loading ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : error && !request ? (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
-          ) : request ? (
-            <>
-              <div className="grid grid-cols-2 gap-4 rounded-lg bg-gray-50 p-4 text-sm">
-                <div><div className="text-xs text-gray-500">Account</div><div className="font-medium">{request.name ?? 'Name unavailable'}</div></div>
-                <div><div className="text-xs text-gray-500">Role</div><div className="capitalize">{request.role}</div></div>
-                <div><div className="text-xs text-gray-500">Phone</div><div className="font-mono">{request.maskedPhone}</div></div>
-                <div><div className="text-xs text-gray-500">Status</div><StatusBadge status={request.status} /></div>
-                <div className="col-span-2"><div className="text-xs text-gray-500">Recovery deadline</div><div>{formatDateTime(request.recoveryDeadline)}</div></div>
+    <DetailSheet
+      open={!!requestId}
+      onClose={onClose}
+      title={request?.name ?? 'Deleted role recovery'}
+      subtitle={request && <span className="font-mono">{request.maskedPhone}</span>}
+      status={request && <StatusBadge status={request.status} />}
+      footer={
+        !loading && request && (clientAction || providerAction) ? (
+          <Button className="w-full" variant="brand" onClick={() => void submit()} disabled={submitting}>
+            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {clientAction ? 'Approve exact client recovery' : 'Accept provider into revalidation'}
+          </Button>
+        ) : undefined
+      }
+    >
+      <div className="space-y-5">
+        {loading && <PageSkeleton variant="form" />}
+        {!loading && error && !request && (
+          <ErrorState title="Could not load this request" detail={error} />
+        )}
+        {!loading && request && (
+          <>
+            <div className="grid grid-cols-2 gap-4 rounded-lg bg-gray-50 p-4 text-sm">
+              <div><div className="text-xs text-gray-500">Role</div><div className="capitalize">{request.role}</div></div>
+              <div><div className="text-xs text-gray-500">Recovery deadline</div><div>{formatDateTime(request.recoveryDeadline)}</div></div>
+            </div>
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">{stageCopy(request.status)}</div>
+            {error && <ErrorState compact title="That did not work" detail={error} />}
+            {(clientAction || providerAction) && (
+              <div className="space-y-2">
+                <Label htmlFor="recovery-note">Audit note (optional)</Label>
+                <Textarea id="recovery-note" value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} placeholder="Record how the request was checked." />
               </div>
-              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">{stageCopy(request.status)}</div>
-              {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-              {(clientAction || providerAction) && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="recovery-note">Audit note (optional)</Label>
-                    <Textarea id="recovery-note" value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} placeholder="Record how the request was checked." />
-                  </div>
-                  {providerAction && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                      Intake restores only this provider role as pending and Offline. Every current document is independently re-reviewed; the Coordinator and RM stages remain mandatory.
-                    </div>
-                  )}
-                  <Button className="w-full" onClick={submit} disabled={submitting}>
-                    {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {clientAction ? 'Approve exact client recovery' : 'Accept provider into revalidation'}
-                  </Button>
-                </>
-              )}
-            </>
-          ) : null}
-        </div>
-      </SheetContent>
-    </Sheet>
+            )}
+            {providerAction && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                Intake restores only this provider role as pending and Offline. Every current document is independently re-reviewed; the Coordinator and Regional Manager stages remain mandatory.
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </DetailSheet>
   )
 }

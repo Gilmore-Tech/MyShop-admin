@@ -1,17 +1,28 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Car, CheckCircle2, ExternalLink, Loader2, Pencil, RefreshCw, Trash2, XCircle } from 'lucide-react'
+import { AlertTriangle, Car, CheckCircle2, ExternalLink, Loader2, Pencil, Trash2, XCircle } from 'lucide-react'
 
-import { StatusBadge } from '@/components/common/status-badge'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { DataTable, AvatarCell } from '@/components/common/data-table'
+import { DetailSheet } from '@/components/common/detail-sheet'
 import { DocumentExpiryControl } from '@/components/common/document-expiry-control'
+import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
+import { FilterBar } from '@/components/common/filter-bar'
+import { FormDialog } from '@/components/common/form-dialog'
+import { PageSkeleton } from '@/components/common/load-state'
+import { PageHeader } from '@/components/common/page-header'
+import { StatCard } from '@/components/common/stat-card'
+import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useRole } from '@/hooks/use-role'
 import { getRideCategories, type RideCategory } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
+import { formatDateTime } from '@/lib/format-date'
 import { legacyVehicleCreateValidationError } from '@/lib/legacy-vehicle-migration'
 import {
   coordinatorApproveAdminVehicle,
@@ -39,21 +50,14 @@ import {
   type VehicleApprovalStatus,
 } from '@/lib/vehicle-lifecycle'
 
-const FILTERS: Array<{ value: '' | VehicleApprovalStatus; label: string }> = [
-  { value: '', label: 'All statuses' },
-  { value: 'pending_coordinator', label: 'Awaiting Coordinator' },
+const FILTERS: Array<{ value: 'all' | VehicleApprovalStatus; label: string }> = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'pending_coordinator', label: 'Awaiting coordinator' },
   { value: 'coordinator_approved', label: 'Awaiting Regional Manager' },
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
   { value: 'retired', label: 'Retired' },
 ]
-
-function dateTime(value: string | null | undefined): string {
-  if (!value) return '—'
-  return new Date(value).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-}
 
 function userError(error: unknown): string {
   if (!(error instanceof ApiError)) return 'The action failed. Reload and try again.'
@@ -86,7 +90,7 @@ function legacyMigrationDraft(candidate: LegacyVehicleBackfillCandidate, targetV
 export default function VehicleVerificationPage() {
   const { permissions, category } = useRole()
   const granted = permissions ?? []
-  const [status, setStatus] = useState<'' | VehicleApprovalStatus>('')
+  const [status, setStatus] = useState<'all' | VehicleApprovalStatus>('all')
   const [vehicles, setVehicles] = useState<AdminVehicle[]>([])
   const [legacyCandidates, setLegacyCandidates] = useState<LegacyVehicleBackfillCandidate[]>([])
   const [loading, setLoading] = useState(true)
@@ -97,7 +101,6 @@ export default function VehicleVerificationPage() {
   const [actionBusy, setActionBusy] = useState('')
   const [actionError, setActionError] = useState('')
   const [reasonAction, setReasonAction] = useState<'reject' | 'retire' | 'category_reject' | null>(null)
-  const [reason, setReason] = useState('')
   const [reasonCategoryId, setReasonCategoryId] = useState<string | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [editCategories, setEditCategories] = useState<RideCategory[]>([])
@@ -118,7 +121,7 @@ export default function VehicleVerificationPage() {
     setError('')
     try {
       const [vehicleRows, legacyRows] = await Promise.all([
-        listAdminVehicles(status ? { status } : {}),
+        listAdminVehicles(status !== 'all' ? { status } : {}),
         listLegacyVehicleBackfill(),
       ])
       setVehicles(vehicleRows)
@@ -304,12 +307,8 @@ export default function VehicleVerificationPage() {
     }
   }
 
-  async function submitReasonAction() {
+  async function submitReasonAction(reason: string) {
     if (!selected || !reasonAction) return
-    if (reason.trim().length < 5) {
-      setActionError('Reason must be at least 5 characters.')
-      return
-    }
     const target = vehicleReviewTarget(selected)
     if (reasonAction === 'reject') {
       await mutate('reject', () => finalizeAdminVehicle(selected.id, target.version, 'reject', reason))
@@ -324,7 +323,6 @@ export default function VehicleVerificationPage() {
       }
     }
     setReasonAction(null)
-    setReason('')
     setReasonCategoryId(null)
   }
 
@@ -338,26 +336,28 @@ export default function VehicleVerificationPage() {
   ) ?? null
 
   if (category === 'artisan') {
-    return <div className="p-8 text-sm text-gray-500">Vehicle verification is outside your Artisan scope.</div>
+    return (
+      <div>
+        <PageHeader title="Vehicle approvals" subtitle="Vehicle documents and revisions" />
+        <EmptyState variant="unavailable" title="Outside your scope" description="Vehicle verification is outside your Artisan scope." />
+      </div>
+    )
   }
 
+  const reasonDialogBusy =
+    reasonAction === 'retire' ? actionBusy === 'retire'
+      : reasonAction === 'category_reject' ? actionBusy === `category-${reasonCategoryId}`
+      : actionBusy === 'reject'
+
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Vehicle Verification</h1>
-          <p className="text-sm text-gray-500 mt-1">Coordinator → Regional Manager approval, with separate category decisions.</p>
-        </div>
-        <Button variant="outline" onClick={() => void load()} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Reload
-        </Button>
-      </div>
+    <div className="space-y-5">
+      <PageHeader title="Vehicle approvals" subtitle="Vehicle documents and revisions" />
 
       <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <Summary label="Awaiting Coordinator" value={queueSummary.coordinator} />
-        <Summary label="Awaiting RM" value={queueSummary.rm} />
-        <Summary label="Removal requests" value={queueSummary.removals} alert={queueSummary.removals > 0} />
-        <Summary label="Legacy migrations" value={legacyCandidates.length} alert={legacyCandidates.length > 0} />
+        <StatCard icon={Car} label="Awaiting coordinator" value={queueSummary.coordinator} loading={loading} />
+        <StatCard icon={CheckCircle2} label="Awaiting Regional Manager" value={queueSummary.rm} loading={loading} />
+        <StatCard icon={AlertTriangle} label="Removal requests" value={queueSummary.removals} sub={queueSummary.removals > 0 ? 'Needs review' : undefined} loading={loading} />
+        <StatCard icon={AlertTriangle} label="Legacy migrations" value={legacyCandidates.length} sub={legacyCandidates.length > 0 ? 'Needs review' : undefined} loading={loading} />
       </div>
 
       {legacyCandidates.length > 0 && (
@@ -380,7 +380,7 @@ export default function VehicleVerificationPage() {
                 {legacyCandidates.map(candidate => (
                   <tr key={candidate.driverId}>
                     <td className="px-4 py-3"><p className="font-medium">{candidate.displayName ?? 'Unnamed driver'}</p><p className="text-xs text-gray-400">{candidate.regionId ?? 'Region not assigned'}</p></td>
-                    <td className="px-4 py-3"><p>{[candidate.legacyVehicle.make, candidate.legacyVehicle.model].filter(Boolean).join(' ') || 'Incomplete record'}</p><p className="text-xs text-gray-500">{candidate.legacyVehicle.plate ?? 'No plate'} · {candidate.legacyVehicle.year ?? 'No year'} · {candidate.legacyVehicle.color ?? 'No colour'}</p>{candidate.explicitVehicles.length > 0 && <p className="text-xs font-medium text-blue-600 mt-1">{candidate.explicitVehicles.length} existing vehicle{candidate.explicitVehicles.length === 1 ? '' : 's'} available for binding</p>}</td>
+                    <td className="px-4 py-3"><p>{[candidate.legacyVehicle.make, candidate.legacyVehicle.model].filter(Boolean).join(' ') || 'Incomplete record'}</p><p className="text-xs text-gray-500">{candidate.legacyVehicle.plate ?? 'No plate'} - {candidate.legacyVehicle.year ?? 'No year'} - {candidate.legacyVehicle.color ?? 'No colour'}</p>{candidate.explicitVehicles.length > 0 && <p className="text-xs font-medium text-blue-600 mt-1">{candidate.explicitVehicles.length} existing vehicle{candidate.explicitVehicles.length === 1 ? '' : 's'} available for binding</p>}</td>
                     <td className="px-4 py-3">{candidate.unboundDocuments.length}</td>
                     <td className="px-4 py-3 text-right">{granted.includes('edit_provider_profile') ? <Button size="sm" onClick={() => openMigration(candidate)}>Review migration</Button> : <span className="text-xs text-gray-400">Edit permission required</span>}</td>
                   </tr>
@@ -391,212 +391,293 @@ export default function VehicleVerificationPage() {
         </section>
       )}
 
-      <div className="flex items-center gap-3">
-        <Label htmlFor="vehicle-status">Status</Label>
-        <select
-          id="vehicle-status"
-          className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm"
-          value={status}
-          onChange={event => setStatus(event.target.value as '' | VehicleApprovalStatus)}
-        >
-          {FILTERS.map(filter => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
-        </select>
-      </div>
+      <FilterBar onRefresh={() => void load()} refreshing={loading}>
+        <Select value={status} onValueChange={value => setStatus(value as 'all' | VehicleApprovalStatus)}>
+          <SelectTrigger className="h-9 w-56 bg-white"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {FILTERS.map(filter => <SelectItem key={filter.value} value={filter.value}>{filter.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </FilterBar>
 
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-        {loading ? (
-          <div className="p-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-orange-500" /></div>
-        ) : error ? (
-          <div className="p-10 text-center space-y-3"><p className="text-sm text-red-600">{error}</p><Button variant="outline" onClick={() => void load()}>Try again</Button></div>
-        ) : vehicles.length === 0 ? (
-          <div className="p-12 text-center"><Car className="h-9 w-9 mx-auto text-gray-200" /><p className="text-sm text-gray-500 mt-3">No vehicles in this queue.</p></div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-400">
-                <tr><th className="px-4 py-3">Vehicle</th><th className="px-4 py-3">Driver</th><th className="px-4 py-3">Stage</th><th className="px-4 py-3">Categories</th><th className="px-4 py-3">Request</th><th /></tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {vehicles.map(vehicle => {
-                  const target = vehicleReviewTarget(vehicle)
-                  return (
-                    <tr key={vehicle.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3"><p className="font-medium text-gray-900">{vehicle.make} {vehicle.model}</p><p className="text-xs text-gray-500">{vehicle.plate} · {vehicle.year} · v{vehicle.version}</p></td>
-                      <td className="px-4 py-3"><p>{vehicle.driver.displayName ?? 'Unnamed driver'}</p><p className="text-xs text-gray-400">{vehicle.driver.regionId ?? 'Region not assigned'}</p></td>
-                      <td className="px-4 py-3"><StatusBadge status={target.status} />{target.kind === 'revision' && <p className="text-[10px] text-blue-600 mt-1">Pending revision v{target.version}</p>}</td>
-                      <td className="px-4 py-3">{vehicle.rideCategories.filter(row => row.status === 'approved').length}/{vehicle.rideCategories.length} approved</td>
-                      <td className="px-4 py-3">{vehicle.retirementRequestedAt ? <span className="text-amber-700 font-medium">Removal requested</span> : '—'}</td>
-                      <td className="px-4 py-3 text-right"><Button size="sm" variant="outline" onClick={() => void openDetail(vehicle.id)}>Review</Button></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+      <DataTable
+        columns={[
+          {
+            key: 'vehicle',
+            header: 'Vehicle',
+            render: vehicle => (
+              <div>
+                <p className="font-medium text-gray-900">{vehicle.make} {vehicle.model}</p>
+                <p className="text-xs text-gray-500">{vehicle.plate} - {vehicle.year} - v{vehicle.version}</p>
+              </div>
+            ),
+          },
+          {
+            key: 'driver',
+            header: 'Driver',
+            render: vehicle => <AvatarCell name={vehicle.driver.displayName} sub={vehicle.driver.regionId ?? 'Region not assigned'} />,
+          },
+          {
+            key: 'stage',
+            header: 'Stage',
+            render: vehicle => {
+              const target = vehicleReviewTarget(vehicle)
+              return (
+                <div>
+                  <StatusBadge status={target.status} />
+                  {target.kind === 'revision' && <p className="text-[10px] text-blue-600 mt-1">Pending revision v{target.version}</p>}
+                </div>
+              )
+            },
+          },
+          {
+            key: 'categories',
+            header: 'Categories',
+            render: vehicle => (
+              <span className="text-sm text-gray-600">
+                {vehicle.rideCategories.filter(row => row.status === 'approved').length}/{vehicle.rideCategories.length} approved
+              </span>
+            ),
+          },
+          {
+            key: 'request',
+            header: 'Request',
+            render: vehicle => vehicle.retirementRequestedAt
+              ? <span className="text-amber-700 font-medium text-sm">Removal requested</span>
+              : <span className="text-gray-300">-</span>,
+          },
+          {
+            key: 'review',
+            header: '',
+            align: 'right',
+            render: vehicle => (
+              <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); void openDetail(vehicle.id) }}>
+                Review
+              </Button>
+            ),
+          },
+        ]}
+        rows={vehicles}
+        rowKey={vehicle => vehicle.id}
+        loading={loading}
+        error={error || null}
+        onRetry={() => void load()}
+        onRowClick={vehicle => void openDetail(vehicle.id)}
+        rowAriaLabel={vehicle => `Review ${vehicle.make} ${vehicle.model}`}
+        empty={<EmptyState icon={Car} title="No vehicles in this queue" />}
+      />
+
+      <FormDialog
+        open={migrationOpen}
+        onClose={() => setMigrationOpen(false)}
+        title="Migrate existing vehicle"
+        description={`Review and explicitly bind the previous record for ${migrationCandidate?.displayName ?? 'this driver'}. This action is audited and cannot approve a vehicle or category.`}
+        submitLabel={migrationTargetVehicle ? 'Bind retained documents' : 'Create pending vehicle'}
+        onSubmit={() => void submitMigration()}
+        size="lg"
+        loading={migrationBusy}
+        error={migrationError || null}
+      >
+        {migrationCandidate && migrationDraft && <div className="space-y-5">
+          {migrationCandidate.explicitVehicles.length > 0 && <Panel title="Target existing vehicle">
+            <Label htmlFor="legacy-target-vehicle">Vehicle that owns these documents</Label>
+            <select
+              id="legacy-target-vehicle"
+              className="mt-1.5 h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm"
+              value={migrationTargetVehicleId ?? ''}
+              onChange={event => {
+                const targetVehicleId = event.target.value || null
+                setMigrationTargetVehicleId(targetVehicleId)
+                setMigrationDraft(legacyMigrationDraft(migrationCandidate, targetVehicleId))
+                setMigrationConfirmed(false)
+                setMigrationError('')
+              }}
+            >
+              <option value="">Select the exact vehicle</option>
+              {migrationCandidate.explicitVehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.make ?? 'Unknown make'} {vehicle.model ?? 'Unknown model'} - {vehicle.plate ?? 'No plate'} - {vehicle.approvalStatus}</option>)}
+            </select>
+            <p className="text-[11px] text-gray-500 mt-2">The vehicle and category states stay exactly as they are; this step binds only the explicitly confirmed retained documents.</p>
+          </Panel>}
+          <Panel title="Vehicle details">
+            {!migrationTargetVehicle && !migrationCandidate.hasCompleteLegacyVehicle && <p className="mb-3 text-xs text-amber-700">The previous record is incomplete. Confirm missing values against the original documents before continuing.</p>}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field disabled={Boolean(migrationTargetVehicle)} label="Make" value={migrationDraft.make} onChange={value => setMigrationDraft({ ...migrationDraft, make: value })} />
+              <Field disabled={Boolean(migrationTargetVehicle)} label="Model" value={migrationDraft.model} onChange={value => setMigrationDraft({ ...migrationDraft, model: value })} />
+              <Field disabled={Boolean(migrationTargetVehicle)} label="Year" type="number" value={String(migrationDraft.year)} onChange={value => setMigrationDraft({ ...migrationDraft, year: Number(value) })} />
+              <Field disabled={Boolean(migrationTargetVehicle)} label="Colour" value={migrationDraft.color} onChange={value => setMigrationDraft({ ...migrationDraft, color: value })} />
+              <div className="sm:col-span-2"><Field disabled={Boolean(migrationTargetVehicle)} label="Plate" value={migrationDraft.plate} onChange={value => setMigrationDraft({ ...migrationDraft, plate: value })} /></div>
+            </div>
+          </Panel>
+
+          <Panel title="Existing vehicle documents">
+            {migrationCandidate.unboundDocuments.length === 0 ? <p className="text-sm text-amber-700">No existing roadworthiness or insurance document can be preserved. The driver must upload them against the new vehicle after migration.</p> : migrationCandidate.unboundDocuments.map(document => (
+              <label key={document.id} className="flex items-start gap-3 py-3 border-b last:border-0">
+                <input type="checkbox" className="mt-1" checked={migrationDocumentIds.includes(document.id)} onChange={event => setMigrationDocumentIds(event.target.checked ? [...migrationDocumentIds, document.id] : migrationDocumentIds.filter(id => id !== document.id))} />
+                <span className="flex-1"><span className="block font-medium capitalize">{document.documentType.replaceAll('_', ' ')}</span><span className="block text-xs text-gray-500">{document.status} - expires {formatDateTime(document.expiresAt)}</span></span>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-xs text-orange-600 disabled:opacity-50"
+                  disabled={migrationDocumentOpening === document.id}
+                  onClick={event => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    void openLegacyVehicleDocument(document.id)
+                  }}
+                >
+                  {migrationDocumentOpening === document.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <ExternalLink className="h-3 w-3" />}
+                  Open
+                </button>
+              </label>
+            ))}
+            <p className="text-[11px] text-gray-500 mt-3">Checking a document confirms that it belongs to this exact physical vehicle. Its existing status and expiry date will not be changed.</p>
+          </Panel>
+
+          <Panel title="Requested ride categories">
+            {migrationCategories.length === 0 ? <p className="text-sm text-amber-700">No ride categories loaded. Reload before continuing.</p> : <div className="grid sm:grid-cols-2 gap-2">
+              {migrationCategories.filter(rideCategory => migrationTargetVehicle ? migrationDraft.rideCategoryIds.includes(rideCategory.id) : rideCategory.isActive).map(rideCategory => <label key={rideCategory.id} className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" disabled={Boolean(migrationTargetVehicle)} checked={migrationDraft.rideCategoryIds.includes(rideCategory.id)} onChange={event => setMigrationDraft({ ...migrationDraft, rideCategoryIds: event.target.checked ? [...migrationDraft.rideCategoryIds, rideCategory.id] : migrationDraft.rideCategoryIds.filter(id => id !== rideCategory.id) })} />{rideCategory.name}</label>)}
+            </div>}
+            <p className="text-[11px] text-gray-500 mt-3">{migrationTargetVehicle ? 'Existing category decisions are not changed by document binding.' : 'Every selected category starts pending and must be approved separately.'}</p>
+          </Panel>
+
+          <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><input type="checkbox" className="mt-1" checked={migrationConfirmed} onChange={event => setMigrationConfirmed(event.target.checked)} /><span>I compared the previous vehicle details and every selected document and confirm they belong to this driver and this physical vehicle.</span></label>
+        </div>}
+      </FormDialog>
+
+      <DetailSheet
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        size="xl"
+        title={selected ? `${selected.make} ${selected.model}` : 'Vehicle review'}
+        subtitle={selected ? `${selected.plate} - ${selected.driver.displayName ?? 'Unnamed driver'}` : undefined}
+        status={selected && (
+          <>
+            <StatusBadge status={selected.approvalStatus} />
+            <span className="text-xs text-gray-400">v{selected.version}</span>
+          </>
+        )}
+        footer={selected && (
+          <div className="flex flex-wrap gap-2 w-full">
+            {canCoordinatorForward(granted, selected) && <Button variant="brand" disabled={!!actionBusy} onClick={() => void mutate('coordinator', () => coordinatorApproveAdminVehicle(selected.id, vehicleReviewTarget(selected).version))}><CheckCircle2 className="h-4 w-4 mr-2" />Forward to Regional Manager</Button>}
+            {canRegionalManagerFinalize(granted, selected) && <><Button variant="brand" disabled={!!actionBusy} onClick={() => void mutate('approve', () => finalizeAdminVehicle(selected.id, vehicleReviewTarget(selected).version, 'approve'))}><CheckCircle2 className="h-4 w-4 mr-2" />Approve vehicle</Button><Button variant="outline" disabled={!!actionBusy} onClick={() => { setReasonAction('reject'); setActionError('') }}><XCircle className="h-4 w-4 mr-2" />Reject vehicle</Button></>}
+            {canEditVehicle(granted, selected) && <Button variant="outline" disabled={!!actionBusy} onClick={openEdit}><Pencil className="h-4 w-4 mr-2" />Edit vehicle</Button>}
+            {canRetireVehicle(granted, selected) && <Button variant="destructive" disabled={!!actionBusy} onClick={() => { setReasonAction('retire'); setActionError('') }}><Trash2 className="h-4 w-4 mr-2" />Retire requested vehicle</Button>}
           </div>
         )}
-      </div>
-
-      <Dialog open={migrationOpen} onOpenChange={open => { if (!migrationBusy) setMigrationOpen(open) }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Migrate existing vehicle</DialogTitle><DialogDescription>Review and explicitly bind the previous record for {migrationCandidate?.displayName ?? 'this driver'}. This action is audited and cannot approve a vehicle or category.</DialogDescription></DialogHeader>
-          {migrationCandidate && migrationDraft && <div className="space-y-5">
-            {migrationCandidate.explicitVehicles.length > 0 && <Panel title="Target existing vehicle">
-              <Label htmlFor="legacy-target-vehicle">Vehicle that owns these documents</Label>
-              <select
-                id="legacy-target-vehicle"
-                className="mt-1.5 h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm"
-                value={migrationTargetVehicleId ?? ''}
-                onChange={event => {
-                  const targetVehicleId = event.target.value || null
-                  setMigrationTargetVehicleId(targetVehicleId)
-                  setMigrationDraft(legacyMigrationDraft(migrationCandidate, targetVehicleId))
-                  setMigrationConfirmed(false)
-                  setMigrationError('')
-                }}
-              >
-                <option value="">Select the exact vehicle</option>
-                {migrationCandidate.explicitVehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.make ?? 'Unknown make'} {vehicle.model ?? 'Unknown model'} · {vehicle.plate ?? 'No plate'} · {vehicle.approvalStatus}</option>)}
-              </select>
-              <p className="text-[11px] text-gray-500 mt-2">The vehicle and category states stay exactly as they are; this step binds only the explicitly confirmed retained documents.</p>
-            </Panel>}
-            <Panel title="Vehicle details">
-              {!migrationTargetVehicle && !migrationCandidate.hasCompleteLegacyVehicle && <p className="mb-3 text-xs text-amber-700">The previous record is incomplete. Confirm missing values against the original documents before continuing.</p>}
-              <div className="grid sm:grid-cols-2 gap-3">
-                <Field disabled={Boolean(migrationTargetVehicle)} label="Make" value={migrationDraft.make} onChange={value => setMigrationDraft({ ...migrationDraft, make: value })} />
-                <Field disabled={Boolean(migrationTargetVehicle)} label="Model" value={migrationDraft.model} onChange={value => setMigrationDraft({ ...migrationDraft, model: value })} />
-                <Field disabled={Boolean(migrationTargetVehicle)} label="Year" type="number" value={String(migrationDraft.year)} onChange={value => setMigrationDraft({ ...migrationDraft, year: Number(value) })} />
-                <Field disabled={Boolean(migrationTargetVehicle)} label="Colour" value={migrationDraft.color} onChange={value => setMigrationDraft({ ...migrationDraft, color: value })} />
-                <div className="sm:col-span-2"><Field disabled={Boolean(migrationTargetVehicle)} label="Plate" value={migrationDraft.plate} onChange={value => setMigrationDraft({ ...migrationDraft, plate: value })} /></div>
-              </div>
-            </Panel>
-
-            <Panel title="Existing vehicle documents">
-              {migrationCandidate.unboundDocuments.length === 0 ? <p className="text-sm text-amber-700">No existing roadworthiness or insurance document can be preserved. The driver must upload them against the new vehicle after migration.</p> : migrationCandidate.unboundDocuments.map(document => (
-                <label key={document.id} className="flex items-start gap-3 py-3 border-b last:border-0">
-                  <input type="checkbox" className="mt-1" checked={migrationDocumentIds.includes(document.id)} onChange={event => setMigrationDocumentIds(event.target.checked ? [...migrationDocumentIds, document.id] : migrationDocumentIds.filter(id => id !== document.id))} />
-                  <span className="flex-1"><span className="block font-medium capitalize">{document.documentType.replaceAll('_', ' ')}</span><span className="block text-xs text-gray-500">{document.status} · expires {dateTime(document.expiresAt)}</span></span>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-xs text-orange-600 disabled:opacity-50"
-                    disabled={migrationDocumentOpening === document.id}
-                    onClick={event => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      void openLegacyVehicleDocument(document.id)
-                    }}
-                  >
-                    {migrationDocumentOpening === document.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <ExternalLink className="h-3 w-3" />}
-                    Open
-                  </button>
-                </label>
-              ))}
-              <p className="text-[11px] text-gray-500 mt-3">Checking a document confirms that it belongs to this exact physical vehicle. Its existing status and expiry date will not be changed.</p>
-            </Panel>
-
-            <Panel title="Requested ride categories">
-              {migrationCategories.length === 0 ? <p className="text-sm text-amber-700">No ride categories loaded. Reload before continuing.</p> : <div className="grid sm:grid-cols-2 gap-2">
-                {migrationCategories.filter(rideCategory => migrationTargetVehicle ? migrationDraft.rideCategoryIds.includes(rideCategory.id) : rideCategory.isActive).map(rideCategory => <label key={rideCategory.id} className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" disabled={Boolean(migrationTargetVehicle)} checked={migrationDraft.rideCategoryIds.includes(rideCategory.id)} onChange={event => setMigrationDraft({ ...migrationDraft, rideCategoryIds: event.target.checked ? [...migrationDraft.rideCategoryIds, rideCategory.id] : migrationDraft.rideCategoryIds.filter(id => id !== rideCategory.id) })} />{rideCategory.name}</label>)}
-              </div>}
-              <p className="text-[11px] text-gray-500 mt-3">{migrationTargetVehicle ? 'Existing category decisions are not changed by document binding.' : 'Every selected category starts pending and must be approved separately.'}</p>
-            </Panel>
-
-            <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><input type="checkbox" className="mt-1" checked={migrationConfirmed} onChange={event => setMigrationConfirmed(event.target.checked)} /><span>I compared the previous vehicle details and every selected document and confirm they belong to this driver and this physical vehicle.</span></label>
-            {migrationError && <p className="text-sm text-red-600">{migrationError}</p>}
-          </div>}
-          <DialogFooter><Button variant="outline" disabled={migrationBusy} onClick={() => setMigrationOpen(false)}>Cancel</Button><Button disabled={migrationBusy} onClick={() => void submitMigration()}>{migrationBusy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}{migrationTargetVehicle ? 'Bind retained documents' : 'Create pending vehicle'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Vehicle review</DialogTitle><DialogDescription>Review current authority, pending revisions, documents, categories and removal metadata.</DialogDescription></DialogHeader>
-          {detailLoading && !selected ? <div className="p-12 flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div> : selected && (
-            <div className="space-y-5">
-              <div className="grid md:grid-cols-2 gap-4">
-                <Panel title="Authoritative vehicle">
-                  <p className="font-semibold">{selected.make} {selected.model}</p><p className="text-sm text-gray-500">{selected.plate} · {selected.color} · {selected.year}</p>
-                  <div className="mt-2"><StatusBadge status={selected.approvalStatus} /> <span className="text-xs text-gray-400 ml-2">v{selected.version}</span></div>
-                </Panel>
-                <Panel title="Driver"><p className="font-semibold">{selected.driver.displayName ?? 'Unnamed driver'}</p><p className="text-sm text-gray-500">Driver {selected.driver.id}</p><p className="text-sm text-gray-500">Region {selected.driver.regionId ?? 'not assigned'}</p></Panel>
-              </div>
-
-              {selected.pendingRevision && <Panel title={`Pending revision v${selected.pendingRevision.version}`} warning>
-                <p className="text-sm">Proposed: <b>{selected.pendingRevision.make} {selected.pendingRevision.model}</b> · {selected.pendingRevision.plate} · {selected.pendingRevision.color} · {selected.pendingRevision.year}</p>
-                <p className="text-xs text-gray-500 mt-1">The approved vehicle above remains authoritative until RM approval.</p>
-              </Panel>}
-
-              {selected.retirementRequestedAt && <Panel title="Driver removal request" warning>
-                <p className="text-sm">Requested {dateTime(selected.retirementRequestedAt)}</p><p className="text-sm mt-1">{selected.retirementRequestReason ?? 'No reason supplied.'}</p>
-              </Panel>}
-
-              {selected.rejectionReason && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{selected.rejectionReason}</div>}
-              {actionError && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</div>}
-
-              <Panel title="Vehicle documents">
-                {selected.providerDocuments.length === 0 ? <p className="text-sm text-gray-400">No current vehicle documents.</p> : selected.providerDocuments.map(doc => (
-                  <div key={doc.id} className="flex items-start justify-between gap-3 py-2 border-b last:border-0">
-                    <div>
-                      <p className="text-sm font-medium">{doc.documentType.replaceAll('_', ' ')}</p>
-                      <DocumentExpiryControl
-                        documentId={doc.id}
-                        documentType={doc.documentType}
-                        expiresAt={doc.expiresAt}
-                        onStale={() => void refreshDetail(selected.id)}
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-orange-600">Open <ExternalLink className="h-3 w-3" /></a>
-                      <StatusBadge status={doc.status} />
-                    </div>
-                  </div>
-                ))}
-                <p className="text-[11px] text-gray-500 mt-3">An approved licence, roadworthiness certificate or insurance record without the printed expiry date remains ineligible until an authorized reviewer adds that date.</p>
+      >
+        {detailLoading && !selected ? <PageSkeleton variant="form" /> : selected && (
+          <div className="space-y-5">
+            <div className="grid md:grid-cols-2 gap-4">
+              <Panel title="Authoritative vehicle">
+                <p className="font-semibold">{selected.make} {selected.model}</p><p className="text-sm text-gray-500">{selected.plate} - {selected.color} - {selected.year}</p>
+                <div className="mt-2"><StatusBadge status={selected.approvalStatus} /> <span className="text-xs text-gray-400 ml-2">v{selected.version}</span></div>
               </Panel>
-
-              <Panel title="Per-vehicle ride categories">
-                {selected.rideCategories.map(row => {
-                  const busy = actionBusy === `category-${row.rideCategory.id}`
-                  return <div key={row.id} className="py-3 border-b last:border-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2"><span className="font-medium text-sm flex-1">{row.rideCategory.name}</span><StatusBadge status={row.status} /><span className="text-[10px] text-gray-400">v{row.version}</span>
-                      {granted.includes('finalize_verification') && <>
-                        <Button size="sm" variant="outline" disabled={busy || !row.rideCategory.isActive} onClick={() => void mutate(`category-${row.rideCategory.id}`, () => reviewAdminVehicleCategory(selected.id, row.rideCategory.id, row.version, 'approve'))}>{busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}Approve</Button>
-                        <Button size="sm" variant="outline" disabled={busy} onClick={() => { setReasonAction('category_reject'); setReasonCategoryId(row.rideCategory.id); setReason(''); setActionError('') }}><XCircle className="h-3 w-3 mr-1" />Reject</Button>
-                      </>}
-                    </div>
-                    {row.rejectionReason && <p className="text-xs text-red-600">{row.rejectionReason}</p>}
-                  </div>
-                })}
-                <p className="text-[11px] text-gray-400 mt-3">Vehicle approval never auto-approves categories; every category decision is explicit.</p>
-              </Panel>
-
-              <div className="flex flex-wrap gap-2">
-                {canCoordinatorForward(granted, selected) && <Button disabled={!!actionBusy} onClick={() => void mutate('coordinator', () => coordinatorApproveAdminVehicle(selected.id, vehicleReviewTarget(selected).version))}><CheckCircle2 className="h-4 w-4 mr-2" />Forward to RM</Button>}
-                {canRegionalManagerFinalize(granted, selected) && <><Button disabled={!!actionBusy} onClick={() => void mutate('approve', () => finalizeAdminVehicle(selected.id, vehicleReviewTarget(selected).version, 'approve'))}><CheckCircle2 className="h-4 w-4 mr-2" />RM approve</Button><Button variant="outline" disabled={!!actionBusy} onClick={() => { setReasonAction('reject'); setReason(''); setActionError('') }}><XCircle className="h-4 w-4 mr-2" />RM reject</Button></>}
-                {canEditVehicle(granted, selected) && <Button variant="outline" disabled={!!actionBusy} onClick={openEdit}><Pencil className="h-4 w-4 mr-2" />Edit vehicle</Button>}
-                {canRetireVehicle(granted, selected) && <Button variant="destructive" disabled={!!actionBusy} onClick={() => { setReasonAction('retire'); setReason(''); setActionError('') }}><Trash2 className="h-4 w-4 mr-2" />Retire requested vehicle</Button>}
-              </div>
-
-              <Panel title="Recent lifecycle history">
-                {selected.lifecycleEvents.length === 0 ? <p className="text-sm text-gray-400">No lifecycle events.</p> : selected.lifecycleEvents.slice(0, 12).map(event => <div key={event.id} className="py-2 border-b last:border-0"><p className="text-sm font-medium">{event.action}</p><p className="text-xs text-gray-400">{dateTime(event.createdAt)} · v{event.vehicleVersion}{event.reason ? ` · ${event.reason}` : ''}</p></div>)}
-              </Panel>
+              <Panel title="Driver"><p className="font-semibold">{selected.driver.displayName ?? 'Unnamed driver'}</p><p className="text-sm text-gray-500">Driver {selected.driver.id}</p><p className="text-sm text-gray-500">Region {selected.driver.regionId ?? 'not assigned'}</p></Panel>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
-      <Dialog open={reasonAction !== null} onOpenChange={open => { if (!open) setReasonAction(null) }}>
-        <DialogContent><DialogHeader><DialogTitle>{reasonAction === 'retire' ? 'Retire vehicle' : reasonAction === 'category_reject' ? 'Reject category' : 'Reject vehicle'}</DialogTitle><DialogDescription>This reason is recorded in the audit trail and shown to the provider.</DialogDescription></DialogHeader><div><Label htmlFor="action-reason">Reason (minimum 5 characters)</Label><textarea id="action-reason" className="mt-2 w-full min-h-24 rounded-md border border-gray-200 p-3 text-sm" value={reason} onChange={event => { setReason(event.target.value); setActionError('') }} /></div>{actionError && <p className="text-sm text-red-600">{actionError}</p>}<DialogFooter><Button variant="outline" onClick={() => setReasonAction(null)}>Cancel</Button><Button variant={reasonAction === 'retire' ? 'destructive' : 'default'} onClick={() => void submitReasonAction()} disabled={!!actionBusy}>Confirm</Button></DialogFooter></DialogContent>
-      </Dialog>
+            {selected.pendingRevision && <Panel title={`Pending revision v${selected.pendingRevision.version}`} warning>
+              <p className="text-sm">Proposed: <b>{selected.pendingRevision.make} {selected.pendingRevision.model}</b> - {selected.pendingRevision.plate} - {selected.pendingRevision.color} - {selected.pendingRevision.year}</p>
+              <p className="text-xs text-gray-500 mt-1">The approved vehicle above remains authoritative until Regional Manager approval.</p>
+            </Panel>}
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Edit vehicle</DialogTitle><DialogDescription>Editing an approved vehicle creates a pending revision; current operating authority remains unchanged.</DialogDescription></DialogHeader>{editDraft && <div className="grid grid-cols-2 gap-3"><Field label="Make" value={editDraft.make} onChange={value => setEditDraft({ ...editDraft, make: value })} /><Field label="Model" value={editDraft.model} onChange={value => setEditDraft({ ...editDraft, model: value })} /><Field label="Year" value={String(editDraft.year)} type="number" onChange={value => setEditDraft({ ...editDraft, year: Number(value) })} /><Field label="Colour" value={editDraft.color} onChange={value => setEditDraft({ ...editDraft, color: value })} /><div className="col-span-2"><Field label="Plate" value={editDraft.plate} onChange={value => setEditDraft({ ...editDraft, plate: value })} /></div><div className="col-span-2"><Label>Ride categories</Label><div className="mt-2 grid sm:grid-cols-2 gap-2">{editCategories.map(cat => <label key={cat.id} className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" checked={editDraft.rideCategoryIds.includes(cat.id)} onChange={event => setEditDraft({ ...editDraft, rideCategoryIds: event.target.checked ? [...editDraft.rideCategoryIds, cat.id] : editDraft.rideCategoryIds.filter(id => id !== cat.id) })} />{cat.name}</label>)}</div></div></div>}{actionError && <p className="text-sm text-red-600">{actionError}</p>}<DialogFooter><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button disabled={actionBusy === 'edit'} onClick={() => void submitEdit()}>{actionBusy === 'edit' && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save for approval</Button></DialogFooter></DialogContent>
-      </Dialog>
+            {selected.retirementRequestedAt && <Panel title="Driver removal request" warning>
+              <p className="text-sm">Requested {formatDateTime(selected.retirementRequestedAt)}</p><p className="text-sm mt-1">{selected.retirementRequestReason ?? 'No reason supplied.'}</p>
+            </Panel>}
+
+            {selected.rejectionReason && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{selected.rejectionReason}</div>}
+            {actionError && <ErrorState compact title="That did not work" detail={actionError} />}
+
+            <Panel title="Vehicle documents">
+              {selected.providerDocuments.length === 0 ? <p className="text-sm text-gray-400">No current vehicle documents.</p> : selected.providerDocuments.map(doc => (
+                <div key={doc.id} className="flex items-start justify-between gap-3 py-2 border-b last:border-0">
+                  <div>
+                    <p className="text-sm font-medium">{doc.documentType.replaceAll('_', ' ')}</p>
+                    <DocumentExpiryControl
+                      documentId={doc.id}
+                      documentType={doc.documentType}
+                      expiresAt={doc.expiresAt}
+                      onStale={() => void refreshDetail(selected.id)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-orange-600">Open <ExternalLink className="h-3 w-3" /></a>
+                    <StatusBadge status={doc.status} />
+                  </div>
+                </div>
+              ))}
+              <p className="text-[11px] text-gray-500 mt-3">An approved licence, roadworthiness certificate or insurance record without the printed expiry date remains ineligible until an authorized reviewer adds that date.</p>
+            </Panel>
+
+            <Panel title="Per-vehicle ride categories">
+              {selected.rideCategories.map(row => {
+                const busy = actionBusy === `category-${row.rideCategory.id}`
+                return <div key={row.id} className="py-3 border-b last:border-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2"><span className="font-medium text-sm flex-1">{row.rideCategory.name}</span><StatusBadge status={row.status} /><span className="text-[10px] text-gray-400">v{row.version}</span>
+                    {granted.includes('finalize_verification') && <>
+                      <Button size="sm" variant="outline" disabled={busy || !row.rideCategory.isActive} onClick={() => void mutate(`category-${row.rideCategory.id}`, () => reviewAdminVehicleCategory(selected.id, row.rideCategory.id, row.version, 'approve'))}>{busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}Approve</Button>
+                      <Button size="sm" variant="outline" disabled={busy} onClick={() => { setReasonAction('category_reject'); setReasonCategoryId(row.rideCategory.id); setActionError('') }}><XCircle className="h-3 w-3 mr-1" />Reject</Button>
+                    </>}
+                  </div>
+                  {row.rejectionReason && <p className="text-xs text-red-600">{row.rejectionReason}</p>}
+                </div>
+              })}
+              <p className="text-[11px] text-gray-400 mt-3">Vehicle approval never auto-approves categories; every category decision is explicit.</p>
+            </Panel>
+
+            <Panel title="Recent lifecycle history">
+              {selected.lifecycleEvents.length === 0 ? <p className="text-sm text-gray-400">No lifecycle events.</p> : selected.lifecycleEvents.slice(0, 12).map(event => <div key={event.id} className="py-2 border-b last:border-0"><p className="text-sm font-medium">{event.action}</p><p className="text-xs text-gray-400">{formatDateTime(event.createdAt)} - v{event.vehicleVersion}{event.reason ? ` - ${event.reason}` : ''}</p></div>)}
+            </Panel>
+          </div>
+        )}
+      </DetailSheet>
+
+      <ConfirmDialog
+        open={reasonAction !== null}
+        onClose={() => { setReasonAction(null); setReasonCategoryId(null) }}
+        title={
+          reasonAction === 'retire' ? 'Retire this vehicle?'
+            : reasonAction === 'category_reject' ? 'Reject this category?'
+            : 'Reject this vehicle?'
+        }
+        description="This reason is recorded in the audit trail and shown to the provider."
+        confirmLabel={
+          reasonAction === 'retire' ? 'Retire vehicle'
+            : reasonAction === 'category_reject' ? 'Reject category'
+            : 'Reject vehicle'
+        }
+        destructive={reasonAction === 'retire'}
+        loading={reasonDialogBusy}
+        error={actionError || null}
+        requireReason
+        onConfirm={reason => void submitReasonAction(reason)}
+      />
+
+      <FormDialog
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Edit vehicle"
+        description="Editing an approved vehicle creates a pending revision; current operating authority remains unchanged."
+        submitLabel="Save for approval"
+        onSubmit={() => void submitEdit()}
+        loading={actionBusy === 'edit'}
+        error={actionError || null}
+        size="md"
+      >
+        {editDraft && <div className="grid grid-cols-2 gap-3">
+          <Field label="Make" value={editDraft.make} onChange={value => setEditDraft({ ...editDraft, make: value })} />
+          <Field label="Model" value={editDraft.model} onChange={value => setEditDraft({ ...editDraft, model: value })} />
+          <Field label="Year" value={String(editDraft.year)} type="number" onChange={value => setEditDraft({ ...editDraft, year: Number(value) })} />
+          <Field label="Colour" value={editDraft.color} onChange={value => setEditDraft({ ...editDraft, color: value })} />
+          <div className="col-span-2"><Field label="Plate" value={editDraft.plate} onChange={value => setEditDraft({ ...editDraft, plate: value })} /></div>
+          <div className="col-span-2">
+            <Label>Ride categories</Label>
+            <div className="mt-2 grid sm:grid-cols-2 gap-2">
+              {editCategories.map(cat => <label key={cat.id} className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" checked={editDraft.rideCategoryIds.includes(cat.id)} onChange={event => setEditDraft({ ...editDraft, rideCategoryIds: event.target.checked ? [...editDraft.rideCategoryIds, cat.id] : editDraft.rideCategoryIds.filter(id => id !== cat.id) })} />{cat.name}</label>)}
+            </div>
+          </div>
+        </div>}
+      </FormDialog>
     </div>
   )
-}
-
-function Summary({ label, value, alert }: { label: string; value: number; alert?: boolean }) {
-  return <div className={`rounded-xl border p-4 ${alert ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'}`}><p className="text-xs uppercase tracking-wide text-gray-400">{label}</p><p className="text-2xl font-semibold mt-1">{value}</p></div>
 }
 
 function Panel({ title, children, warning }: { title: string; children: React.ReactNode; warning?: boolean }) {

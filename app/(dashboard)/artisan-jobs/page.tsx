@@ -4,36 +4,31 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { Search, MoreHorizontal, AlertTriangle, Wrench, Loader2, Trash2, MapPin, Clock, X } from 'lucide-react'
-import { Input } from '@/components/ui/input'
+import { AlertTriangle, Wrench, MapPin, Clock, X, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
+import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
-import { useDateRange, PageSizeSelect } from '@/components/common/table-controls'
+import { DataTable, type DataTableColumn } from '@/components/common/data-table'
+import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
+import { EmptyState } from '@/components/common/empty-state'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { useDateRange } from '@/components/common/table-controls'
 import { useLinkedParam } from '@/components/common/date-range-filter'
 import { listArtisanJobs, deleteJob, cancelJob, type AdminJob } from '@/lib/api'
 import { getAdminUser, ApiError } from '@/lib/api-client'
 import { formatDateTime } from '@/lib/format-date'
-
-function formatGhs(pesewas: number | null | undefined) {
-  const ghs = Number(pesewas) / 100
-  if (!Number.isFinite(ghs) || ghs === 0) return 'GHC 0'
-  return 'GHC ' + ghs.toFixed(2)
-}
+import { formatGhs } from '@/lib/money'
+import { statusLabel } from '@/lib/status-labels'
+import { dateBasisCaption } from '@/lib/date-range'
 
 // In-progress jobs have a payout (so 48h+ means a frozen payout); pre-assignment
-// jobs (queued, pending_admin, …) are merely stuck awaiting action.
+// jobs (queued, pending_admin, ...) are merely stuck awaiting action.
 const IN_PROGRESS_STATUSES = ['confirmed', 'en_route', 'arrived', 'in_progress']
 
 // Minimal idle indicator: a clock + hours, coloured by severity. The full
-// meaning lives in the tooltip and on the detail page — the table stays clean.
+// meaning lives in the tooltip and on the detail page - the table stays clean.
 function StalenessFlag({ hours, status }: { hours: number; status: string }) {
   if (!hours || hours === 0) return null
   const inProgress = IN_PROGRESS_STATUSES.includes(status)
@@ -58,7 +53,7 @@ function staleHoursOf(job: AdminJob): number {
 }
 
 // Backend only permits *deleting* terminal records. Anything live (incl.
-// queued / pending_admin) returns 400 JOB_NOT_DELETABLE — those are cancelled.
+// queued / pending_admin) returns 400 JOB_NOT_DELETABLE - those are cancelled.
 const DELETABLE_JOB_STATUSES = ['completed', 'cancelled', 'expired', 'refunded']
 // States the backend allows an admin to cancel (the remedy for stuck jobs).
 const CANCELLABLE_JOB_STATUSES = ['queued', 'pending_admin', 'admin_assigned', 'open_for_bids', 'bids_received', 'confirmed']
@@ -66,8 +61,9 @@ const CANCELLABLE_JOB_STATUSES = ['queued', 'pending_admin', 'admin_assigned', '
 // Status values the filter accepts; also validates ?status= deep links.
 const JOB_STATUS_FILTERS = ['all', 'queued', 'pending_admin', 'admin_assigned', 'open_for_bids', 'bids_received', 'confirmed', 'en_route', 'arrived', 'in_progress', 'completed', 'cancelled', 'disputed'] as const
 
+const REGION_OPTIONS = ['Ashanti', 'Greater Accra', 'Western', 'Central', 'Eastern', 'Northern', 'Volta', 'Upper East', 'Upper West', 'Brong-Ahafo']
+
 export default function ArtisanJobsPage() {
-  const router = useRouter()
   const adminUser = getAdminUser()
   // An admin scoped to a region only sees/acts on that region's jobs. Prefer the
   // new region name; fall back to the legacy free-text regionScope.
@@ -76,27 +72,27 @@ export default function ArtisanJobsPage() {
   const [jobs, setJobs] = useState<AdminJob[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [regionFilter, setRegionFilter] = useState(lockedRegion ?? 'all')
   const [limit, setLimit] = useState(15)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<AdminJob | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<AdminJob | null>(null)
-  const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
   const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setPage(1), readUrl: true })
-  // Trip Outcomes deep-links here with ?status=…
+  // Booking outcomes deep-links here with ?status=...
   useLinkedParam('status', JOB_STATUS_FILTERS, setStatusFilter)
   const requestSequence = useRef(0)
 
   const fetchJobs = useCallback(() => {
     const request = ++requestSequence.current
     setLoading(true)
+    setError(null)
     const activeRegion = lockedRegion ?? (regionFilter === 'all' ? undefined : regionFilter)
     listArtisanJobs({
       status: statusFilter === 'all' ? undefined : statusFilter,
@@ -111,13 +107,12 @@ export default function ArtisanJobsPage() {
         if (request !== requestSequence.current) return
         setJobs(res.items)
         setTotal(res.total)
-        setTotalPages(Math.max(1, res.totalPages || 1))
       })
       .catch(() => {
         if (request === requestSequence.current) {
           setJobs([])
           setTotal(0)
-          setTotalPages(1)
+          setError('Could not load artisan jobs. Check your connection and try again.')
         }
       })
       .finally(() => { if (request === requestSequence.current) setLoading(false) })
@@ -152,15 +147,14 @@ export default function ArtisanJobsPage() {
     }
   }
 
-  // Cancel is the remedy for stuck/live jobs (queued, pending_admin, …).
-  async function handleCancelJob() {
+  // Cancel is the remedy for stuck/live jobs (queued, pending_admin, ...).
+  async function handleCancelJob(reason: string) {
     if (!cancelTarget) return
     setCancelling(true); setCancelError(null)
     try {
-      await cancelJob(cancelTarget.id, cancelReason.trim())
+      await cancelJob(cancelTarget.id, reason)
       setJobs(prev => prev.map(j => j.id === cancelTarget.id ? { ...j, status: 'cancelled' } : j))
       setCancelTarget(null)
-      setCancelReason('')
     } catch (e) {
       setCancelError(apiMessage(e, 'Failed to cancel job.'))
     } finally {
@@ -168,12 +162,63 @@ export default function ArtisanJobsPage() {
     }
   }
 
+  const columns: DataTableColumn<AdminJob>[] = [
+    {
+      key: 'job',
+      header: 'Job',
+      render: row => {
+        const sh = staleHoursOf(row)
+        return (
+          <>
+            <p className="font-mono text-sm font-semibold text-gray-900">
+              {row.id.slice(-8).toUpperCase()}
+              {sh > 0 && <StalenessFlag hours={sh} status={row.status} />}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5 whitespace-nowrap">
+              {formatDateTime(row.createdAt)}
+              {row.region && !lockedRegion && <span className="ml-1.5">- {row.region}</span>}
+            </p>
+          </>
+        )
+      },
+    },
+    {
+      key: 'client',
+      header: 'Client',
+      render: row => <span className="text-sm font-medium text-gray-800">{row.clientName ?? '-'}</span>,
+    },
+    {
+      key: 'artisan',
+      header: 'Artisan',
+      render: row => row.artisanName
+        ? <span className="text-sm text-gray-500">{row.artisanName}</span>
+        : (
+          <span className="text-amber-600 font-semibold inline-flex items-center gap-1 text-sm">
+            <AlertTriangle className="h-3.5 w-3.5" /> Unassigned
+          </span>
+        ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: row => <StatusBadge status={row.status} />,
+    },
+    {
+      key: 'price',
+      header: 'Price',
+      align: 'right',
+      render: row => <span className="text-sm font-semibold text-gray-800">{formatGhs(row.agreedPricePesewas)}</span>,
+    },
+  ]
+
+  const filtersActive = search.trim().length > 0 || statusFilter !== 'all' || (!lockedRegion && regionFilter !== 'all')
+
   return (
     <PageGuard permission="view_jobs">
       <div>
         <PageHeader
-          title="Artisan Jobs"
-          subtitle={lockedRegion ? `Artisan service bookings · ${lockedRegion} region` : 'Manage all artisan service bookings'}
+          title="Artisan jobs"
+          subtitle="All artisan service bookings"
           actions={
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
@@ -189,10 +234,10 @@ export default function ArtisanJobsPage() {
                 </div>
               )}
               <Link href="/artisan-jobs/manual-assignment">
-                <Button size="sm" className="text-white gap-1.5" style={{ backgroundColor: '#F5A623' }}>
-                  Manual Assignment
+                <Button size="sm" variant="brand" className="gap-1.5">
+                  Manual assignment
                   {unassignedCount > 0 && (
-                    <span className="ml-1 bg-white text-xs font-bold px-1.5 py-0.5 rounded-full" style={{ color: '#F5A623' }}>
+                    <span className="ml-1 bg-white text-xs font-bold px-1.5 py-0.5 rounded-full text-primary">
                       {unassignedCount}
                     </span>
                   )}
@@ -208,286 +253,145 @@ export default function ArtisanJobsPage() {
             <p className="text-sm text-red-700 flex-1">
               <strong>{staleJobs.length} job{staleJobs.length > 1 ? 's' : ''}</strong> have been idle for 24+ hours and require admin attention.
               {jobs.some(j => staleHoursOf(j) >= 48) && ' Payouts are frozen on jobs over 48h.'}
-              {' '}Use <strong>Cancel</strong> on a stuck job, or Force-complete from its details.
+              {' '}Use <strong>Cancel</strong> on a stuck job, or force-complete from its details.
             </p>
           </div>
         )}
 
-        {deleteError && (
-          <div className="mb-4 flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-            <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
-            <p className="text-sm text-red-700 flex-1">{deleteError}</p>
-            <button onClick={() => setDeleteError(null)} className="text-xs text-red-500 hover:text-red-700">Dismiss</button>
-          </div>
-        )}
-
-        {/* Filters */}
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <div className="relative flex-1 min-w-48 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-            <Input
-              placeholder="Search job ID, client, artisan, category…"
-              className="pl-9"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-          </div>
+        <FilterBar onRefresh={fetchJobs} refreshing={loading} meta={dateBasisCaption('Jobs', 'requested')}>
+          <FilterSearch value={search} onChange={setSearch} placeholder="Search job ID, client, artisan, category" />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-44 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-44 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="queued">Queued</SelectItem>
-              <SelectItem value="pending_admin">Pending Admin</SelectItem>
-              <SelectItem value="admin_assigned">Awaiting Quote</SelectItem>
-              <SelectItem value="open_for_bids">Open for Bids</SelectItem>
-              <SelectItem value="bids_received">Bids Received</SelectItem>
-              <SelectItem value="confirmed">Confirmed</SelectItem>
-              <SelectItem value="en_route">En Route</SelectItem>
-              <SelectItem value="arrived">Arrived</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
-              <SelectItem value="disputed">Disputed</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
+              {JOB_STATUS_FILTERS.filter(s => s !== 'all').map(s => (
+                <SelectItem key={s} value={s}>{statusLabel(s)}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
           {/* Region filter: locked for regional admins, selectable for super/ops */}
           {lockedRegion ? (
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-gray-100 text-gray-600">
+            <span className="inline-flex h-9 items-center gap-1.5 text-xs font-semibold px-3 rounded-full bg-gray-100 text-gray-600">
               <MapPin className="h-3 w-3" /> {lockedRegion}
             </span>
           ) : (
             <Select value={regionFilter} onValueChange={setRegionFilter}>
-              <SelectTrigger className="w-40 bg-white"><SelectValue placeholder="All Regions" /></SelectTrigger>
+              <SelectTrigger className="h-9 w-40 bg-white"><SelectValue placeholder="All regions" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Regions</SelectItem>
-                <SelectItem value="Ashanti">Ashanti</SelectItem>
-                <SelectItem value="Greater Accra">Greater Accra</SelectItem>
-                <SelectItem value="Western">Western</SelectItem>
-                <SelectItem value="Central">Central</SelectItem>
-                <SelectItem value="Eastern">Eastern</SelectItem>
-                <SelectItem value="Northern">Northern</SelectItem>
-                <SelectItem value="Volta">Volta</SelectItem>
-                <SelectItem value="Upper East">Upper East</SelectItem>
-                <SelectItem value="Upper West">Upper West</SelectItem>
-                <SelectItem value="Brong-Ahafo">Brong-Ahafo</SelectItem>
+                <SelectItem value="all">All regions</SelectItem>
+                {REGION_OPTIONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
               </SelectContent>
             </Select>
           )}
 
           {dateControl}
-          <span className="text-xs text-gray-400">By created date · GMT</span>
+        </FilterBar>
 
-          <div className="ml-auto flex items-center gap-3">
-            <span className="text-sm text-gray-400">{total} jobs</span>
-            <PageSizeSelect value={limit} onChange={setLimit} />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50">
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Job</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Artisan</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Price</TableHead>
-                  <TableHead className="w-10" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  [...Array(8)].map((_, i) => (
-                    <TableRow key={i}>
-                      {[...Array(6)].map((_, j) => (
-                        <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : jobs.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-12 text-gray-400 text-sm">
-                      No jobs found
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  jobs.map(job => {
-                    const sh = staleHoursOf(job)
-                    return (
-                    <TableRow key={job.id} className={`hover:bg-gray-50 cursor-pointer ${sh >= 24 ? 'bg-red-50/40' : ''}`} onClick={() => router.push(`/artisan-jobs/${job.id}`)}>
-                      <TableCell>
-                        <p className="font-mono text-sm font-semibold text-gray-900">
-                          {job.id.slice(-8).toUpperCase()}
-                          {sh > 0 && <StalenessFlag hours={sh} status={job.status} />}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-0.5 whitespace-nowrap">
-                          {formatDateTime(job.createdAt)}
-                          {job.region && !lockedRegion && <span className="ml-1.5">· {job.region}</span>}
-                        </p>
-                      </TableCell>
-                      <TableCell className="text-sm font-medium text-gray-800">{job.clientName ?? '-'}</TableCell>
-                      <TableCell className="text-sm text-gray-500">
-                        {job.artisanName
-                          ? job.artisanName
-                          : <span className="text-amber-600 font-semibold inline-flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Unassigned</span>
-                        }
-                      </TableCell>
-                      <TableCell><StatusBadge status={job.status} /></TableCell>
-                      <TableCell className="text-right text-sm font-semibold text-gray-800">
-                        {formatGhs(job.agreedPricePesewas)}
-                      </TableCell>
-                      <TableCell onClick={e => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem asChild>
-                              <Link href={`/artisan-jobs/${job.id}`}>View Details</Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                              <Link href={`/artisan-jobs/${job.id}`}>Bid History</Link>
-                            </DropdownMenuItem>
-                            {job.status === 'queued' && (
-                              <DropdownMenuItem asChild className="text-amber-600">
-                                <Link href="/artisan-jobs/manual-assignment">Assign Manually</Link>
-                              </DropdownMenuItem>
-                            )}
-                            {job.status === 'disputed' && (
-                              <DropdownMenuItem asChild className="text-amber-600">
-                                <Link href={`/disputes?search=${job.id}`}>Handle Dispute</Link>
-                              </DropdownMenuItem>
-                            )}
-                            {CANCELLABLE_JOB_STATUSES.includes(job.status) && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-red-600 focus:text-red-600 focus:bg-red-50 gap-1.5"
-                                  onClick={() => { setCancelTarget(job); setCancelReason(''); setCancelError(null) }}
-                                >
-                                  <X className="h-3.5 w-3.5" /> Cancel Job
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            {DELETABLE_JOB_STATUSES.includes(job.status) && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-red-600 focus:text-red-600 focus:bg-red-50 gap-1.5"
-                                  onClick={() => setDeleteTarget(job)}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" /> Delete Record
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  )})
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
-            <p className="text-xs text-gray-400">
-              {loading
-                ? <Loader2 className="h-3 w-3 animate-spin inline" />
-                : `Page ${page} of ${totalPages} (${total} total)`
-              }
-            </p>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage(p => p - 1)}>Previous</Button>
-              <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage(p => p + 1)}>Next</Button>
-            </div>
-          </div>
-        </div>
+        <DataTable
+          columns={columns}
+          rows={jobs}
+          rowKey={row => row.id}
+          loading={loading}
+          error={error}
+          onRetry={fetchJobs}
+          rowHref={row => `/artisan-jobs/${row.id}`}
+          rowAriaLabel={row => `Open job ${row.id.slice(-8).toUpperCase()}`}
+          rowMenu={row => (
+            <>
+              <DropdownMenuItem asChild>
+                <Link href={`/artisan-jobs/${row.id}`}>View details</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href={`/artisan-jobs/${row.id}`}>Bid history</Link>
+              </DropdownMenuItem>
+              {row.status === 'queued' && (
+                <DropdownMenuItem asChild className="text-amber-600">
+                  <Link href="/artisan-jobs/manual-assignment">Assign manually</Link>
+                </DropdownMenuItem>
+              )}
+              {row.status === 'disputed' && (
+                <DropdownMenuItem asChild className="text-amber-600">
+                  <Link href={`/disputes?search=${row.id}`}>Handle dispute</Link>
+                </DropdownMenuItem>
+              )}
+              {CANCELLABLE_JOB_STATUSES.includes(row.status) && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-red-600 focus:text-red-600 focus:bg-red-50 gap-1.5"
+                    onClick={() => { setCancelTarget(row); setCancelError(null) }}
+                  >
+                    <X className="h-3.5 w-3.5" /> Cancel job
+                  </DropdownMenuItem>
+                </>
+              )}
+              {DELETABLE_JOB_STATUSES.includes(row.status) && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-red-600 focus:text-red-600 focus:bg-red-50 gap-1.5"
+                    onClick={() => { setDeleteTarget(row); setDeleteError(null) }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete record
+                  </DropdownMenuItem>
+                </>
+              )}
+            </>
+          )}
+          empty={
+            <EmptyState
+              title={filtersActive ? 'No jobs match these filters' : 'No jobs yet'}
+              description={filtersActive ? 'Try a different search, or clear the filters.' : 'Artisan job bookings will appear here once clients start booking.'}
+            />
+          }
+          caption={`${total} job${total === 1 ? '' : 's'}`}
+          pagination={{ page, pageSize: limit, total, onPage: setPage, onPageSize: setLimit }}
+        />
       </div>
 
       {/* Cancel job dialog (remedy for stuck/live jobs) */}
-      <Dialog open={!!cancelTarget} onOpenChange={open => { if (!open && !cancelling) { setCancelTarget(null); setCancelError(null) } }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <X className="h-5 w-5" /> Cancel Job
-            </DialogTitle>
-            <DialogDescription>
-              Cancel job{' '}
-              <strong className="font-mono">{cancelTarget?.id.slice(-8).toUpperCase()}</strong>
-              {cancelTarget?.clientName && <> for <strong>{cancelTarget.clientName}</strong></>}
-              ? The client{cancelTarget?.artisanName ? ' and artisan' : ''} will be notified. This is audit-logged.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-1.5 py-1">
-            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</Label>
-            <Textarea
-              rows={3}
-              placeholder="e.g. No artisan available in region; job abandoned by client."
-              value={cancelReason}
-              onChange={e => setCancelReason(e.target.value)}
-              className="text-sm resize-none"
-            />
-            <p className={`text-[11px] ${cancelReason.trim().length >= 10 ? 'text-emerald-600' : 'text-gray-400'}`}>
-              {cancelReason.trim().length >= 10 ? 'Looks good' : `Minimum 10 characters - ${Math.max(0, 10 - cancelReason.trim().length)} more needed`}
-            </p>
+      <ConfirmDialog
+        open={!!cancelTarget}
+        onClose={() => { setCancelTarget(null); setCancelError(null) }}
+        title="Cancel this job?"
+        description={<>The client{cancelTarget?.artisanName ? ' and artisan' : ''} will be notified. This is recorded in the audit log.</>}
+        confirmLabel="Cancel job"
+        onConfirm={handleCancelJob}
+        destructive
+        loading={cancelling}
+        error={cancelError}
+        requireReason
+        minReason={10}
+        reasonPlaceholder="e.g. No artisan available in region; job abandoned by client."
+      >
+        {cancelTarget && (
+          <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600">
+            <span className="font-mono">{cancelTarget.id.slice(-8).toUpperCase()}</span>
+            {cancelTarget.clientName && <span> - {cancelTarget.clientName}</span>}
           </div>
-          {cancelError && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-              <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-700">{cancelError}</p>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelTarget(null)} disabled={cancelling}>Keep Job</Button>
-            <Button
-              onClick={handleCancelJob}
-              disabled={cancelling || cancelReason.trim().length < 10}
-              className="bg-red-600 hover:bg-red-700 text-white gap-2"
-            >
-              {cancelling && <Loader2 className="h-4 w-4 animate-spin" />}
-              {cancelling ? 'Cancelling…' : 'Cancel Job'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+      </ConfirmDialog>
 
       {/* Delete record dialog (terminal jobs only) */}
-      <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) { setDeleteTarget(null); setDeleteError(null) } }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <Trash2 className="h-5 w-5" /> Delete Record
-            </DialogTitle>
-            <DialogDescription>
-              Permanently delete the record for job{' '}
-              <strong className="font-mono">{deleteTarget?.id.slice(-8).toUpperCase()}</strong>
-              {deleteTarget?.clientName && <> ({deleteTarget.clientName})</>}
-              ? This removes a finished job and cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          {deleteError && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-              <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-700">{deleteError}</p>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button
-              onClick={handleDeleteOne}
-              disabled={deleting}
-              className="bg-red-600 hover:bg-red-700 text-white gap-2"
-            >
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              {deleting ? 'Deleting…' : 'Delete Record'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => { setDeleteTarget(null); setDeleteError(null) }}
+        title="Delete this job record?"
+        description="This removes a finished job and cannot be undone."
+        confirmLabel="Delete record"
+        onConfirm={() => handleDeleteOne()}
+        destructive
+        loading={deleting}
+        error={deleteError}
+      >
+        {deleteTarget && (
+          <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600">
+            <span className="font-mono">{deleteTarget.id.slice(-8).toUpperCase()}</span>
+            {deleteTarget.clientName && <span> ({deleteTarget.clientName})</span>}
+          </div>
+        )}
+      </ConfirmDialog>
     </PageGuard>
   )
 }

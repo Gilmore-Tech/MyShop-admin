@@ -51,12 +51,12 @@ export default function EditHelpArticlePage() {
         </Link>
         <PageHeader
           title={article ? `Edit: ${article.title}` : 'Edit Help Article'}
-          subtitle={article ? `Slug: ${article.slug}` : 'Loading…'}
+          subtitle={article ? `Slug: ${article.slug}` : 'Loading...'}
         />
 
         {loading ? (
           <div className="flex items-center justify-center py-20 text-gray-400">
-            <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading article…
+            <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading article...
           </div>
         ) : error ? (
           <div className="bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3">{error}</div>

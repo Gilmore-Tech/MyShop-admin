@@ -63,9 +63,11 @@ export default function BatchPayoutsPage() {
   return (
      <PageGuard permission="view_payments">
     <div>
-      <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
-
-      <PaymentsTabs active="batch-payouts" />
+      <PageHeader
+        title="Provider payments"
+        subtitle="Grouped payouts sent to provider MoMo accounts each evening"
+        tabs={<PaymentsTabs />}
+      />
 
       {/* Release containment: historical visibility remains read-only. */}
       <div className="bg-slate-900 text-white rounded-lg p-4 mb-6 flex items-center justify-between flex-wrap gap-3">

@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import { SuperAdminPageGuard } from '@/components/common/super-admin-page-guard'
 import { PageHeader } from '@/components/common/page-header'
+import { PageSkeleton } from '@/components/common/load-state'
+import { ErrorState } from '@/components/common/error-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -145,7 +147,7 @@ function validateDraft(state: RideTollPolicyState, form: WorkingDraft): Validate
   const reason = form.reason.trim()
   if (!effectiveFrom) topErrors.push('Enter a valid effective date and time in GMT.')
   if (reason.length < 8 || reason.length > MAX_REASON) {
-    topErrors.push(`Draft reason must contain 8–${MAX_REASON} characters.`)
+    topErrors.push(`Draft reason must contain 8-${MAX_REASON} characters.`)
   }
   if (form.zones.length > 100) topErrors.push('A policy can contain at most 100 zones.')
   if (form.enabled && form.zones.length === 0) {
@@ -159,13 +161,13 @@ function validateDraft(state: RideTollPolicyState, form: WorkingDraft): Validate
     const amountPesewas = ghsTollInputToPesewas(zone.amountGhs)
     const boundary = boundaryFromText(zone.boundaryText)
     if (!STABLE_KEY.test(stableKey) || stableKey.length < 2 || stableKey.length > 64) {
-      errors.push('Stable key must be 2–64 lowercase kebab-case characters.')
+      errors.push('Stable key must be 2-64 lowercase kebab-case characters.')
     }
     if (keys.has(stableKey)) errors.push('Stable key is duplicated in this complete revision.')
     keys.add(stableKey)
-    if (label.length < 2 || label.length > 80) errors.push('Passenger-facing label must contain 2–80 characters.')
+    if (label.length < 2 || label.length > 80) errors.push('Passenger-facing label must contain 2-80 characters.')
     if (amountPesewas === null || amountPesewas > 1_000_000) {
-      errors.push('Amount must be GHS 0.01–10,000.00 with at most two decimal places.')
+      errors.push('Amount must be GHS 0.01-10,000.00 with at most two decimal places.')
     }
     if (!boundary) errors.push('Paste or draw a valid closed GeoJSON MultiPolygon.')
     if (errors.length > 0) zoneErrors[zone.localId] = errors
@@ -186,7 +188,7 @@ function validateDraft(state: RideTollPolicyState, form: WorkingDraft): Validate
       ...zone,
     })))
     for (const [left, right] of overlaps) {
-      topErrors.push(`Zones “${left}” and “${right}” overlap or touch. Separate their boundaries.`)
+      topErrors.push(`Zones "${left}" and "${right}" overlap or touch. Separate their boundaries.`)
     }
   }
   const payload = topErrors.length === 0 && Object.keys(zoneErrors).length === 0
@@ -466,24 +468,16 @@ function RideTollZonesContent() {
   if (!state || !form || !validation) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Ride Toll Zones" subtitle="Exact Super Administrator policy control" />
-        <Card>
-          <CardContent className="flex min-h-48 items-center justify-center p-6">
-            {operation === 'load' ? (
-              <span className="flex items-center gap-2 text-sm text-gray-500">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading toll policy…
-              </span>
-            ) : (
-              <div className="text-center">
-                <AlertTriangle className="mx-auto h-6 w-6 text-red-600" />
-                <p className="mt-2 text-sm font-medium text-red-700">{error ?? 'Policy controls are unavailable.'}</p>
-                <Button className="mt-3" variant="outline" onClick={() => void load()}>
-                  <RefreshCw className="mr-2 h-4 w-4" /> Retry
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <PageHeader title="Toll zones" subtitle="Exact Super Administrator policy control" />
+        {operation === 'load' ? (
+          <PageSkeleton variant="form" />
+        ) : (
+          <ErrorState
+            title="Could not load the toll policy"
+            detail={error ?? 'Policy controls are unavailable.'}
+            onRetry={() => void load()}
+          />
+        )}
       </div>
     )
   }
@@ -491,7 +485,7 @@ function RideTollZonesContent() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Ride Toll Zones"
+        title="Toll zones"
         subtitle="Draft, review and publish location-specific driver toll reimbursements"
         actions={(
           <Button variant="outline" disabled={busy} onClick={() => void load()}>
@@ -514,7 +508,7 @@ function RideTollZonesContent() {
       )}
 
       {notice && <div role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">{notice}</div>}
-      {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {error && <ErrorState compact title="That did not work" detail={error} />}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <PolicySummary title="Latest published policy" policy={state.activePolicy} runtimeEnabled={state.runtimeEnabled} />
@@ -591,7 +585,7 @@ function RideTollZonesContent() {
 
           {validation.topErrors.length > 0 && (
             <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-              {validation.topErrors.map((message) => <p key={message}>• {message}</p>)}
+              {validation.topErrors.map((message) => <p key={message}>- {message}</p>)}
             </div>
           )}
 
@@ -714,7 +708,7 @@ function RideTollZonesContent() {
 
                   {(validation.zoneErrors[selectedZone.localId] ?? []).length > 0 && (
                     <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-                      {validation.zoneErrors[selectedZone.localId].map((message) => <p key={message}>• {message}</p>)}
+                      {validation.zoneErrors[selectedZone.localId].map((message) => <p key={message}>- {message}</p>)}
                     </div>
                   )}
 
@@ -792,7 +786,7 @@ function RideTollZonesContent() {
               <CheckCircle2 className="h-5 w-5" /> Exact saved revision preview
             </CardTitle>
             <p className="text-xs text-emerald-800">
-              Generated {formatDateTime(preview.generatedAt)} · draft revision {preview.draftRevision} · token expires in 30 minutes and is single-use.
+              Generated {formatDateTime(preview.generatedAt)} - draft revision {preview.draftRevision} - token expires in 30 minutes and is single-use.
             </p>
           </CardHeader>
           <CardContent className="space-y-5 pt-5">
@@ -816,7 +810,7 @@ function RideTollZonesContent() {
                 <p className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" /> Overlapping boundaries need review</p>
                 <p className="mt-1 text-xs">This preview is blocked. A ride matching more than one distinct zone is ambiguous; tolls are never stacked or silently selected.</p>
                 <div className="mt-2 space-y-1 font-mono text-xs">
-                  {previewOverlaps.map(([left, right]) => <p key={`${left}-${right}`}>{left} ↔ {right}</p>)}
+                  {previewOverlaps.map(([left, right]) => <p key={`${left}-${right}`}>{left} and {right}</p>)}
                 </div>
               </div>
             ) : (
@@ -881,7 +875,7 @@ function RideTollZonesContent() {
                   <tfoot className="border-t border-gray-200 bg-gray-50">
                     <tr>
                       <td colSpan={4} className="px-3 py-3 text-sm font-semibold">
-                        {sampleResult.ambiguous ? 'AMBIGUOUS — multiple zones match; pricing must be blocked' : 'Sample total toll'}
+                        {sampleResult.ambiguous ? 'AMBIGUOUS - multiple zones match; pricing must be blocked' : 'Sample total toll'}
                       </td>
                       <td className={`px-3 py-3 text-right text-base font-bold ${sampleResult.ambiguous ? 'text-red-700' : 'text-gray-900'}`}>
                         {sampleResult.ambiguous ? 'No total' : formatGhs(sampleResult.totalTollPesewas)}
@@ -914,7 +908,7 @@ function RideTollZonesContent() {
             <DialogTitle>Publish this exact toll policy?</DialogTitle>
             <DialogDescription>
               This consumes the one-time preview token. Existing rides keep their captured price;
-              eligible new estimates use this revision only after its GMT effective time and runtime enablement.
+              eligible new estimates use this revision only after its GMT effective time and only while it is turned on.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">

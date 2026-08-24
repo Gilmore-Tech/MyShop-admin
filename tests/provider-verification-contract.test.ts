@@ -22,7 +22,7 @@ test('provider document badges describe every pipeline state truthfully', () => 
   )
   assert.equal(
     providerDocumentStatusPresentation('coordinator_validated').label,
-    'Coordinator validated · awaiting RM',
+    'Coordinator validated - awaiting Regional Manager',
   )
   assert.equal(providerDocumentStatusPresentation('approved').label, 'Approved')
   assert.equal(

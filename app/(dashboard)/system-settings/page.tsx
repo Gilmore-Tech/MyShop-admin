@@ -4,14 +4,16 @@ import { PageGuard } from '@/components/common/page-guard'
 import { useState, useEffect, useCallback } from 'react'
 import {
   Shield, Zap, Globe, Lock, Plug, AlertTriangle,
-  Save, Loader2, RefreshCw, CheckCircle2, Clock,
+  Save, Loader2, CheckCircle2, Clock,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/common/page-header'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { PageSkeleton } from '@/components/common/load-state'
+import { ErrorState } from '@/components/common/error-state'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { getAllConfig, updateConfig } from '@/lib/api'
 
@@ -168,6 +170,8 @@ function IntegCard({ name, description, status }: { name: string; description: s
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+const SUBTITLE = 'Platform-wide toggles, security policies, and integration status.'
+
 export default function SystemSettingsPage() {
   const [settings, setSettings] = useState<SettingsState>({ ...FULL_DEFAULTS })
   const [saved, setSaved]       = useState<SettingsState>({ ...FULL_DEFAULTS })
@@ -236,11 +240,8 @@ export default function SystemSettingsPage() {
   if (loading) {
     return (
       <div>
-        <PageHeader title="System Settings" subtitle="Platform-wide toggles and infrastructure settings." />
-        <div className="flex items-center justify-center py-24 gap-3 text-gray-400">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Loading settings…</span>
-        </div>
+        <PageHeader title="System settings" subtitle={SUBTITLE} />
+        <PageSkeleton variant="form" />
       </div>
     )
   }
@@ -248,14 +249,8 @@ export default function SystemSettingsPage() {
   if (loadError) {
     return (
       <div>
-        <PageHeader title="System Settings" subtitle="Platform-wide toggles and infrastructure settings." />
-        <div className="flex flex-col items-center justify-center py-24 gap-4">
-          <AlertTriangle className="h-8 w-8 text-red-400" />
-          <p className="text-sm text-gray-500">Failed to load settings from the server.</p>
-          <Button variant="outline" onClick={load} className="gap-2">
-            <RefreshCw className="h-4 w-4" /> Retry
-          </Button>
-        </div>
+        <PageHeader title="System settings" subtitle={SUBTITLE} />
+        <ErrorState title="Could not load settings" detail="Failed to load settings from the server." onRetry={load} />
       </div>
     )
   }
@@ -264,8 +259,8 @@ export default function SystemSettingsPage() {
     <PageGuard permission="manage_admins">
       <div>
         <PageHeader
-          title="System Settings"
-          subtitle="Platform-wide toggles, security policies, and integration status."
+          title="System settings"
+          subtitle={SUBTITLE}
           actions={
             <div className="flex items-center gap-3">
               {saveSuccess && !dirty && (
@@ -282,12 +277,12 @@ export default function SystemSettingsPage() {
               <Button
                 onClick={() => setConfirmOpen(true)}
                 disabled={!dirty || saving}
-                className="gap-2 text-white"
-                style={{ backgroundColor: dirty ? '#F5A623' : undefined }}
+                variant="brand"
+                className="gap-2"
               >
                 {saving
-                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
-                  : <><Save className="h-4 w-4" /> Save {dirty ? `(${changedKeys.length})` : 'Changes'}</>}
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
+                  : <><Save className="h-4 w-4" /> Save changes {dirty ? `(${changedKeys.length})` : ''}</>}
               </Button>
             </div>
           }
@@ -304,12 +299,12 @@ export default function SystemSettingsPage() {
 
           {/* ── Platform Status ─────────────────────────────────────────────── */}
           <Section
-            title="Platform Status"
+            title="Platform status"
             description="Enable or disable core platform services globally."
             icon={<Zap className="h-4 w-4" />}
           >
             <ToggleRow
-              label="Maintenance Mode"
+              label="Maintenance mode"
               description="Blocks all client and provider app access. Show a maintenance screen to all users."
               checked={settings.maintenance_mode}
               onChange={v => setBool('maintenance_mode', v)}
@@ -317,21 +312,21 @@ export default function SystemSettingsPage() {
               dirty={isDirty('maintenance_mode')}
             />
             <ToggleRow
-              label="Ride Hailing"
+              label="Ride hailing"
               description="Allow clients to book rides and drivers to receive requests."
               checked={settings.rides_enabled}
               onChange={v => setBool('rides_enabled', v)}
               dirty={isDirty('rides_enabled')}
             />
             <ToggleRow
-              label="Artisan Jobs"
+              label="Artisan jobs"
               description="Allow clients to post artisan jobs and artisans to place bids."
               checked={settings.artisan_jobs_enabled}
               onChange={v => setBool('artisan_jobs_enabled', v)}
               dirty={isDirty('artisan_jobs_enabled')}
             />
             <ToggleRow
-              label="New User Registrations"
+              label="New user registrations"
               description="Allow new clients and providers to register. Disable during invite-only periods."
               checked={settings.new_registrations_enabled}
               onChange={v => setBool('new_registrations_enabled', v)}
@@ -341,19 +336,19 @@ export default function SystemSettingsPage() {
 
           {/* ── Payments ────────────────────────────────────────────────────── */}
           <Section
-            title="Payment Methods"
+            title="Payment methods"
             description="Control which payment methods are available at checkout."
             icon={<Globe className="h-4 w-4" />}
           >
             <ToggleRow
-              label="Mobile Money (MoMo)"
+              label="Mobile money (MoMo)"
               description="MTN, Vodafone, AirtelTigo MoMo payments."
               checked={settings.momo_payments_enabled}
               onChange={v => setBool('momo_payments_enabled', v)}
               dirty={isDirty('momo_payments_enabled')}
             />
             <ToggleRow
-              label="Cash on Delivery"
+              label="Cash on delivery"
               description="Allow clients to pay the provider in cash at the end of a job or ride."
               checked={settings.cash_payments_enabled}
               onChange={v => setBool('cash_payments_enabled', v)}
@@ -368,7 +363,7 @@ export default function SystemSettingsPage() {
             icon={<Lock className="h-4 w-4" />}
           >
             <ToggleRow
-              label="Require 2FA for All Admins"
+              label="Require 2FA for all admins"
               description="Enforce two-factor authentication on next login. Admins without 2FA set up will be locked out."
               checked={settings.require_2fa_admins}
               onChange={v => setBool('require_2fa_admins', v)}
@@ -385,14 +380,14 @@ export default function SystemSettingsPage() {
 
           {/* ── Regional & Localisation ──────────────────────────────────────── */}
           <Section
-            title="Regional & Localisation"
+            title="Regional & localisation"
             description="Default locale, pilot region, and contact information."
             icon={<Globe className="h-4 w-4" />}
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium text-gray-800">Default Language</Label>
+                  <Label className="text-sm font-medium text-gray-800">Default language</Label>
                   {isDirty('default_language') && (
                     <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-amber-100 text-amber-700">unsaved</span>
                   )}
@@ -410,7 +405,7 @@ export default function SystemSettingsPage() {
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium text-gray-800">Pilot Region</Label>
+                  <Label className="text-sm font-medium text-gray-800">Pilot region</Label>
                   {isDirty('pilot_region') && (
                     <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-amber-100 text-amber-700">unsaved</span>
                   )}
@@ -425,7 +420,7 @@ export default function SystemSettingsPage() {
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium text-gray-800">Support Email</Label>
+                  <Label className="text-sm font-medium text-gray-800">Support email</Label>
                   {isDirty('support_email') && (
                     <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-amber-100 text-amber-700">unsaved</span>
                   )}
@@ -441,7 +436,7 @@ export default function SystemSettingsPage() {
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium text-gray-800">Support Phone</Label>
+                  <Label className="text-sm font-medium text-gray-800">Support phone</Label>
                   {isDirty('support_phone') && (
                     <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-amber-100 text-amber-700">unsaved</span>
                   )}
@@ -482,7 +477,7 @@ export default function SystemSettingsPage() {
             <CardContent className="pt-5">
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#F5A623' }}>
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-primary">
                     <span className="text-white font-bold text-sm">M</span>
                   </div>
                   <div>
@@ -507,39 +502,27 @@ export default function SystemSettingsPage() {
         </div>
 
         {/* ── Confirm dialog ────────────────────────────────────────────────── */}
-        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-                Save {changedKeys.length} System Setting{changedKeys.length !== 1 ? 's' : ''}
-              </DialogTitle>
-              <DialogDescription>
-                Some changes (maintenance mode, feature toggles) take effect immediately for all users.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="rounded-lg border border-gray-100 bg-gray-50 divide-y divide-gray-100 text-xs overflow-hidden">
-              {changedKeys.map(k => (
-                <div key={k} className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-3 py-2">
-                  <span className="font-mono text-gray-500 truncate">{k}</span>
-                  <span className="text-gray-300">-&gt;</span>
-                  <div className="flex items-center gap-2">
-                    <span className="line-through text-gray-400">{String(saved[k as keyof SettingsState])}</span>
-                    <span className="font-semibold text-gray-800">{String(settings[k as keyof SettingsState])}</span>
-                  </div>
+        <ConfirmDialog
+          open={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          title={`Save ${changedKeys.length} system setting${changedKeys.length !== 1 ? 's' : ''}?`}
+          description="Some changes (maintenance mode, feature toggles) take effect immediately for all users."
+          confirmLabel="Save changes"
+          onConfirm={() => handleSave()}
+        >
+          <div className="rounded-lg border border-gray-100 bg-gray-50 divide-y divide-gray-100 text-xs overflow-hidden">
+            {changedKeys.map(k => (
+              <div key={k} className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-3 py-2">
+                <span className="font-mono text-gray-500 truncate">{k}</span>
+                <span className="text-gray-300">-&gt;</span>
+                <div className="flex items-center gap-2">
+                  <span className="line-through text-gray-400">{String(saved[k as keyof SettingsState])}</span>
+                  <span className="font-semibold text-gray-800">{String(settings[k as keyof SettingsState])}</span>
                 </div>
-              ))}
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave} className="text-white gap-2" style={{ backgroundColor: '#F5A623' }}>
-                <Save className="h-4 w-4" /> Confirm & Save
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              </div>
+            ))}
+          </div>
+        </ConfirmDialog>
 
       </div>
     </PageGuard>

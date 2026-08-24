@@ -16,7 +16,7 @@ import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
 import { type Permission, type CategoryScope, roleLabel } from '@/lib/roles'
 import { userLandingPath } from '@/lib/user-scope'
 
-type ChildItem = { title: string; href: string; permission?: Permission; badge?: number; badgeVariant?: 'red' | 'amber'; category?: CategoryScope; superAdmin?: boolean }
+type ChildItem = { title: string; href: string; permission?: Permission | Permission[]; badge?: number; badgeVariant?: 'red' | 'amber'; category?: CategoryScope; superAdmin?: boolean }
 
 type NavItem = {
   title: string
@@ -24,7 +24,7 @@ type NavItem = {
   icon: React.ElementType
   badge?: number
   permission?: Permission
-  // Constrain to one vertical — hidden from a coordinator scoped to the other.
+  // Constrain to one vertical - hidden from a coordinator scoped to the other.
   category?: CategoryScope
   // Visible only to the single root admin (is_super_admin). Used for the Admin
   // Accounts entry so account/permission management is root-only.
@@ -48,7 +48,7 @@ function Badge({ count, variant = 'red' }: { count: number; variant?: 'red' | 'a
 // constrained to the *other* category than the user's scope.
 function childAllowed(c: ChildItem, can: (p: Permission) => boolean, userCategory: CategoryScope | null, isSuperAdmin: boolean): boolean {
   if (c.superAdmin && !isSuperAdmin) return false
-  if (c.permission && !can(c.permission)) return false
+  if (c.permission && !(Array.isArray(c.permission) ? c.permission.some(can) : can(c.permission))) return false
   if (c.category && userCategory && c.category !== userCategory) return false
   return true
 }
@@ -218,24 +218,23 @@ export default function AppSidebar() {
     {
       label: 'Overview',
       items: [
-        { title: 'Dashboard',  href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
+        { title: 'Home',  href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
         {
-          title: 'Operations', href: '/live-map', icon: Radio,
+          title: 'Live operations', href: '/live-map', icon: Radio,
           children: [
-            { title: 'Live Monitoring', href: '/live-map',  permission: 'view_live_map' },
-            { title: 'Online Providers', href: '/online-providers', permission: 'view_live_map' },
-            { title: 'Activity Feed',   href: '/activity',  permission: 'view_activity' },
-            { title: 'Emergency Alerts',href: '/emergency', permission: 'view_emergency', badge: unacknowledgedEmergencies ?? undefined },
+            { title: 'Live map', href: '/live-map',  permission: 'view_live_map' },
+            { title: 'Online providers', href: '/online-providers', permission: 'view_live_map' },
+            { title: 'Activity feed',   href: '/activity',  permission: 'view_activity' },
+            { title: 'Emergency alerts',href: '/emergency', permission: 'view_emergency', badge: unacknowledgedEmergencies ?? undefined },
           ],
         },
         {
-          title: 'Insights', href: '/analytics', icon: BarChart3,
+          title: 'Reports', href: '/insights/revenue', icon: BarChart3,
           children: [
-            { title: 'Analytics', href: '/analytics', permission: 'view_analytics' },
-            { title: 'Reports',   href: '/reports',   permission: 'view_reports' },
-            { title: 'Revenue by Date', href: '/insights/revenue', permission: 'view_revenue_report' },
-            { title: 'Trip Outcomes', href: '/insights/trips', permission: 'view_reports' },
+            { title: 'Revenue', href: '/insights/revenue', permission: ['view_revenue_report', 'view_payments'] },
+            { title: 'Booking outcomes', href: '/insights/trips', permission: 'view_reports' },
             { title: 'Leaderboards', href: '/insights/leaderboards', permission: 'view_reports' },
+            { title: 'Pilot targets', href: '/insights/pilot', permission: 'view_pilot_report' },
           ],
         },
       ],
@@ -244,54 +243,53 @@ export default function AppSidebar() {
       label: 'Marketplace',
       items: [
         {
-          // No parent-level permission — each child is gated and category-scoped
+          // No parent-level permission - each child is gated and category-scoped
           // so a rides coordinator sees only ride surfaces and vice-versa.
-          title: 'Trips & Services', href: '/rides', icon: Car,
+          title: 'Bookings', href: '/rides', icon: Car,
           children: [
-            { title: 'All Rides',          href: '/rides',         permission: 'view_rides', category: 'rides' },
-            { title: 'Ride Tiers',         href: '/ride-categories', permission: 'view_ride_categories', category: 'rides' },
-            { title: 'Toll Zones',          href: '/ride-toll-zones', category: 'rides', superAdmin: true },
-            { title: 'Artisan Jobs',       href: '/artisan-jobs',  permission: 'view_jobs', category: 'artisan' },
-            { title: 'Manual Assignment',  href: '/artisan-jobs/manual-assignment', permission: 'view_jobs', category: 'artisan', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
+            { title: 'Rides',              href: '/rides',         permission: 'view_rides', category: 'rides' },
+            { title: 'Ride tiers',         href: '/ride-categories', permission: 'view_ride_categories', category: 'rides' },
+            { title: 'Toll zones',          href: '/ride-toll-zones', category: 'rides', superAdmin: true },
+            { title: 'Artisan jobs',       href: '/artisan-jobs',  permission: 'view_jobs', category: 'artisan' },
+            { title: 'Manual assignment',  href: '/artisan-jobs/manual-assignment', permission: 'view_jobs', category: 'artisan', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
             ...(FEATURES.highBidReview
-              ? [{ title: 'High Bid Review', href: '/artisan-jobs/high-bid-review', permission: 'review_bid' as const, category: 'artisan' as const, badge: highBidCount ?? undefined }]
+              ? [{ title: 'High bid review', href: '/artisan-jobs/high-bid-review', permission: 'review_bid' as const, category: 'artisan' as const, badge: highBidCount ?? undefined }]
               : []),
-            { title: 'Service Categories', href: '/categories',    permission: 'view_categories', category: 'artisan' },
+            { title: 'Service categories', href: '/categories',    permission: 'view_categories', category: 'artisan' },
           ],
         },
         {
           title: 'Payments', href: '/payments', icon: CreditCard,
           children: [
             { title: 'Transactions',  href: '/payments/transactions', permission: 'view_payments' },
-            { title: 'Revenue',       href: '/payments/revenue',      permission: 'view_payments' },
-            { title: 'Commission Ledger', href: '/payments/commission-ledger', permission: 'view_payments' },
-            { title: 'Batch Payout History', href: '/payments/batch-payouts', permission: 'view_payments' },
-            { title: 'Clawbacks',     href: '/payments/clawbacks',    permission: 'view_payments' },
-            { title: 'Webhook Failures', href: '/payments/webhook-failures', permission: 'view_payments' },
+            { title: 'Commission charges', href: '/payments/commission-ledger', permission: 'view_payments' },
+            { title: 'Provider payments', href: '/payments/batch-payouts', permission: 'view_payments' },
+            { title: 'Money owed',    href: '/payments/clawbacks',    permission: 'view_payments' },
+            { title: 'Payment errors', href: '/payments/webhook-failures', permission: 'view_payments' },
           ],
         },
       ],
     },
     {
-      label: 'Trust & Safety',
+      label: 'Trust & safety',
       items: [
         {
           title: 'Verifications', href: '/verifications', icon: BadgeCheck,
           children: [
-            { title: 'Verification Queue', href: '/verifications',           permission: 'view_verifications',    badge: pendingVerifications ?? undefined },
-            { title: 'Vehicle Queue',      href: '/verifications/vehicles',  permission: 'view_verifications', category: 'rides' },
-            { title: 'Client KYC Queue',   href: '/users/clients/kyc-queue',  permission: 'view_verifications',    badge: pendingClientKyc ?? undefined },
-            { title: 'Cancellation Suspensions', href: '/suspensions',        permission: 'view_users' },
+            { title: 'Provider verifications', href: '/verifications',       permission: 'view_verifications',    badge: pendingVerifications ?? undefined },
+            { title: 'Vehicle approvals',  href: '/verifications/vehicles',  permission: 'view_verifications', category: 'rides' },
+            { title: 'Client ID checks',   href: '/users/clients/kyc-queue',  permission: 'view_verifications',    badge: pendingClientKyc ?? undefined },
+            { title: 'Suspensions',        href: '/suspensions',        permission: 'view_users' },
             ...(FEATURES.sessionRecovery && hasGlobalRecoveryRole
-              ? [{ title: 'Device Session Recovery', href: '/account-recovery', permission: 'view_session_recovery' as const, badge: pendingRecoveryCount ?? undefined }]
+              ? [{ title: 'Device recovery', href: '/account-recovery', permission: 'view_session_recovery' as const, badge: pendingRecoveryCount ?? undefined }]
               : []),
             ...(FEATURES.roleAccountRecovery && isRoleRecoveryAuthority
-              ? [{ title: 'Deleted Role Recovery', href: '/role-account-recovery', permission: 'view_role_account_recovery' as const, badge: pendingRoleRecoveryCount ?? undefined }]
+              ? [{ title: 'Deleted account recovery', href: '/role-account-recovery', permission: 'view_role_account_recovery' as const, badge: pendingRoleRecoveryCount ?? undefined }]
               : []),
           ],
         },
-        { title: 'Disputes & Incidents', href: '/disputes', icon: Scale, permission: 'view_disputes', badge: openDisputes ?? undefined },
-        { title: 'User Management',      href: userLandingPath(category, permissions), icon: Users, permission: 'view_users' },
+        { title: 'Disputes', href: '/disputes', icon: Scale, permission: 'view_disputes', badge: openDisputes ?? undefined },
+        { title: 'Users',                href: userLandingPath(category, permissions), icon: Users, permission: 'view_users' },
       ],
     },
     {
@@ -302,26 +300,26 @@ export default function AppSidebar() {
           title: 'Growth', href: '/promotions', icon: Gift,
           children: [
             { title: 'Promotions', href: '/promotions', permission: 'view_promotions' },
-            { title: 'Promo Campaigns', href: '/promo-campaigns', permission: 'view_promotions' },
+            { title: 'Promo campaigns', href: '/promo-campaigns', permission: 'view_promotions' },
             { title: 'Referrals',  href: '/referrals',  permission: 'view_referrals' },
           ],
         },
-        { title: 'Help Center',   href: '/help/articles', icon: BookOpen,  permission: 'view_help_articles' },
+        { title: 'Help center',   href: '/help/articles', icon: BookOpen,  permission: 'view_help_articles' },
       ],
     },
     {
       label: 'System',
       items: [
         {
-          title: 'Configuration', href: '/configuration', icon: Settings,
+          title: 'Settings', href: '/configuration', icon: Settings,
           children: [
-            { title: 'Marketplace Config', href: '/configuration',   permission: 'view_config' },
-            { title: 'USSD & SMS Logs',    href: '/ussd',            permission: 'view_ussd' },
-            { title: 'System Settings',    href: '/system-settings', permission: 'manage_admins' },
+            { title: 'Marketplace settings', href: '/configuration',   permission: 'view_config' },
+            { title: 'USSD & SMS logs',    href: '/ussd',            permission: 'view_ussd' },
+            { title: 'System settings',    href: '/system-settings', permission: 'manage_admins' },
           ],
         },
-        { title: 'System Audit',    href: '/audit-logs',    icon: ClipboardList, superAdmin: true },
-        { title: 'Admin Accounts',  href: '/admin-accounts', icon: UserCog,      superAdmin: true },
+        { title: 'Audit log',       href: '/audit-logs',    icon: ClipboardList, superAdmin: true },
+        { title: 'Admin accounts',  href: '/admin-accounts', icon: UserCog,      superAdmin: true },
       ],
     },
   ]
@@ -373,7 +371,7 @@ export default function AppSidebar() {
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{roleLabel(role)}</p>
             <p className="text-[11px] text-gray-600 mt-0.5">
               {region.name ?? 'All regions'}
-              {category ? ` · ${category === 'rides' ? 'Rides' : 'Artisan'}` : ''}
+              {category ? ` - ${category === 'rides' ? 'Rides' : 'Artisan'}` : ''}
             </p>
           </div>
         )}
