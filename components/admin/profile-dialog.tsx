@@ -8,7 +8,7 @@ import { roleLabel } from '@/lib/roles'
 
 /**
  * The signed-in admin's profile, read-only. Password changes live in ONE
- * place — Your account (/account) — so the same flow is never duplicated.
+ * place - Your account (/account) - so the same flow is never duplicated.
  * Opened from the header user menu.
  */
 export function ProfileDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {

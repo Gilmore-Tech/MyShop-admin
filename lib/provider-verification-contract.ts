@@ -33,7 +33,7 @@ export function providerDocumentStatusPresentation(
     case 'confirmed':
       return { label: 'Admin verified · awaiting Coordinator', kind: 'progress' }
     case 'coordinator_validated':
-      return { label: 'Coordinator validated · awaiting RM', kind: 'progress' }
+      return { label: 'Coordinator validated - awaiting Regional Manager', kind: 'progress' }
     case 'approved':
       return { label: 'Approved', kind: 'approved' }
     case 'rejected':

@@ -344,7 +344,7 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* Left — route + timeline */}
+              {/* Left - route + timeline */}
               <div className="lg:col-span-2 space-y-4">
                 {/* Ride overview */}
                 <Card>
@@ -514,7 +514,7 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                 </Card>
               </div>
 
-              {/* Right — parties */}
+              {/* Right - parties */}
               <div className="space-y-4">
                 <Card>
                   <CardHeader className="pb-2">

@@ -13,7 +13,7 @@ import { listWebhookFailures, type WebhookFailure } from '@/lib/api'
 const LIMIT = 50
 
 function formatDateTime(iso: string | null) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   return new Date(iso).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',

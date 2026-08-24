@@ -115,9 +115,9 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     group: 'Verification',
     permissions: [
       { key: 'view_verifications', label: 'View verification queue', description: 'Provider documents and client KYC queue' },
-      { key: 'verify_documents', label: 'Verify documents', description: 'Stage 1 — check each document for authenticity, then submit to the coordinator' },
-      { key: 'validate_verification', label: 'Validate verification', description: 'Stage 2 — coordinator validates the approved set before the RM' },
-      { key: 'finalize_verification', label: 'Finalize verification', description: 'Stage 3 — RM final decision that sends the provider online' },
+      { key: 'verify_documents', label: 'Verify documents', description: 'Stage 1 - check each document for authenticity, then submit to the coordinator' },
+      { key: 'validate_verification', label: 'Validate verification', description: 'Stage 2 - coordinator validates the approved set before the Regional Manager' },
+      { key: 'finalize_verification', label: 'Finalize verification', description: 'Stage 3 - Regional Manager decision that sends the provider online' },
       { key: 'lift_verification_suspension', label: 'Lift verification suspension', description: 'Reinstate an auto-suspended provider' },
       { key: 'upload_provider_document', label: 'Upload provider document', description: 'Upload a replacement document on a provider\'s behalf (e.g. expired licence); returns them to the verification queue' },
     ],
@@ -251,7 +251,7 @@ export function can(
 // Named roles + data scope
 //
 // Mirrors apps/api/src/common/permissions/permission.catalogue.ts (ADMIN_ROLES /
-// ADMIN_ROLE_DEFINITIONS) — keep the two in sync. A role is a fixed permission
+// ADMIN_ROLE_DEFINITIONS) - keep the two in sync. A role is a fixed permission
 // bundle plus a data scope (region + category). The backend is authoritative
 // (it derives `permissions` from the role); these definitions drive the admin
 // account picker and let the UI reason about a role offline.
@@ -299,7 +299,7 @@ const BACK_OFFICER_EXTRA: Permission[] = [
 ]
 
 // Coordinators are view-mostly within their vertical: no Payments module, no
-// catalogue editing, and (artisan) no manual job assignment — see the rules in
+// catalogue editing, and (artisan) no manual job assignment - see the rules in
 // the role spec. Everything is locked to their one category.
 const COORDINATOR_SHARED: Permission[] = [
   'view_dashboard', 'view_activity', 'view_live_map', 'view_analytics', 'view_reports',
@@ -370,14 +370,14 @@ export const ROLE_DEFINITIONS: Record<Role, RoleDef> = {
     permissions: REGIONAL_MANAGER_PERMS,
   },
   coordinator_rides: {
-    role: 'coordinator_rides', level: 4, label: 'Coordinator — Rides',
-    description: 'Rides vertical within one region. Validates verified documents before the RM finalizes.',
+    role: 'coordinator_rides', level: 4, label: 'Coordinator - Rides',
+    description: 'Rides vertical within one region. Validates verified documents before the Regional Manager finalizes.',
     requiresRegion: true, requiresCategory: true, category: 'rides', global: false,
     permissions: dedupe([...COORDINATOR_SHARED, ...COORDINATOR_RIDES_OPS]),
   },
   coordinator_artisan: {
-    role: 'coordinator_artisan', level: 4, label: 'Coordinator — Artisan',
-    description: 'Artisan vertical within one region. Validates verified documents before the RM finalizes.',
+    role: 'coordinator_artisan', level: 4, label: 'Coordinator - Artisan',
+    description: 'Artisan vertical within one region. Validates verified documents before the Regional Manager finalizes.',
     requiresRegion: true, requiresCategory: true, category: 'artisan', global: false,
     permissions: dedupe([...COORDINATOR_SHARED, ...COORDINATOR_ARTISAN_OPS]),
   },

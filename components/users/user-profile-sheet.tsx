@@ -36,7 +36,7 @@ function formatDate(iso: string) {
 }
 
 // Human labels for the auto/manual suspension triggers the backend can emit.
-// Unknown triggers fall back to the raw value (underscores → spaces) so a new
+// Unknown triggers fall back to the raw value (underscores -> spaces) so a new
 // backend trigger renders without a frontend change.
 const SUSPENSION_TRIGGER_LABELS: Record<string, string> = {
   cancellation: 'Excess cancellations',
@@ -58,10 +58,10 @@ function SuspensionContext({ suspension, liveCancellations }: { suspension: Prov
     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 space-y-1.5">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-red-700">
         <ShieldOff className="h-3.5 w-3.5 shrink-0" />
-        <span>{label ? `Suspended — ${label}` : 'Suspended'}</span>
-        {trigger === 'cancellation' && count != null && <span className="font-normal text-red-600">· {count} cancellations / 30 days</span>}
+        <span>{label ? `Suspended - ${label}` : 'Suspended'}</span>
+        {trigger === 'cancellation' && count != null && <span className="font-normal text-red-600">- {count} cancellations / 30 days</span>}
       </div>
-      {suspension?.reason ? <p className="text-[11px] text-red-700 leading-snug">{suspension.reason}</p> : <p className="text-[11px] text-red-500 italic">Reason unavailable — pending backend support.</p>}
+      {suspension?.reason ? <p className="text-[11px] text-red-700 leading-snug">{suspension.reason}</p> : <p className="text-[11px] text-red-500 italic">Reason unavailable - pending backend support.</p>}
       {suspension?.suspendedAt && <p className="text-[10px] text-red-500">Suspended {formatDate(suspension.suspendedAt)}</p>}
     </div>
   )
@@ -299,7 +299,7 @@ function UploadDocumentDialog({ open, roleAccountId, providerType, providerName,
           <div className="flex gap-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
             <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
             <p className="text-[11px] text-amber-700 leading-relaxed">
-              This returns the document to the approval queue (Admin → Coordinator → Regional Manager). A still-valid approved document may remain authoritative only until its expiry or seven-day grace deadline; without valid authority, the provider is taken <strong>offline</strong>. An active trip may finish first.
+              This returns the document to the approval queue (Admin, then Coordinator, then Regional Manager). A still-valid approved document may remain authoritative only until its expiry or seven-day grace deadline; without valid authority, the provider is taken <strong>offline</strong>. An active trip may finish first.
             </p>
           </div>
 
@@ -322,7 +322,7 @@ function UploadDocumentDialog({ open, roleAccountId, providerType, providerName,
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">File (JPG, PNG or PDF — max 10 MB)</Label>
+            <Label className="text-xs">File (JPG, PNG or PDF - max 10 MB)</Label>
             <Input type="file" accept="image/jpeg,image/png,application/pdf" onChange={e => setFile(e.target.files?.[0] ?? null)} className="h-10 file:mr-3 file:text-xs file:text-gray-600" />
           </div>
 
@@ -341,7 +341,7 @@ function UploadDocumentDialog({ open, roleAccountId, providerType, providerName,
           <Button onClick={submit} disabled={saving} style={{ backgroundColor: '#F5A623' }}>
             {saving ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Uploading…
+                <Loader2 className="h-4 w-4 animate-spin" /> Uploading...
               </>
             ) : (
               <>
@@ -422,7 +422,7 @@ interface UserProfileSheetProps {
 }
 
 export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetProps) {
-  // Fetch full user detail on open — list endpoint returns minimal driver/artisan data
+  // Fetch full user detail on open - list endpoint returns minimal driver/artisan data
   const [richUser, setRichUser] = useState<PlatformUser | null>(null)
   const [richLoading, setRichLoading] = useState(false)
 
@@ -690,7 +690,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                     <div className="flex items-start gap-3 py-2.5 border-b border-gray-100">
                       <IdCard className="h-4 w-4 text-gray-400 mt-0.5" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Ghana Card KYC</p>
+                        <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Ghana Card ID check</p>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                           {clientKycBadge(client.kycStatus)}
                           {client.ghanaCardImageUrl && (
@@ -741,7 +741,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                         <StatusBadge status={driver.verificationStatus} />
                         {driver.verificationStatus === 'pending' && canViewVerifications && (
                           <Link href="/verifications" className="text-[11px] font-medium text-orange-500 hover:text-orange-700 underline">
-                            {driver.verificationStage === 'coordinator_validated' ? 'Open RM queue' : 'Open verification queue'}
+                            {driver.verificationStage === 'coordinator_validated' ? 'Open Regional Manager queue' : 'Open verification queue'}
                           </Link>
                         )}
                       </div>
@@ -902,7 +902,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                         <StatusBadge status={artisan.verificationStatus} />
                         {artisan.verificationStatus === 'pending' && canViewVerifications && (
                           <Link href="/verifications" className="text-[11px] font-medium text-orange-500 hover:text-orange-700 underline">
-                            {artisan.verificationStage === 'coordinator_validated' ? 'Open RM queue' : 'Open verification queue'}
+                            {artisan.verificationStage === 'coordinator_validated' ? 'Open Regional Manager queue' : 'Open verification queue'}
                           </Link>
                         )}
                       </div>
@@ -1027,7 +1027,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
                 </div>
               )}
 
-              {/* Documents — drivers and artisans only */}
+              {/* Documents - drivers and artisans only */}
               {!editing && (driver || artisan) && (
                 <div>
                   <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Documents</p>
@@ -1097,7 +1097,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
           <div className="space-y-3 py-1">
             <div>
               <Label className="text-xs text-gray-500">Reason {actionDialog !== 'reinstate' && <span className="text-gray-400">(min 10 chars)</span>}</Label>
-              <textarea className="mt-1.5 w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-20 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200" placeholder={actionDialog === 'reinstate' ? 'Reason for reinstatement (optional)…' : 'Describe the reason for this action…'} value={actionReason} onChange={e => setActionReason(e.target.value)} />
+              <textarea className="mt-1.5 w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-20 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200" placeholder={actionDialog === 'reinstate' ? 'Reason for reinstatement (optional)...' : 'Describe the reason for this action...'} value={actionReason} onChange={e => setActionReason(e.target.value)} />
             </div>
             {actionError && <p className="text-xs text-red-600">{actionError}</p>}
           </div>
@@ -1131,7 +1131,7 @@ export function UserProfileSheet({ user, onClose, onUpdate }: UserProfileSheetPr
               <Label className="text-xs text-gray-500">
                 Reason <span className="text-gray-400">(optional)</span>
               </Label>
-              <textarea className="mt-1.5 w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-20 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200" placeholder="e.g. User contacted support - lost access to MoMo number…" value={unlockReason} onChange={e => setUnlockReason(e.target.value)} />
+              <textarea className="mt-1.5 w-full rounded-lg border border-gray-200 text-sm px-3 py-2 h-20 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200" placeholder="e.g. User contacted support - lost access to MoMo number..." value={unlockReason} onChange={e => setUnlockReason(e.target.value)} />
             </div>
             {unlockError && <p className="text-xs text-red-600">{unlockError}</p>}
           </div>

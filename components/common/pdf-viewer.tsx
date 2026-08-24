@@ -15,7 +15,7 @@ function proxyUrl(original: string) {
 
 export function PdfViewer({ url, label, height = 480 }: PdfViewerProps) {
   // Fetch the PDF via proxy into a blob URL so the iframe always renders inline.
-  // Direct iframe src with Content-Type: application/pdf is unreliable on Linux Chrome —
+  // Direct iframe src with Content-Type: application/pdf is unreliable on Linux Chrome -
   // the browser may navigate to a new tab or silently show blank instead of embedding.
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)

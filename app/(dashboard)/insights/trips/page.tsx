@@ -112,12 +112,12 @@ export default function BookingOutcomesPage() {
   function exportCsv() {
     exportTableCsv(
       `booking-outcomes-${groupBy}-${vertical}`,
-      ['Period', 'Vertical', 'Total requested', 'Completed', 'Cancelled', 'Unassigned', 'Still active', 'Completion %', 'Unassigned %'],
+      ['Period', 'Service line', 'Total requested', 'Completed', 'Cancelled', 'Unassigned', 'Still active', 'Completion %', 'Unassigned %'],
       rows.flatMap(r => [
         [r.period, vertical === 'all' ? 'All' : vertical === 'rides' ? 'Rides' : 'Artisan Services', r.requested, r.completed, r.cancelled, r.unassigned, r.active, r.completionRatePct ?? '', r.unassignedRatePct ?? ''],
         ...(vertical === 'all' ? [
           [r.period, 'Rides', r.byVertical.rides.requested, r.byVertical.rides.completed, r.byVertical.rides.cancelled, r.byVertical.rides.unassigned, r.byVertical.rides.active, r.byVertical.rides.completionRatePct ?? '', r.byVertical.rides.unassignedRatePct ?? ''],
-          [r.period, 'Artisan Services', r.byVertical.artisans.requested, r.byVertical.artisans.completed, r.byVertical.artisans.cancelled, r.byVertical.artisans.unassigned, r.byVertical.artisans.active, r.byVertical.artisans.completionRatePct ?? '', r.byVertical.artisans.unassignedRatePct ?? ''],
+          [r.period, 'Artisan services', r.byVertical.artisans.requested, r.byVertical.artisans.completed, r.byVertical.artisans.cancelled, r.byVertical.artisans.unassigned, r.byVertical.artisans.active, r.byVertical.artisans.completionRatePct ?? '', r.byVertical.artisans.unassignedRatePct ?? ''],
         ] : []),
       ]),
     )
@@ -181,7 +181,7 @@ export default function BookingOutcomesPage() {
             : <EmptyState title="No bookings requested in this period" description="Try a wider date range." />}
           renderExpanded={row => (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-              {[{ label: 'Rides', icon: Car, data: row.byVertical.rides, target: '/rides' }, { label: 'Artisan Services', icon: Wrench, data: row.byVertical.artisans, target: '/artisan-jobs' }].map(v => (
+              {[{ label: 'Rides', icon: Car, data: row.byVertical.rides, target: '/rides' }, { label: 'Artisan services', icon: Wrench, data: row.byVertical.artisans, target: '/artisan-jobs' }].map(v => (
                 <div key={v.label} className="rounded-lg bg-white border border-gray-100 px-3 py-2">
                   <p className="flex items-center gap-1.5 font-semibold text-gray-700 mb-1.5"><v.icon className="h-3.5 w-3.5 text-gray-400" /> {v.label}</p>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600">

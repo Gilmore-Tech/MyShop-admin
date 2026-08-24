@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { PageHeader } from '@/components/common/page-header'
 import { PageSkeleton } from '@/components/common/load-state'
+import { formatGhs } from '@/lib/money'
 import { EmptyState } from '@/components/common/empty-state'
 import {
   getUnassignedJobs, lockJob, assignJob, deleteJob, searchArtisans, getAllConfig,
@@ -27,7 +28,7 @@ import { ApiError, FEATURES, safeAdminErrorDiagnostic } from '@/lib/api-client'
 import { annotateDistancesFromLiveMap } from '@/lib/distance'
 
 // Manual assignment only kicks in once the artisan bid window has elapsed without
-// any bids. Spec: PRD §"If zero bids received after 5 minutes, job escalates to
+// any bids. Spec: PRD "If zero bids received after 5 minutes, job escalates to
 // admin queue" + EDD `job_bid_window_secs`. The window is sourced from the
 // platform config key `bid_window_minutes`; this is the fallback if config is
 // unavailable or malformed.
@@ -48,10 +49,6 @@ const DEFAULT_RADIUS_KM: number | null = null
 function initials(name: string | null | undefined) {
   if (!name) return '?'
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-}
-
-function ghsCurrency(pesewas: number) {
-  return `₵${(pesewas / 100).toFixed(2)}`
 }
 
 function timeAgo(iso: string) {
@@ -170,7 +167,7 @@ export default function ManualAssignmentPage() {
   const canAssign = useRole().can('assign_job')
   // `allJobs` holds the server's eligible queue (status + 0 bids + no lock).
   // `jobs` (derived below) further filters out anything still inside its 5-minute
-  // bid window — those aren't ready for manual assignment yet.
+  // bid window - those aren't ready for manual assignment yet.
   const [allJobs, setAllJobs] = useState<UnassignedJob[]>([])
   const [, setTick] = useState(0)
   const [loadingJobs, setLoadingJobs] = useState(true)
@@ -272,7 +269,7 @@ export default function ManualAssignmentPage() {
   }, [])
 
   // Close the right pane when the selected job leaves the queue (assigned,
-  // deleted, bid placed elsewhere, or refreshed). We do NOT auto-open a job —
+  // deleted, bid placed elsewhere, or refreshed). We do NOT auto-open a job -
   // the pane only opens when the admin clicks one.
   useEffect(() => {
     if (selectedJobId && !jobs.some(j => j.id === selectedJobId)) {
@@ -305,7 +302,7 @@ export default function ManualAssignmentPage() {
             : {}),
         })
 
-        // Option C — live-map Haversine fallback. Only kicks in when the flag
+        // Option C - live-map Haversine fallback. Only kicks in when the flag
         // is on AND the backend hasn't shipped first-class distances yet AND
         // the job has coordinates. Best-effort: only annotates artisans that
         // currently appear on the live map (i.e. busy ones).
@@ -368,7 +365,7 @@ export default function ManualAssignmentPage() {
 
     try {
       // Directed quote: park the job in `admin_assigned` and ask the artisan to
-      // submit a quote for the client to confirm. No agreedPricePesewas — the
+      // submit a quote for the client to confirm. No agreedPricePesewas - the
       // backend would otherwise default to `confirm` mode and instant-confirm at
       // the category minimum, which this page does NOT want.
       await assignJob(selectedJob.id, { artisanId, mode: 'request_quote' })
@@ -522,7 +519,7 @@ export default function ManualAssignmentPage() {
                         <div className="flex items-center gap-3 shrink-0">
                           <div className="text-right">
                             <p className="text-[11px] text-gray-400">Min price</p>
-                            <p className="text-sm font-bold text-gray-900">{ghsCurrency(selectedJob.minBidPesewas)}</p>
+                            <p className="text-sm font-bold text-gray-900">{formatGhs(selectedJob.minBidPesewas)}</p>
                           </div>
                           <RoleGate permission="delete_job">
                             <Button
@@ -576,7 +573,7 @@ export default function ManualAssignmentPage() {
                             No price is set at assignment. Once assigned, the artisan will submit a bid
                             through the app and the client will confirm before work begins.
                             {selectedJob.minBidPesewas > 0 && (
-                              <> Client&apos;s minimum: <span className="font-semibold text-gray-600">{ghsCurrency(selectedJob.minBidPesewas)}</span>.</>
+                              <> Client&apos;s minimum: <span className="font-semibold text-gray-600">{formatGhs(selectedJob.minBidPesewas)}</span>.</>
                             )}
                           </p>
                         </div>

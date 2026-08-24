@@ -138,7 +138,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
 
   // The resolve button validates and opens the confirm dialog; the money only
   // moves from the dialog's confirm (an irreversible action never fires from
-  // an inline form button — approved redesign, high-risk flow standard).
+  // an inline form button - approved redesign, high-risk flow standard).
   function requestResolve() {
     if (!detail) return
     const validationError = validate()
@@ -203,7 +203,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
     <PageGuard permission="resolve_dispute">
       <div className="space-y-4">
         <PageHeader
-          title={detail ? `Dispute #${detail.id.slice(0, 8)}…` : 'Dispute'}
+          title={detail ? `Dispute #${detail.id.slice(0, 8)}...` : 'Dispute'}
           subtitle={detail?.description ?? 'Review evidence and resolve'}
           actions={
             <Link href="/disputes">
@@ -217,7 +217,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
         {loading && (
           <div className="flex items-center justify-center py-20 gap-3 text-gray-400">
             <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading dispute…</span>
+            <span className="text-sm">Loading dispute...</span>
           </div>
         )}
 
@@ -267,14 +267,14 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                         style={{ width: '100%', height: '100%' }}
                       >
                         <FitBounds points={allPoints} />
-                        {/* Optimal route — dashed blue */}
+                        {/* Optimal route - dashed blue */}
                         <Polyline
                           path={toPath(detail.optimalRoute as { lat: number; lng: number }[])}
                           strokeColor="#3B82F6"
                           strokeOpacity={0}
                           icons={DASHED_LINE_ICONS}
                         />
-                        {/* Actual GPS trail — solid red */}
+                        {/* Actual GPS trail - solid red */}
                         <Polyline
                           path={toPath(detail.gpsTrail as { lat: number; lng: number }[])}
                           strokeColor="#EF4444"
@@ -408,7 +408,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                     <div className="flex items-start gap-2 text-sm text-emerald-700">
                       <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
                       <span>
-                        OTP verified: {paymentMethodLabel(detail.refundDestination.method)} •••• {detail.refundDestination.accountLast4 ?? '----'}
+                        OTP verified: {paymentMethodLabel(detail.refundDestination.method)} **** {detail.refundDestination.accountLast4 ?? '----'}
                         {detail.refundDestination.locked ? ' (locked for processing)' : ''}
                       </span>
                     </div>

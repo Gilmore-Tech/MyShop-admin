@@ -86,7 +86,7 @@ export function ReferralUserSheet({ target, onClose }: { target: DrilldownTarget
         <div className="px-5 py-4 space-y-5">
           {loading ? (
             <div className="flex items-center gap-2 text-gray-400 text-sm py-8 justify-center">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading funnel…
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading funnel...
             </div>
           ) : error ? (
             <div className="flex flex-col items-center gap-3 py-8">
@@ -103,7 +103,7 @@ export function ReferralUserSheet({ target, onClose }: { target: DrilldownTarget
                     <Hash className="h-3 w-3" /> Code
                   </div>
                   <p className="text-sm font-mono font-semibold text-gray-900 mt-0.5 break-all">
-                    {data.referralCode ?? '—'}
+                    {data.referralCode ?? '-'}
                   </p>
                 </div>
                 <div className="rounded-lg bg-amber-50 px-3 py-2.5">

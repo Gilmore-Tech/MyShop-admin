@@ -112,7 +112,7 @@ export function RouteLoading() {
               />
             </svg>
           </div>
-          <p className="text-xs font-medium" style={{ color: '#4A6070' }}>Loading…</p>
+          <p className="text-xs font-medium" style={{ color: '#4A6070' }}>Loading...</p>
         </div>
       </div>
     </>

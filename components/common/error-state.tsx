@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 /**
  * The one error shape. Always offers Retry when a reload function exists, and
  * is rendered INSTEAD of the data (tables and tiles must not show zeros or
- * "no data" copy underneath an error — an error is not an empty result).
+ * "no data" copy underneath an error - an error is not an empty result).
  */
 export function ErrorState({
   title, detail, onRetry, retryLabel = 'Retry', compact = false, className,

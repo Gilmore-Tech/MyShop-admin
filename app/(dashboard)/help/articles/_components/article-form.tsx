@@ -174,7 +174,7 @@ export function ArticleForm({ mode, article, categories }: ArticleFormProps) {
           <div className="space-y-1.5 md:col-span-2">
             <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Summary</Label>
             <Textarea
-              placeholder="One-line summary shown in the help list…"
+              placeholder="One-line summary shown in the help list..."
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
               rows={2}
@@ -275,7 +275,7 @@ export function ArticleForm({ mode, article, categories }: ArticleFormProps) {
           style={{ backgroundColor: '#F5A623' }}
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create article'}
+          {saving ? 'Saving...' : isEdit ? 'Save changes' : 'Create article'}
         </Button>
       </div>
     </form>

@@ -21,7 +21,7 @@ import { ApiError, userSafeAdminError } from '@/lib/api-client'
 import { ledgerRowBalances } from '@/lib/commission-ledger-contract'
 import { formatGhs } from '@/lib/money'
 import { formatDate, formatDateTime } from '@/lib/format-date'
-import { dateRangeLabel } from '@/lib/date-range'
+import { dateRangeLabel, dateBasisCaption } from '@/lib/date-range'
 import { paymentMethodLabel } from '@/lib/payment-labels'
 import { exportTableCsv } from '@/lib/report-export'
 
@@ -247,8 +247,8 @@ export default function CommissionLedgerPage() {
             onRowClick={row => setSelected(row)}
             empty={unavailable
               ? <EmptyState variant="unavailable" title="Commission charges are not available yet" description="The server has not been updated with this report. The page will populate automatically once it is deployed." />
-              : <EmptyState title="No settled bookings in this period" description="Try a wider date range or another vertical." />}
-            caption="Dated by settlement (GMT): when the booking's payment was recorded. Click a provider for the per-booking breakdown."
+              : <EmptyState title="No settled bookings in this period" description="Try a wider date range or another service line." />}
+            caption={`${dateBasisCaption('Charges', 'settled')} Click a provider for the per-booking breakdown.`}
           />
         ) : (
           <ReportTable<CommissionLedgerRow>

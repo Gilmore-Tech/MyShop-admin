@@ -8,7 +8,7 @@ import { useRole } from '@/hooks/use-role'
 
 /**
  * The User Management tab strip. A category-scoped coordinator only sees their
- * vertical's provider tab (rides → Drivers, artisan → Artisans) and is
+ * vertical's provider tab (rides -> Drivers, artisan -> Artisans) and is
  * redirected away from the other type's page. RM/global see both.
  */
 export function UserTabs({ active }: { active: 'clients' | 'drivers' | 'artisans' }) {

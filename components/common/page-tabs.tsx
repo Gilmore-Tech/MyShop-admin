@@ -12,7 +12,7 @@ export interface PageTabItem {
 /**
  * Link tabs between sibling PAGES (each tab is a route). The active tab comes
  * from the pathname, so pages just declare the set. For switching data views
- * WITHIN one page use `SegmentedControl` instead — these two are the only tab
+ * WITHIN one page use `SegmentedControl` instead - these two are the only tab
  * patterns in the app.
  */
 export function PageTabs({ items, className }: { items: PageTabItem[]; className?: string }) {
