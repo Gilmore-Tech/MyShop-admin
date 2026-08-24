@@ -3,36 +3,36 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Search, MoreHorizontal, Car, Loader2, AlertTriangle } from 'lucide-react'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
+import { AlertTriangle, Car } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
-import { useDateRange, PageSizeSelect } from '@/components/common/table-controls'
+import { DataTable, type DataTableColumn } from '@/components/common/data-table'
+import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
+import { EmptyState } from '@/components/common/empty-state'
+import { useDateRange } from '@/components/common/table-controls'
 import { useLinkedParam } from '@/components/common/date-range-filter'
 import { listRides, type AdminRide } from '@/lib/api'
 import { paymentMethodLabel } from '@/lib/payment-labels'
+import { statusLabel } from '@/lib/status-labels'
 import { formatDateTime } from '@/lib/format-date'
 import { formatGhs } from '@/lib/money'
+import { dateBasisCaption } from '@/lib/date-range'
 
 // Status values the filter accepts; also validates ?status= deep links.
 const RIDE_STATUS_FILTERS = ['all', 'requested', 'accepted', 'driver_en_route', 'in_progress', 'completed', 'cancelled', 'disputed'] as const
 
 export default function RidesPage() {
-  const router = useRouter()
   const [rides, setRides] = useState<AdminRide[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [limit, setLimit] = useState(15)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setPage(1), readUrl: true })
   // Trip Outcomes deep-links here with ?status=…
   useLinkedParam('status', RIDE_STATUS_FILTERS, setStatusFilter)
@@ -41,6 +41,7 @@ export default function RidesPage() {
   const fetch = useCallback(() => {
     const request = ++requestSequence.current
     setLoading(true)
+    setError(null)
     listRides({
       status: statusFilter === 'all' ? undefined : statusFilter,
       search: search || undefined,
@@ -59,13 +60,12 @@ export default function RidesPage() {
         if (request !== requestSequence.current) return
         setRides(res.items)
         setTotal(res.total)
-        setTotalPages(Math.max(1, res.totalPages || 1))
       })
       .catch(() => {
         if (request === requestSequence.current) {
           setRides([])
           setTotal(0)
-          setTotalPages(1)
+          setError('Could not load rides. Check your connection and try again.')
         }
       })
       .finally(() => { if (request === requestSequence.current) setLoading(false) })
@@ -81,12 +81,80 @@ export default function RidesPage() {
   const completedCount = rides.filter(r => r.status === 'completed').length
   const disputedCount = rides.filter(r => r.status === 'disputed').length
 
+  const columns: DataTableColumn<AdminRide>[] = [
+    {
+      key: 'ride',
+      header: 'Ride',
+      render: row => (
+        <>
+          <p className="font-mono text-sm font-semibold text-gray-900">{row.id.slice(-8).toUpperCase()}</p>
+          {/* A completed ride is dated by when it finished — that is the day it
+              settled, and the day any cash debt is stamped on Payments → Money
+              Owed. Showing the booking time here made the two pages look like
+              they disagreed. */}
+          <p className="text-xs text-gray-400 mt-0.5 whitespace-nowrap">
+            {row.completedAt ? `Completed ${formatDateTime(row.completedAt)}` : formatDateTime(row.createdAt)}
+          </p>
+        </>
+      ),
+    },
+    {
+      key: 'client',
+      header: 'Client',
+      render: row => <span className="text-sm font-medium text-gray-800">{row.clientName ?? '-'}</span>,
+    },
+    {
+      key: 'driver',
+      header: 'Driver',
+      render: row => row.driverName
+        ? <span className="text-sm text-gray-500">{row.driverName}</span>
+        : (
+          <span className="text-amber-600 font-semibold inline-flex items-center gap-1 text-sm">
+            <AlertTriangle className="h-3.5 w-3.5" /> Unassigned
+          </span>
+        ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: row => <StatusBadge status={row.status} />,
+    },
+    {
+      key: 'amount',
+      header: 'Client amount',
+      align: 'right',
+      render: row => (
+        <>
+          <p className="text-sm font-semibold text-gray-800">{formatGhs(row.farePesewas)}</p>
+          {/* Method decides whether a debt is expected at all: cash means the
+              driver holds the fare and owes commission back, so a clawback
+              should exist; MoMo/card commission is withheld from the payout
+              and correctly produces none. A completed ride with no payment
+              row never settled — flag it rather than show "-". */}
+          <p className="text-xs text-gray-400">
+            {paymentMethodLabel(row.paymentMethod)}
+            {' - '}
+            {row.paymentStatus ? (
+              <span className="capitalize">{row.paymentStatus}</span>
+            ) : row.status === 'completed' ? (
+              <span className="text-amber-600 font-semibold">unsettled</span>
+            ) : (
+              '-'
+            )}
+          </p>
+        </>
+      ),
+    },
+  ]
+
+  const filtersActive = search.trim().length > 0 || statusFilter !== 'all'
+
   return (
     <PageGuard permission="view_rides">
       <div>
         <PageHeader
-          title="Rides Management"
-          subtitle="All platform ride bookings"
+          title="Rides"
+          subtitle="All ride bookings and their fares"
           actions={
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
@@ -108,152 +176,55 @@ export default function RidesPage() {
           }
         />
 
-        {/* Filters */}
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <div className="relative flex-1 min-w-48 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-            <Input
-              placeholder="Search ride ID, client, driver…"
-              className="pl-9"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-          </div>
+        <FilterBar onRefresh={fetch} refreshing={loading} meta={dateBasisCaption('Rides', 'requested')}>
+          <FilterSearch value={search} onChange={setSearch} placeholder="Search ride ID, client, driver" />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-40 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-40 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="requested">Requested</SelectItem>
-              <SelectItem value="accepted">Accepted</SelectItem>
-              <SelectItem value="driver_en_route">Driver En Route</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
-              <SelectItem value="disputed">Disputed</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
+              {RIDE_STATUS_FILTERS.filter(s => s !== 'all').map(s => (
+                <SelectItem key={s} value={s}>{statusLabel(s)}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
           {dateControl}
-          <span className="text-xs text-gray-400">
-            {statusFilter === 'completed' ? 'By completion date · GMT' : 'By request date · GMT'}
-          </span>
-          <div className="ml-auto flex items-center gap-3">
-            <span className="text-sm text-gray-400">{total} rides</span>
-            <PageSizeSelect value={limit} onChange={setLimit} />
-          </div>
-        </div>
+        </FilterBar>
 
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50">
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ride</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Driver</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Client amount</TableHead>
-                  <TableHead className="w-10" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  [...Array(8)].map((_, i) => (
-                    <TableRow key={i}>
-                      {[...Array(6)].map((_, j) => (
-                        <TableCell key={j}>
-                          <div className="h-4 bg-gray-100 rounded animate-pulse" />
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : rides.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-12 text-gray-400 text-sm">
-                      No rides found
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  rides.map(ride => (
-                    <TableRow key={ride.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/rides/${ride.id}`)}>
-                      <TableCell>
-                        <p className="font-mono text-sm font-semibold text-gray-900">{ride.id.slice(-8).toUpperCase()}</p>
-                        {/* A completed ride is dated by when it finished — that is the
-                            day it settled, and the day any cash debt is stamped on
-                            Payments → Money Owed. Showing the booking time here made
-                            the two pages look like they disagreed. */}
-                        <p className="text-xs text-gray-400 mt-0.5 whitespace-nowrap">
-                          {ride.completedAt
-                            ? `Completed ${formatDateTime(ride.completedAt)}`
-                            : formatDateTime(ride.createdAt)}
-                        </p>
-                      </TableCell>
-                      <TableCell className="text-sm font-medium text-gray-800">{ride.clientName ?? '-'}</TableCell>
-                      <TableCell className="text-sm text-gray-500">
-                        {ride.driverName ?? <span className="text-amber-600 font-semibold inline-flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Unassigned</span>}
-                      </TableCell>
-                      <TableCell><StatusBadge status={ride.status} /></TableCell>
-                      <TableCell className="text-right">
-                        <p className="text-sm font-semibold text-gray-800">{formatGhs(ride.farePesewas)}</p>
-                        {/* Method decides whether a debt is expected at all: cash means
-                            the driver holds the fare and owes commission back, so a
-                            clawback should exist; MoMo/card commission is withheld from
-                            the payout and correctly produces none. A completed ride with
-                            no payment row never settled — flag it rather than show "-". */}
-                        <p className="text-xs text-gray-400">
-                          {paymentMethodLabel(ride.paymentMethod)}
-                          {' · '}
-                          {ride.paymentStatus ? (
-                            <span className="capitalize">{ride.paymentStatus}</span>
-                          ) : ride.status === 'completed' ? (
-                            <span className="text-amber-600 font-semibold">unsettled</span>
-                          ) : (
-                            '—'
-                          )}
-                        </p>
-                      </TableCell>
-                      <TableCell onClick={e => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem asChild>
-                              <Link href={`/rides/${ride.id}`}>View Details</Link>
-                            </DropdownMenuItem>
-                            {['requested', 'accepted', 'driver_en_route', 'arrived_at_pickup', 'in_progress'].includes(ride.status) && (
-                              <DropdownMenuItem
-                                className="text-red-600"
-                                onClick={() => router.push(`/rides/${ride.id}`)}
-                              >
-                                Cancel Ride
-                              </DropdownMenuItem>
-                            )}
-                            {ride.status === 'disputed' && (
-                              <DropdownMenuItem asChild className="text-amber-600">
-                                <Link href={`/disputes?search=${ride.id}`}>Handle Dispute</Link>
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
-            <p className="text-xs text-gray-400">
-              {loading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : `Page ${page} of ${totalPages} (${total} total)`}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage(p => p - 1)}>Previous</Button>
-              <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage(p => p + 1)}>Next</Button>
-            </div>
-          </div>
-        </div>
+        <DataTable
+          columns={columns}
+          rows={rides}
+          rowKey={row => row.id}
+          loading={loading}
+          error={error}
+          onRetry={fetch}
+          rowHref={row => `/rides/${row.id}`}
+          rowAriaLabel={row => `Open ride ${row.id.slice(-8).toUpperCase()}`}
+          rowMenu={row => (
+            <>
+              <DropdownMenuItem asChild>
+                <Link href={`/rides/${row.id}`}>View details</Link>
+              </DropdownMenuItem>
+              {['requested', 'accepted', 'driver_en_route', 'arrived_at_pickup', 'in_progress'].includes(row.status) && (
+                <DropdownMenuItem asChild className="text-red-600">
+                  <Link href={`/rides/${row.id}`}>Cancel ride</Link>
+                </DropdownMenuItem>
+              )}
+              {row.status === 'disputed' && (
+                <DropdownMenuItem asChild className="text-amber-600">
+                  <Link href={`/disputes?search=${row.id}`}>Handle dispute</Link>
+                </DropdownMenuItem>
+              )}
+            </>
+          )}
+          empty={
+            <EmptyState
+              title={filtersActive ? 'No rides match these filters' : 'No rides yet'}
+              description={filtersActive ? 'Try a different search, or clear the status and date filters.' : 'Ride bookings will appear here once clients start booking.'}
+            />
+          }
+          caption={`${total} ride${total === 1 ? '' : 's'}`}
+          pagination={{ page, pageSize: limit, total, onPage: setPage, onPageSize: setLimit }}
+        />
       </div>
     </PageGuard>
   )

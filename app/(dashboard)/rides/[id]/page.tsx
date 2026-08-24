@@ -1,14 +1,16 @@
 'use client'
 
-import { useState, useEffect, use, useMemo } from 'react'
+import { useState, useEffect, useCallback, use, useMemo } from 'react'
 import { APIProvider, Map, AdvancedMarker, Polyline, useMap } from '@vis.gl/react-google-maps'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
+import { PageSkeleton } from '@/components/common/load-state'
+import { ErrorState } from '@/components/common/error-state'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import Link from 'next/link'
 import {
   ArrowLeft,
-  Loader2,
   User,
   Car,
   MapPin,
@@ -22,39 +24,15 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
 import { RidePricingBreakdown } from '@/components/rides/ride-pricing-breakdown'
 import { getRideDetail, cancelRide, forceCompleteRide, type RideDetail, type RideGpsPoint } from '@/lib/api'
 import { getAdminUser, ApiError } from '@/lib/api-client'
 import { can } from '@/lib/roles'
 import { rideRouteAvailability, type RouteAvailability } from '@/lib/ride-gps-trail-contract'
+import { formatGhs } from '@/lib/money'
+import { formatDateTime } from '@/lib/format-date'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtGhs(pesewas: number | null | undefined) {
-  if (pesewas == null) return '-'
-  return 'GHS ' + (pesewas / 100).toLocaleString('en-GH', { minimumFractionDigits: 2 })
-}
-
-function fmtDate(iso: string | null | undefined) {
-  if (!iso) return '-'
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 function fmtShort(iso: string | null | undefined) {
   if (!iso) return null
@@ -190,79 +168,15 @@ function DriverRouteMap({
               <RouteMarker label="D" color="#6B7280" />
             </AdvancedMarker>
           )}
-          <AdvancedMarker position={{ lat: first.lat, lng: first.lng }} title="Trip started">
+          <AdvancedMarker position={{ lat: first.lat, lng: first.lng }} title="Ride started">
             <RouteMarker label="S" color="#16A34A" />
           </AdvancedMarker>
-          <AdvancedMarker position={{ lat: latest.lat, lng: latest.lng }} title={active ? 'Latest driver location' : 'Trip ended'}>
+          <AdvancedMarker position={{ lat: latest.lat, lng: latest.lng }} title={active ? 'Latest driver location' : 'Ride ended'}>
             <RouteMarker label={active ? 'LIVE' : 'E'} color={active ? '#DC2626' : '#2563EB'} />
           </AdvancedMarker>
         </Map>
       </APIProvider>
     </div>
-  )
-}
-
-// ── Action Dialog ─────────────────────────────────────────────────────────────
-
-function ActionDialog({
-  open,
-  title,
-  description,
-  confirmLabel,
-  confirmClass,
-  onClose,
-  onConfirm,
-  loading,
-}: {
-  open: boolean
-  title: string
-  description: string
-  confirmLabel: string
-  confirmClass: string
-  onClose: () => void
-  onConfirm: (reason: string) => void
-  loading: boolean
-}) {
-  const [reason, setReason] = useState('')
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (!o) onClose()
-      }}
-    >
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-2 py-1">
-          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            Reason (audit log)
-          </Label>
-          <Textarea
-            placeholder="Provide a clear reason - minimum 10 characters"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={3}
-          />
-          <p className="text-[11px] text-gray-400">{reason.length} / min 10 characters</p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => onConfirm(reason)}
-            disabled={loading || reason.trim().length < 10}
-            className={`${confirmClass} gap-2`}
-          >
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            {loading ? 'Processing…' : confirmLabel}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 
@@ -283,8 +197,9 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
   const [forceOpen, setForceOpen] = useState(false)
   const [forcing, setForcing] = useState(false)
 
-  useEffect(() => {
+  const loadRide = useCallback(() => {
     setLoading(true)
+    setError(null)
     getRideDetail(rideId)
       .then(setRide)
       .catch((e) => {
@@ -298,6 +213,8 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
       })
       .finally(() => setLoading(false))
   }, [rideId])
+
+  useEffect(() => { loadRide() }, [loadRide])
 
   const routeTrackingActive = ride
     ? ['accepted', 'driver_en_route', 'arrived_at_pickup', 'in_progress'].includes(ride.status)
@@ -365,35 +282,21 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
     <PageGuard permission="view_rides">
       <div>
         <PageHeader
-          title="Ride Details"
-          subtitle={ride ? `#${ride.id.slice(-8).toUpperCase()}` : 'Loading…'}
+          title={ride ? `#${ride.id.slice(-8).toUpperCase()}` : 'Ride details'}
+          subtitle={ride ? 'Ride details' : undefined}
           actions={
             <Link href="/rides">
               <Button variant="outline" size="sm" className="gap-1.5">
-                <ArrowLeft className="h-4 w-4" /> Back to Rides
+                <ArrowLeft className="h-4 w-4" /> Back to rides
               </Button>
             </Link>
           }
         />
 
-        {loading && (
-          <div className="flex items-center justify-center py-20 gap-3 text-gray-400">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading ride…</span>
-          </div>
-        )}
+        {loading && <PageSkeleton variant="cards" />}
 
         {!loading && error && (
-          <div className="bg-white rounded-xl shadow-sm p-10 text-center">
-            <AlertTriangle className="h-8 w-8 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm font-medium text-gray-700">Could not load this ride</p>
-            <p className="text-xs text-gray-400 mt-1.5 max-w-md mx-auto">{error}</p>
-            <Link href="/rides">
-              <Button variant="outline" size="sm" className="mt-4 gap-1.5">
-                <ArrowLeft className="h-4 w-4" /> Back to Rides
-              </Button>
-            </Link>
-          </div>
+          <ErrorState title="Could not load this ride" detail={error} onRetry={loadRide} />
         )}
 
         {!loading && ride && (
@@ -413,7 +316,7 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                     className="bg-orange-500 hover:bg-orange-600 text-white gap-1.5"
                     onClick={() => setForceOpen(true)}
                   >
-                    <CheckCircle className="h-3.5 w-3.5" /> Force Complete
+                    <CheckCircle className="h-3.5 w-3.5" /> Force-complete
                   </Button>
                 )}
                 {canCancel && (
@@ -423,7 +326,7 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                     className="border-red-300 text-red-600 hover:bg-red-50 gap-1.5"
                     onClick={() => setCancelOpen(true)}
                   >
-                    <XCircle className="h-3.5 w-3.5" /> Cancel Ride
+                    <XCircle className="h-3.5 w-3.5" /> Cancel ride
                   </Button>
                 )}
                 {ride.status === 'disputed' && (
@@ -433,18 +336,12 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                       variant="outline"
                       className="border-amber-300 text-amber-600 hover:bg-amber-50 gap-1.5"
                     >
-                      <ShieldAlert className="h-3.5 w-3.5" /> Handle Dispute
+                      <ShieldAlert className="h-3.5 w-3.5" /> Handle dispute
                     </Button>
                   </Link>
                 )}
               </div>
             </div>
-
-            {actionError && (
-              <div className="flex items-center gap-2 bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3">
-                <AlertTriangle className="h-4 w-4 shrink-0" /> {actionError}
-              </div>
-            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* Left — route + timeline */}
@@ -502,10 +399,10 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                           <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-1">
                             Fare (legacy)
                           </p>
-                          <p className="text-base font-bold text-gray-900">{fmtGhs(legacyFare)}</p>
+                          <p className="text-base font-bold text-gray-900">{formatGhs(legacyFare)}</p>
                           {ride.surgeMultiplier && Number(ride.surgeMultiplier) > 1 && (
                             <p className="text-[10px] text-amber-500">
-                              ×{Number(ride.surgeMultiplier).toFixed(2)} surge
+                              x{Number(ride.surgeMultiplier).toFixed(2)} surge
                             </p>
                           )}
                         </div>
@@ -530,7 +427,7 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
 
                     {ride.pricing && ride.surgeMultiplier && Number(ride.surgeMultiplier) > 1 && (
                       <p className="text-[11px] text-amber-600">
-                        Pre-promo fare includes ×{Number(ride.surgeMultiplier).toFixed(2)} surge.
+                        Pre-promo fare includes x{Number(ride.surgeMultiplier).toFixed(2)} surge.
                       </p>
                     )}
 
@@ -575,8 +472,8 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                       <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-gray-50 px-4 py-2 text-[11px] text-gray-500">
                         {routeHasTimestamps ? (
                           <>
-                            <span>First update: {fmtDate(routePoints[0].recordedAt)}</span>
-                            <span>Latest update: {fmtDate(routePoints[routePoints.length - 1].recordedAt)}</span>
+                            <span>First update: {formatDateTime(routePoints[0].recordedAt)}</span>
+                            <span>Latest update: {formatDateTime(routePoints[routePoints.length - 1].recordedAt)}</span>
                           </>
                         ) : (
                           <>
@@ -608,10 +505,10 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                       label="Arrived at Pickup"
                       value={fmtShort(ride.arrivedAtPickupAt)}
                     />
-                    <TimelineRow label="Trip Started" value={fmtShort(ride.startedAt)} />
+                    <TimelineRow label="Ride started" value={fmtShort(ride.startedAt)} />
                     <TimelineRow label="Completed" value={fmtShort(ride.completedAt)} />
                     {ride.cancelledAt && (
-                      <TimelineRow label="Cancelled" value={fmtDate(ride.cancelledAt)} highlight />
+                      <TimelineRow label="Cancelled" value={formatDateTime(ride.cancelledAt)} highlight />
                     )}
                   </CardContent>
                 </Card>
@@ -687,13 +584,13 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                   <CardContent className="space-y-1.5 text-xs">
                     <div className="flex justify-between">
                       <span className="text-gray-400">Created</span>
-                      <span className="text-gray-700 font-medium">{fmtDate(ride.createdAt)}</span>
+                      <span className="text-gray-700 font-medium">{formatDateTime(ride.createdAt)}</span>
                     </div>
                     {ride.completedAt && (
                       <div className="flex justify-between">
                         <span className="text-gray-400">Completed</span>
                         <span className="text-gray-700 font-medium">
-                          {fmtDate(ride.completedAt)}
+                          {formatDateTime(ride.completedAt)}
                         </span>
                       </div>
                     )}
@@ -701,7 +598,7 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                       <div className="flex justify-between">
                         <span className="text-red-400">Cancelled</span>
                         <span className="text-red-600 font-medium">
-                          {fmtDate(ride.cancelledAt)}
+                          {formatDateTime(ride.cancelledAt)}
                         </span>
                       </div>
                     )}
@@ -712,26 +609,31 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         )}
 
-        <ActionDialog
+        <ConfirmDialog
           open={cancelOpen}
-          title="Cancel Ride"
-          description="This will cancel the ride and notify both the client and driver. The action is audit logged."
-          confirmLabel="Cancel Ride"
-          confirmClass="bg-red-600 hover:bg-red-700 text-white"
           onClose={() => setCancelOpen(false)}
+          title="Cancel this ride?"
+          description="This cancels the ride and notifies both the client and driver. The action is recorded in the audit log."
+          confirmLabel="Cancel ride"
           onConfirm={handleCancel}
+          destructive
           loading={cancelling}
+          error={actionError}
+          requireReason
+          minReason={10}
         />
 
-        <ActionDialog
+        <ConfirmDialog
           open={forceOpen}
-          title="Force Complete Ride"
-          description="This marks the ride as completed. Use only for rides stuck in progress where the trip has clearly ended. The action is audit logged."
-          confirmLabel="Force Complete"
-          confirmClass="bg-orange-500 hover:bg-orange-600 text-white"
           onClose={() => setForceOpen(false)}
+          title="Force-complete this ride?"
+          description="This marks the ride as completed. Use only for rides stuck in progress where the trip has clearly ended. The action is recorded in the audit log."
+          confirmLabel="Force-complete ride"
           onConfirm={handleForceComplete}
           loading={forcing}
+          error={actionError}
+          requireReason
+          minReason={10}
         />
       </div>
     </PageGuard>
