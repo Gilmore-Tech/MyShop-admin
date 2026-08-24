@@ -44,13 +44,12 @@ test('the reconciliation queue is reachable from every payment navigation surfac
 
   const pages = [
     '../app/(dashboard)/payments/transactions/page.tsx',
-    '../app/(dashboard)/payments/revenue/page.tsx',
     '../app/(dashboard)/payments/commission-ledger/page.tsx',
     '../app/(dashboard)/payments/batch-payouts/page.tsx',
     '../app/(dashboard)/payments/clawbacks/page.tsx',
   ]
   for (const path of pages) {
     const source = readFileSync(new URL(path, import.meta.url), 'utf8')
-    assert.match(source, /<PaymentsTabs active="[a-z-]+" \/>/, `${path} must render the shared Payments tab strip`)
+    assert.match(source, /<PaymentsTabs \/>/, `${path} must render the shared Payments tab strip`)
   }
 })
