@@ -2,7 +2,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import type { PromoCampaignStatus } from '@/lib/api'
 
 // Campaign lifecycle badges are deliberately tinted (unlike the monochrome
-// default) because the colour carries the maker-checker state at a glance:
+// default) because the colour carries the approval state at a glance:
 // warning while awaiting approval, success once live, orange when the budget
 // ran dry. The base StatusBadge still supplies the label + shape.
 const STATUS_CLASS: Record<PromoCampaignStatus, string> = {

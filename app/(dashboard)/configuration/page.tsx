@@ -2,14 +2,17 @@
 
 import { PageGuard } from '@/components/common/page-guard'
 import { useState, useEffect, useCallback } from 'react'
-import { Save, AlertTriangle, Loader2, RefreshCw, RotateCcw, History } from 'lucide-react'
+import { Save, AlertTriangle, Loader2, RotateCcw, History } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/common/page-header'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { PageSkeleton } from '@/components/common/load-state'
+import { ErrorState } from '@/components/common/error-state'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { getAllConfig, updateConfig } from '@/lib/api'
+import { formatGhs } from '@/lib/money'
 
 // ─── Key conversion ───────────────────────────────────────────────────────────
 
@@ -62,6 +65,43 @@ const DEFAULTS = {
 type ConfigKey = keyof typeof DEFAULTS
 type ConfigState = { [K in ConfigKey]: string | number }
 
+// Human labels for each key - kept in sync with the `field(...)` labels below.
+// Used for the confirm-save diff, so a raw camel/snake key (e.g. a "clawback*"
+// config key) never reaches rendered text.
+const FIELD_LABELS: Record<ConfigKey, string> = {
+  commissionRatePercent: 'Commission Rate (%)',
+  rideBaseFarePesewas: 'Base Fare',
+  ridePerKmPesewas: 'Per-Kilometre Rate',
+  ridePerMinPesewas: 'Per-Minute Rate',
+  rideInitialMatchRadiusKm: 'Initial Match Radius (km)',
+  rideRadiusExpansionKm: 'Radius Expansion Step (km)',
+  rideMaxMatchRadiusKm: 'Max Match Radius (km)',
+  rideDriverAcceptanceWindowSecs: 'Driver Acceptance Window',
+  rideCancellationWindowSecs: 'Free Cancellation Window',
+  jobBidWindowSecs: 'Bid Collection Window',
+  jobMaxBids: 'Max Bids Per Job',
+  jobCancellationFreeWindowSecs: 'Free Cancellation Window',
+  jobCancellationFeePercent: 'Cancellation Fee (%)',
+  jobHighBidFlagPesewas: 'High Bid Review Threshold',
+  jobStalenessCheckinHours: 'Check-in Alert',
+  jobStalenessEscalationHours: 'Escalation Threshold',
+  jobStalenessPayoutFreezeHours: 'Payout Freeze Threshold',
+  artisanMinServiceRadiusKm: 'Min Artisan Service Radius (km)',
+  cancellationSuspensionCount: 'Cancellation Suspension Count',
+  cancellationRollingPeriodDays: 'Cancellation Rolling Period (days)',
+  ratingWarningThreshold: 'Rating Warning Threshold (stars)',
+  ratingSuspensionThreshold: 'Rating Suspension Threshold (stars)',
+  ratingMinJobsForThreshold: 'Min Ratings for Threshold',
+  batchPayoutTime: 'Daily Batch Payout Time (HH:MM)',
+  refundApprovalThresholdPesewas: 'Refund Threshold for Support Agents',
+  microEscrowRetryIntervalMins: 'Micro-Escrow Retry Interval',
+  clawbackWriteoffThresholdPesewas: 'Money owed write-off threshold',
+  clawbackWriteoffInactiveDays: 'Money owed write-off inactivity',
+  emergencyAutoDialNumber: 'Emergency Auto-Dial Number',
+  shareTokenExpiryBufferMins: 'Share Link Expiry Buffer',
+  welfareCheckTimeoutHours: 'Welfare Check Timeout',
+}
+
 function serverToState(items: { key: string; value: string }[]): Partial<ConfigState> {
   const result: Partial<ConfigState> = {}
   for (const { key, value } of items) {
@@ -85,19 +125,19 @@ interface ValidationRule {
 
 const RULES: Partial<Record<ConfigKey, ValidationRule>> = {
   commissionRatePercent:           { min: 0, max: 100, message: 'Must be 0-100%' },
-  rideBaseFarePesewas:             { min: 0, message: 'Must be ≥ 0' },
-  ridePerKmPesewas:                { min: 0, message: 'Must be ≥ 0' },
-  ridePerMinPesewas:               { min: 0, message: 'Must be ≥ 0' },
-  rideCancellationWindowSecs:      { min: 0, message: 'Must be ≥ 0' },
+  rideBaseFarePesewas:             { min: 0, message: 'Must be 0 or more' },
+  ridePerKmPesewas:                { min: 0, message: 'Must be 0 or more' },
+  ridePerMinPesewas:               { min: 0, message: 'Must be 0 or more' },
+  rideCancellationWindowSecs:      { min: 0, message: 'Must be 0 or more' },
   rideDriverAcceptanceWindowSecs:  { min: 5, max: 120, message: 'Must be 5-120 seconds' },
   rideInitialMatchRadiusKm:        { min: 0.1, max: 50, message: 'Must be 0.1-50 km' },
   rideRadiusExpansionKm:           { min: 0.1, max: 20, message: 'Must be 0.1-20 km' },
   rideMaxMatchRadiusKm:            { min: 1, max: 100, message: 'Must be 1-100 km' },
   jobBidWindowSecs:                { min: 30, message: 'Must be at least 30 seconds' },
   jobMaxBids:                      { min: 1, max: 20, message: 'Must be 1-20' },
-  jobCancellationFreeWindowSecs:   { min: 0, message: 'Must be ≥ 0' },
+  jobCancellationFreeWindowSecs:   { min: 0, message: 'Must be 0 or more' },
   jobCancellationFeePercent:       { min: 0, max: 100, message: 'Must be 0-100%' },
-  jobHighBidFlagPesewas:           { min: 0, message: 'Must be ≥ 0' },
+  jobHighBidFlagPesewas:           { min: 0, message: 'Must be 0 or more' },
   jobStalenessCheckinHours:        { min: 1, message: 'Must be at least 1 hour' },
   jobStalenessEscalationHours:     { min: 1, message: 'Must be at least 1 hour' },
   jobStalenessPayoutFreezeHours:   { min: 1, message: 'Must be at least 1 hour' },
@@ -107,10 +147,10 @@ const RULES: Partial<Record<ConfigKey, ValidationRule>> = {
   ratingWarningThreshold:          { min: 1, max: 5, message: 'Must be 1.0-5.0 stars' },
   ratingSuspensionThreshold:       { min: 1, max: 5, message: 'Must be 1.0-5.0 stars' },
   ratingMinJobsForThreshold:       { min: 1, max: 200, message: 'Must be 1-200' },
-  refundApprovalThresholdPesewas:  { min: 0, message: 'Must be ≥ 0' },
+  refundApprovalThresholdPesewas:  { min: 0, message: 'Must be 0 or more' },
   batchPayoutTime:                 { pattern: /^\d{2}:\d{2}$/, required: true, message: 'Must be HH:MM (e.g. 18:00)' },
   microEscrowRetryIntervalMins:    { min: 1, message: 'Must be at least 1 minute' },
-  clawbackWriteoffThresholdPesewas: { min: 0, message: 'Must be ≥ 0' },
+  clawbackWriteoffThresholdPesewas: { min: 0, message: 'Must be 0 or more' },
   clawbackWriteoffInactiveDays:    { min: 1, message: 'Must be at least 1 day' },
   emergencyAutoDialNumber:         { required: true, message: 'Cannot be empty' },
   shareTokenExpiryBufferMins:      { min: 1, message: 'Must be at least 1 minute' },
@@ -146,7 +186,7 @@ function unitHint(key: string, value: string | number): string | null {
   if (isNaN(n) || String(value).trim() === '') return null
 
   if (key.endsWith('Pesewas')) {
-    return `= GHS ${(n / 100).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    return `= ${formatGhs(n)}`
   }
   if (key.endsWith('Secs')) {
     if (n === 0) return null
@@ -282,10 +322,10 @@ function Section({ title, description, icon, children }: {
 function DiffRow({ configKey, oldVal, newVal }: { configKey: ConfigKey; oldVal: string | number; newVal: string | number }) {
   const oldHint = unitHint(configKey, oldVal)
   const newHint = unitHint(configKey, newVal)
-  const label = toSnake(configKey)
+  const label = FIELD_LABELS[configKey]
   return (
     <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3 py-1.5 border-b border-gray-50 last:border-0 text-xs">
-      <div className="text-gray-500 font-mono truncate">{label}</div>
+      <div className="text-gray-500 truncate">{label}</div>
       <span className="text-gray-300 mt-0.5">-&gt;</span>
       <div className="space-y-0.5">
         <div className="flex items-center gap-2 flex-wrap">
@@ -401,11 +441,8 @@ export default function ConfigurationPage() {
   if (loading) {
     return (
       <div>
-        <PageHeader title="Platform Configuration" subtitle="Adjust platform business rules." />
-        <div className="flex items-center justify-center py-24 gap-3 text-gray-400">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Loading configuration…</span>
-        </div>
+        <PageHeader title="Marketplace settings" subtitle="Commission, fees and platform rules" />
+        <PageSkeleton variant="form" />
       </div>
     )
   }
@@ -413,14 +450,8 @@ export default function ConfigurationPage() {
   if (loadError) {
     return (
       <div>
-        <PageHeader title="Platform Configuration" subtitle="Adjust platform business rules." />
-        <div className="flex flex-col items-center justify-center py-24 gap-4">
-          <AlertTriangle className="h-8 w-8 text-red-400" />
-          <p className="text-sm text-gray-500">Failed to load configuration from the server.</p>
-          <Button variant="outline" onClick={load} className="gap-2">
-            <RefreshCw className="h-4 w-4" /> Retry
-          </Button>
-        </div>
+        <PageHeader title="Marketplace settings" subtitle="Commission, fees and platform rules" />
+        <ErrorState title="Could not load configuration" detail="Failed to load configuration from the server." onRetry={load} />
       </div>
     )
   }
@@ -429,8 +460,8 @@ export default function ConfigurationPage() {
     <PageGuard permission="view_config">
       <div>
         <PageHeader
-          title="Platform Configuration"
-          subtitle="Adjust platform business rules. Changes apply to new bookings only - never retroactive."
+          title="Marketplace settings"
+          subtitle="Commission, fees and platform rules"
           actions={
             <div className="flex items-center gap-3">
               {saveSuccess && !dirty && (
@@ -447,13 +478,13 @@ export default function ConfigurationPage() {
               <Button
                 onClick={() => setConfirmDialog(true)}
                 disabled={!dirty || saving || errors}
-                className="gap-2 text-white"
-                style={{ backgroundColor: dirty && !errors ? '#F5A623' : undefined }}
+                variant="brand"
+                className="gap-2"
                 title={errors ? 'Fix validation errors before saving' : undefined}
               >
                 {saving
-                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
-                  : <><Save className="h-4 w-4" /> Save Changes {dirty ? `(${changedKeys.length})` : ''}</>
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
+                  : <><Save className="h-4 w-4" /> Save changes {dirty ? `(${changedKeys.length})` : ''}</>
                 }
               </Button>
             </div>
@@ -536,33 +567,20 @@ export default function ConfigurationPage() {
         </div>
 
         {/* Confirm dialog */}
-        <Dialog open={confirmDialog} onOpenChange={setConfirmDialog}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-                Save {changedKeys.length} Configuration Change{changedKeys.length !== 1 ? 's' : ''}
-              </DialogTitle>
-              <DialogDescription>
-                These changes apply to <strong>all new bookings</strong> immediately.
-                Existing bookings are unaffected. This action will be recorded in the audit trail.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-1">
-              {changedKeys.map(k => (
-                <DiffRow key={k} configKey={k} oldVal={saved[k]} newVal={config[k]} />
-              ))}
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setConfirmDialog(false)}>Cancel</Button>
-              <Button onClick={handleSave} style={{ backgroundColor: '#F5A623' }} className="text-white gap-2">
-                <Save className="h-4 w-4" /> Confirm & Save
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <ConfirmDialog
+          open={confirmDialog}
+          onClose={() => setConfirmDialog(false)}
+          title={`Save ${changedKeys.length} configuration change${changedKeys.length !== 1 ? 's' : ''}?`}
+          description="These changes apply to all new bookings immediately. Existing bookings are unaffected. This action will be recorded in the audit trail."
+          confirmLabel="Save changes"
+          onConfirm={() => handleSave()}
+        >
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-1">
+            {changedKeys.map(k => (
+              <DiffRow key={k} configKey={k} oldVal={saved[k]} newVal={config[k]} />
+            ))}
+          </div>
+        </ConfirmDialog>
       </div>
     </PageGuard>
   )

@@ -17,6 +17,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { PageHeader } from '@/components/common/page-header'
+import { PageSkeleton } from '@/components/common/load-state'
+import { EmptyState } from '@/components/common/empty-state'
 import {
   getUnassignedJobs, lockJob, assignJob, deleteJob, searchArtisans, getAllConfig,
   type UnassignedJob, type ArtisanSearchResult,
@@ -148,10 +150,10 @@ function ArtisanCard({
       {canAssign && (
         <Button
           size="sm"
+          variant="brand"
           disabled={busy}
           onClick={() => onAssign(artisan.id)}
-          className="shrink-0 text-white text-xs px-3"
-          style={{ backgroundColor: '#F5A623' }}
+          className="shrink-0 text-xs px-3"
         >
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Assign'}
         </Button>
@@ -422,7 +424,7 @@ export default function ManualAssignmentPage() {
     <PageGuard permission="view_jobs">
       <div className="space-y-4">
         <PageHeader
-          title="Manual Assignment"
+          title="Manual assignment"
           subtitle="Assign an artisan to a job - they will bid and the client confirms the price"
           actions={
             <div className="flex items-center gap-2">
@@ -460,22 +462,18 @@ export default function ManualAssignmentPage() {
         )}
 
         {loadingJobs ? (
-          <div className="flex items-center justify-center py-20 gap-3 text-gray-400">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading queue…</span>
-          </div>
+          <PageSkeleton variant="cards" />
         ) : jobs.length === 0 && !assignedJobId ? (
-          <div className="bg-white rounded-2xl shadow-sm p-14 text-center">
-            <div className="w-14 h-14 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="h-7 w-7 text-emerald-500" />
-            </div>
-            <h3 className="font-semibold text-gray-900 mb-1">Queue is clear</h3>
-            <p className="text-sm text-gray-400">
-              {pendingWindowCount > 0
+          <EmptyState
+            icon={CheckCircle2}
+            title="Queue is clear"
+            description={
+              pendingWindowCount > 0
                 ? `${pendingWindowCount} job${pendingWindowCount === 1 ? '' : 's'} still in the ${bidWindowMinutes}-minute bidding window. Anything not bid on will appear here automatically.`
-                : 'No jobs are waiting for manual assignment.'}
-            </p>
-          </div>
+                : 'No jobs are waiting for manual assignment.'
+            }
+            className="bg-white rounded-2xl shadow-sm"
+          />
         ) : (
           <>
             {/* ── Job queue (card grid) ── */}
@@ -605,7 +603,7 @@ export default function ManualAssignmentPage() {
                         <div className="relative">
                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                           <Input
-                            placeholder="Search by name…"
+                            placeholder="Search by name"
                             value={artisanSearch}
                             onChange={e => setArtisanSearch(e.target.value)}
                             className="pl-8 text-sm"

@@ -220,12 +220,12 @@ export default function AppSidebar() {
       items: [
         { title: 'Home',  href: '/dashboard', icon: LayoutDashboard, permission: 'view_dashboard' },
         {
-          title: 'Operations', href: '/live-map', icon: Radio,
+          title: 'Live operations', href: '/live-map', icon: Radio,
           children: [
-            { title: 'Live Monitoring', href: '/live-map',  permission: 'view_live_map' },
-            { title: 'Online Providers', href: '/online-providers', permission: 'view_live_map' },
-            { title: 'Activity Feed',   href: '/activity',  permission: 'view_activity' },
-            { title: 'Emergency Alerts',href: '/emergency', permission: 'view_emergency', badge: unacknowledgedEmergencies ?? undefined },
+            { title: 'Live map', href: '/live-map',  permission: 'view_live_map' },
+            { title: 'Online providers', href: '/online-providers', permission: 'view_live_map' },
+            { title: 'Activity feed',   href: '/activity',  permission: 'view_activity' },
+            { title: 'Emergency alerts',href: '/emergency', permission: 'view_emergency', badge: unacknowledgedEmergencies ?? undefined },
           ],
         },
         {
@@ -245,17 +245,17 @@ export default function AppSidebar() {
         {
           // No parent-level permission — each child is gated and category-scoped
           // so a rides coordinator sees only ride surfaces and vice-versa.
-          title: 'Trips & Services', href: '/rides', icon: Car,
+          title: 'Bookings', href: '/rides', icon: Car,
           children: [
-            { title: 'All Rides',          href: '/rides',         permission: 'view_rides', category: 'rides' },
-            { title: 'Ride Tiers',         href: '/ride-categories', permission: 'view_ride_categories', category: 'rides' },
-            { title: 'Toll Zones',          href: '/ride-toll-zones', category: 'rides', superAdmin: true },
-            { title: 'Artisan Jobs',       href: '/artisan-jobs',  permission: 'view_jobs', category: 'artisan' },
-            { title: 'Manual Assignment',  href: '/artisan-jobs/manual-assignment', permission: 'view_jobs', category: 'artisan', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
+            { title: 'Rides',              href: '/rides',         permission: 'view_rides', category: 'rides' },
+            { title: 'Ride tiers',         href: '/ride-categories', permission: 'view_ride_categories', category: 'rides' },
+            { title: 'Toll zones',          href: '/ride-toll-zones', category: 'rides', superAdmin: true },
+            { title: 'Artisan jobs',       href: '/artisan-jobs',  permission: 'view_jobs', category: 'artisan' },
+            { title: 'Manual assignment',  href: '/artisan-jobs/manual-assignment', permission: 'view_jobs', category: 'artisan', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
             ...(FEATURES.highBidReview
-              ? [{ title: 'High Bid Review', href: '/artisan-jobs/high-bid-review', permission: 'review_bid' as const, category: 'artisan' as const, badge: highBidCount ?? undefined }]
+              ? [{ title: 'High bid review', href: '/artisan-jobs/high-bid-review', permission: 'review_bid' as const, category: 'artisan' as const, badge: highBidCount ?? undefined }]
               : []),
-            { title: 'Service Categories', href: '/categories',    permission: 'view_categories', category: 'artisan' },
+            { title: 'Service categories', href: '/categories',    permission: 'view_categories', category: 'artisan' },
           ],
         },
         {
@@ -271,25 +271,25 @@ export default function AppSidebar() {
       ],
     },
     {
-      label: 'Trust & Safety',
+      label: 'Trust & safety',
       items: [
         {
           title: 'Verifications', href: '/verifications', icon: BadgeCheck,
           children: [
-            { title: 'Verification Queue', href: '/verifications',           permission: 'view_verifications',    badge: pendingVerifications ?? undefined },
-            { title: 'Vehicle Queue',      href: '/verifications/vehicles',  permission: 'view_verifications', category: 'rides' },
-            { title: 'Client KYC Queue',   href: '/users/clients/kyc-queue',  permission: 'view_verifications',    badge: pendingClientKyc ?? undefined },
-            { title: 'Cancellation Suspensions', href: '/suspensions',        permission: 'view_users' },
+            { title: 'Provider verifications', href: '/verifications',       permission: 'view_verifications',    badge: pendingVerifications ?? undefined },
+            { title: 'Vehicle approvals',  href: '/verifications/vehicles',  permission: 'view_verifications', category: 'rides' },
+            { title: 'Client ID checks',   href: '/users/clients/kyc-queue',  permission: 'view_verifications',    badge: pendingClientKyc ?? undefined },
+            { title: 'Suspensions',        href: '/suspensions',        permission: 'view_users' },
             ...(FEATURES.sessionRecovery && hasGlobalRecoveryRole
-              ? [{ title: 'Device Session Recovery', href: '/account-recovery', permission: 'view_session_recovery' as const, badge: pendingRecoveryCount ?? undefined }]
+              ? [{ title: 'Device recovery', href: '/account-recovery', permission: 'view_session_recovery' as const, badge: pendingRecoveryCount ?? undefined }]
               : []),
             ...(FEATURES.roleAccountRecovery && isRoleRecoveryAuthority
-              ? [{ title: 'Deleted Role Recovery', href: '/role-account-recovery', permission: 'view_role_account_recovery' as const, badge: pendingRoleRecoveryCount ?? undefined }]
+              ? [{ title: 'Deleted account recovery', href: '/role-account-recovery', permission: 'view_role_account_recovery' as const, badge: pendingRoleRecoveryCount ?? undefined }]
               : []),
           ],
         },
-        { title: 'Disputes & Incidents', href: '/disputes', icon: Scale, permission: 'view_disputes', badge: openDisputes ?? undefined },
-        { title: 'User Management',      href: userLandingPath(category, permissions), icon: Users, permission: 'view_users' },
+        { title: 'Disputes', href: '/disputes', icon: Scale, permission: 'view_disputes', badge: openDisputes ?? undefined },
+        { title: 'Users',                href: userLandingPath(category, permissions), icon: Users, permission: 'view_users' },
       ],
     },
     {
@@ -300,26 +300,26 @@ export default function AppSidebar() {
           title: 'Growth', href: '/promotions', icon: Gift,
           children: [
             { title: 'Promotions', href: '/promotions', permission: 'view_promotions' },
-            { title: 'Promo Campaigns', href: '/promo-campaigns', permission: 'view_promotions' },
+            { title: 'Promo campaigns', href: '/promo-campaigns', permission: 'view_promotions' },
             { title: 'Referrals',  href: '/referrals',  permission: 'view_referrals' },
           ],
         },
-        { title: 'Help Center',   href: '/help/articles', icon: BookOpen,  permission: 'view_help_articles' },
+        { title: 'Help center',   href: '/help/articles', icon: BookOpen,  permission: 'view_help_articles' },
       ],
     },
     {
       label: 'System',
       items: [
         {
-          title: 'Configuration', href: '/configuration', icon: Settings,
+          title: 'Settings', href: '/configuration', icon: Settings,
           children: [
-            { title: 'Marketplace Config', href: '/configuration',   permission: 'view_config' },
-            { title: 'USSD & SMS Logs',    href: '/ussd',            permission: 'view_ussd' },
-            { title: 'System Settings',    href: '/system-settings', permission: 'manage_admins' },
+            { title: 'Marketplace settings', href: '/configuration',   permission: 'view_config' },
+            { title: 'USSD & SMS logs',    href: '/ussd',            permission: 'view_ussd' },
+            { title: 'System settings',    href: '/system-settings', permission: 'manage_admins' },
           ],
         },
-        { title: 'System Audit',    href: '/audit-logs',    icon: ClipboardList, superAdmin: true },
-        { title: 'Admin Accounts',  href: '/admin-accounts', icon: UserCog,      superAdmin: true },
+        { title: 'Audit log',       href: '/audit-logs',    icon: ClipboardList, superAdmin: true },
+        { title: 'Admin accounts',  href: '/admin-accounts', icon: UserCog,      superAdmin: true },
       ],
     },
   ]
