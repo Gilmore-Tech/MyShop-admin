@@ -15,11 +15,12 @@ import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PageSizeSelect } from '@/components/common/table-controls'
 import { DateRangeFilter } from '@/components/common/date-range-filter'
-import { listTransactions, type AdminTransaction } from '@/lib/api'
+import { getOverviewReport, listTransactions, type AdminTransaction, type OverviewReport } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatTransactionAmount } from '@/lib/money'
 import { paymentMethodLabel, paymentStatusLabel, transactionTypeLabel } from '@/lib/payment-labels'
 import { formatDateTime } from '@/lib/format-date'
+import { PAYMENT_SUCCESS_TARGET_PCT } from '@/lib/targets'
 import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
 import { useGhanaCalendarNow } from '@/hooks/use-ghana-calendar-now'
 import {
@@ -78,7 +79,18 @@ export default function TransactionsPage() {
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<AdminTransaction | null>(null)
   const [limit, setLimit] = useState(15)
+  const [overview, setOverview] = useState<OverviewReport | null>(null)
   const requestSequence = useRef(0)
+
+  // The ONE payment-success source (overview report), scoped to the same
+  // dates as the list; target from lib/targets so every page quotes 98%.
+  useEffect(() => {
+    let cancelled = false
+    getOverviewReport({ from, to })
+      .then(data => { if (!cancelled) setOverview(data) })
+      .catch(() => { if (!cancelled) setOverview(null) })
+    return () => { cancelled = true }
+  }, [from, to])
 
   // ── URL writers ────────────────────────────────────────────────────────────
   const setParams = useCallback((updates: Record<string, string | null>) => {
@@ -165,9 +177,19 @@ export default function TransactionsPage() {
   return (
      <PageGuard permission="view_payments">
     <div>
-      <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
+      <PageHeader
+        title="Transactions"
+        subtitle="Every payment in and out of the platform"
+        tabs={<PaymentsTabs />}
+      />
 
-      <PaymentsTabs active="transactions" />
+      {overview?.period && overview.period.paymentSuccessRatePct != null && (
+        <div className="mb-4 bg-white rounded-xl shadow-sm px-4 py-3 flex items-center gap-3 flex-wrap text-sm">
+          <span className="font-semibold text-gray-900 tabular-nums">Payment success {overview.period.paymentSuccessRatePct}%</span>
+          <span className="text-gray-500">{overview.period.successfulPayments} of {overview.period.totalPayments} payments in this period</span>
+          <span className="ml-auto text-xs text-gray-400">Target {PAYMENT_SUCCESS_TARGET_PCT}%</span>
+        </div>
+      )}
 
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <div className="relative flex-1 min-w-48 max-w-sm">

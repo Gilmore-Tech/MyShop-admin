@@ -56,9 +56,11 @@ export default function WebhookFailuresPage() {
   return (
     <PageGuard permission="view_payments">
       <div>
-        <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
-
-        <PaymentsTabs active="webhook-failures" />
+        <PageHeader
+          title="Payment errors"
+          subtitle="Payment notices from Paystack that need a manual check"
+          tabs={<PaymentsTabs />}
+        />
 
         <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950">
           <div className="flex items-start gap-3">
@@ -66,8 +68,8 @@ export default function WebhookFailuresPage() {
             <div>
               <p className="text-sm font-semibold">Payment events that need a manual check</p>
               <p className="mt-1 text-xs leading-5 text-amber-800">
-                These Paystack payment updates could not be completed automatically. This page
-                only shows what needs attention; it does not retry or move any money. Sensitive
+                These Paystack payment updates could not be completed automatically. This page is read-only:
+                it only shows what needs attention and does not retry or move any money. Sensitive
                 payment details remain hidden.
               </p>
             </div>
