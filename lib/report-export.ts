@@ -8,8 +8,6 @@
  */
 import type {
   OverviewReport,
-  RevenueReport,
-  ProviderReport,
   PilotMetric,
 } from './api'
 
@@ -84,52 +82,6 @@ export function exportOverviewCsv(data: OverviewReport, userTotal: number | null
     ['Generated At', data.generatedAt],
   ]
   downloadCsv(`myshop-overview-${today()}.csv`, toCsv(['Metric', 'Value'], rows))
-}
-
-export function exportRevenueCsv(data: RevenueReport): void {
-  const headers = [
-    'Period', 'Collections (GHS)', 'Commission (GHS)', 'Payouts (GHS)', 'Tips (GHS)',
-    'Total Payments', 'Successful Payments', 'Success Rate (%)', 'MoMo Count', 'Card Count',
-  ]
-  // Most recent first, matching the on-screen table order.
-  const rows: Cell[][] = [...data.periods]
-    .sort((a, b) => b.period.localeCompare(a.period))
-    .map(p => [
-      p.period, round2(p.collectionsGhs), round2(p.commissionGhs), round2(p.payoutsGhs),
-      round2(p.tipsGhs), p.totalPayments, p.successfulPayments,
-      p.paymentSuccessRatePct ?? '', p.momoCount, p.cardCount,
-    ])
-  downloadCsv(`myshop-revenue-${data.groupBy || 'day'}-${today()}.csv`, toCsv(headers, rows))
-}
-
-export function exportRidesCsv(data: ProviderReport): void {
-  const headers = [
-    'Driver', 'Phone', 'Verification Status', 'Cancellations (30d)',
-    'Total Earnings (GHS)', 'Avg Rating', 'Rating Count',
-  ]
-  const rows: Cell[][] = [...data.drivers]
-    .sort((a, b) => b.totalEarningsGhs - a.totalEarningsGhs)
-    .map(d => [
-      d.name, d.phone, d.verificationStatus, d.cancellationCount30d,
-      round2(d.totalEarningsGhs), d.avgRating ?? '', d.ratingCount,
-    ])
-  downloadCsv(`myshop-rides-drivers-${today()}.csv`, toCsv(headers, rows))
-}
-
-export function exportArtisansCsv(data: ProviderReport): void {
-  const headers = [
-    'Artisan', 'Phone', 'Verification Status', 'Categories', 'Completed Jobs',
-    'Supplement Count', 'Supplement Rate (%)', 'Cancellations (30d)', 'Flagged',
-    'Avg Rating', 'Rating Count',
-  ]
-  const rows: Cell[][] = [...data.artisans]
-    .sort((a, b) => b.completedJobsCount - a.completedJobsCount)
-    .map(a => [
-      a.name, a.phone, a.verificationStatus, a.categories.join('; '), a.completedJobsCount,
-      a.supplementCount, a.supplementRatePct ?? '', a.cancellationCount30d, a.flagged,
-      a.avgRating ?? '', a.ratingCount,
-    ])
-  downloadCsv(`myshop-artisans-${today()}.csv`, toCsv(headers, rows))
 }
 
 export function exportPilotCsv(metrics: PilotMetric[]): void {
