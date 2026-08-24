@@ -202,8 +202,8 @@ test('deleted-role recovery UI/API are distinct, fail-closed and expose no rejec
 
   assert.match(client, /NEXT_PUBLIC_FF_ROLE_ACCOUNT_RECOVERY === 'true'/)
   assert.match(page, /FEATURES\.roleAccountRecovery/)
-  assert.match(sidebar, /Device Session Recovery/)
-  assert.match(sidebar, /Deleted Role Recovery/)
+  assert.match(sidebar, /Device recovery/)
+  assert.match(sidebar, /Deleted account recovery/)
   assert.match(api, /\/admin\/role-account-recovery-requests\/\$\{requestId\}\/approve-client/)
   assert.match(api, /\/admin\/role-account-recovery-requests\/\$\{requestId\}\/intake-provider/)
   assert.doesNotMatch(api, /role-account-recovery-requests[^\n]*(?:reject|decline|deny)/i)
