@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   DATE_RANGE_PRESETS,
+  dateBasisCaption,
   ghanaDateKey,
   defaultCustomDateRange,
   isDateRangePreset,
@@ -68,6 +69,21 @@ test('last 12 months is a rolling 365-day window that includes today', () => {
     from: '2025-08-11',
     to: '2026-08-10',
   })
+})
+
+test('date-basis captions share one sentence shape', () => {
+  assert.equal(
+    dateBasisCaption('bookings', 'requested'),
+    'Bookings are counted by the date they were requested (GMT, Africa/Accra).',
+  )
+  assert.equal(
+    dateBasisCaption('payments', 'recorded'),
+    'Payments are counted by the date they were recorded (GMT, Africa/Accra).',
+  )
+  assert.equal(
+    dateBasisCaption('events', 'last seen'),
+    'Events are counted by the date they were last seen (GMT, Africa/Accra).',
+  )
 })
 
 test('every preset in the catalogue is recognised', () => {

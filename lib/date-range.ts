@@ -141,3 +141,16 @@ export function isInstantInInclusiveDateRange(
 export function isDateRangePreset(value: string | null): value is DateRangePreset {
   return value != null && (DATE_RANGE_PRESETS as readonly string[]).includes(value)
 }
+
+/**
+ * The events a date filter can count by. Every date-filtered surface states
+ * its basis with `dateBasisCaption` so the nine historical phrasings converge
+ * on one sentence shape.
+ */
+export type DateBasisEvent = 'requested' | 'paid' | 'recorded' | 'resolved' | 'created' | 'completed' | 'last seen'
+
+/** "Bookings are counted by the date they were requested (GMT, Africa/Accra)." */
+export function dateBasisCaption(subjectPlural: string, event: DateBasisEvent): string {
+  const subject = subjectPlural.charAt(0).toUpperCase() + subjectPlural.slice(1)
+  return `${subject} are counted by the date they were ${event} (GMT, Africa/Accra).`
+}

@@ -1,9 +1,10 @@
 'use client'
 
-import { Fragment, useState, type ReactNode } from 'react'
+import { Fragment, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
 
 export interface ReportColumn<Row> {
   key: string
@@ -27,6 +28,11 @@ export interface ReportTableProps<Row> {
   skeletonRows?: number
   /** Shown when `rows` is empty and not loading. */
   empty?: ReactNode
+  /** User-safe message; renders the standard error state INSTEAD of the body. */
+  error?: string | null
+  onRetry?: () => void
+  /** Accessible name for interactive rows, e.g. row => `Expand 22 Aug 2026`. */
+  rowAriaLabel?: (row: Row) => string
   /** Render a totals row from each column's `footer`. */
   showFooter?: boolean
   footerLabel?: ReactNode
@@ -52,7 +58,8 @@ const ALIGN = {
  * white card; wide tables scroll within the card rather than the page.
  */
 export function ReportTable<Row>({
-  columns, rows, rowKey, loading = false, skeletonRows = 6, empty, showFooter = false, footerLabel = 'Total',
+  columns, rows, rowKey, loading = false, skeletonRows = 6, empty, error = null, onRetry, rowAriaLabel,
+  showFooter = false, footerLabel = 'Total',
   onRowClick, renderExpanded, caption, className, minWidth = 640,
 }: ReportTableProps<Row>) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
@@ -67,7 +74,28 @@ export function ReportTable<Row>({
     })
   }
 
+  function activate(row: Row, key: string) {
+    if (renderExpanded) toggle(key)
+    onRowClick?.(row)
+  }
+
+  function onRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, row: Row, key: string) {
+    if (event.target !== event.currentTarget) return
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      activate(row, key)
+    }
+  }
+
   const colCount = columns.length + (renderExpanded ? 1 : 0)
+
+  if (error) {
+    return (
+      <div className={cn('bg-white rounded-xl shadow-sm overflow-hidden', className)}>
+        <ErrorState title="Could not load this report" detail={error} onRetry={onRetry} className="m-4" />
+      </div>
+    )
+  }
 
   return (
     <div className={cn('bg-white rounded-xl shadow-sm overflow-hidden', className)}>
@@ -117,11 +145,14 @@ export function ReportTable<Row>({
                 return (
                   <Fragment key={key}>
                     <tr
-                      className={cn(interactive && 'cursor-pointer hover:bg-gray-50/70 transition-colors', isOpen && 'bg-gray-50/50')}
-                      onClick={() => {
-                        if (renderExpanded) toggle(key)
-                        onRowClick?.(row)
-                      }}
+                      className={cn(
+                        interactive && 'cursor-pointer hover:bg-gray-50/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-300',
+                        isOpen && 'bg-gray-50/50',
+                      )}
+                      tabIndex={interactive ? 0 : undefined}
+                      aria-label={interactive && rowAriaLabel ? rowAriaLabel(row) : undefined}
+                      onClick={interactive ? () => activate(row, key) : undefined}
+                      onKeyDown={interactive ? e => onRowKeyDown(e, row, key) : undefined}
                       aria-expanded={renderExpanded ? isOpen : undefined}
                     >
                       {renderExpanded && (

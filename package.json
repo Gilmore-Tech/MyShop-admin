@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:date-range": "node --experimental-strip-types --test tests/date-range.test.ts",
+    "test:status-labels": "node --experimental-strip-types --test tests/status-labels.test.ts",
     "test:format-date": "node --experimental-strip-types --test tests/format-date.test.ts",
     "test:revenue-report": "node --experimental-strip-types --test tests/revenue-report-contract.test.ts",
     "test:booking-outcomes": "node --experimental-strip-types --test tests/booking-outcomes-contract.test.ts",

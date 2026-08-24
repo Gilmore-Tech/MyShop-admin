@@ -69,12 +69,8 @@ export function LeaderboardList({
         const rank = startRank + i
         const share = leader > 0 ? Math.max(0, Math.min(100, (entry.metricValue / leader) * 100)) : 0
         const top = rank <= 3
-        return (
-          <li
-            key={entry.id}
-            className={cn('flex items-center gap-3 px-4 py-3', onSelect && 'cursor-pointer hover:bg-gray-50/70 transition-colors')}
-            onClick={onSelect ? () => onSelect(entry) : undefined}
-          >
+        const rowContent = (
+          <>
             <span
               className={cn(
                 'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 tabular-nums',
@@ -106,6 +102,22 @@ export function LeaderboardList({
                 <div className="h-full rounded-full bg-gray-300" style={{ width: `${share}%` }} />
               </div>
             </div>
+          </>
+        )
+        return (
+          <li key={entry.id} className={cn(onSelect && 'hover:bg-gray-50/70 transition-colors')}>
+            {onSelect ? (
+              <button
+                type="button"
+                onClick={() => onSelect(entry)}
+                aria-label={`Open ${entry.name}`}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-300"
+              >
+                {rowContent}
+              </button>
+            ) : (
+              <div className="flex items-center gap-3 px-4 py-3">{rowContent}</div>
+            )}
           </li>
         )
       })}

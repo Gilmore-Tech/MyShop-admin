@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Download, CheckCircle2, XCircle, UserX, Activity, ListChecks, Car, Wrench } from 'lucide-react'
+import { Download, CheckCircle2, XCircle, UserX, Activity, ListChecks, Car, Wrench } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
@@ -10,6 +10,7 @@ import { StatCard } from '@/components/common/stat-card'
 import { PeriodControls, usePeriod } from '@/components/common/period-controls'
 import { ReportTable, type ReportColumn } from '@/components/common/report-table'
 import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
 import { VerticalTabs, type Vertical } from '@/components/common/vertical-tabs'
 import { Button } from '@/components/ui/button'
 import { getBookingOutcomesReport, type BookingOutcomesReport, type BookingOutcomePeriod, type BookingOutcomeCounters } from '@/lib/api'
@@ -146,17 +147,10 @@ export default function TripOutcomesPage() {
           extra={<VerticalTabs value={vertical} onChange={setVertical} />}
         />
 
-        {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <p className="font-medium">Couldn&apos;t load trip outcomes</p>
-              <p className="text-xs mt-0.5">{error}</p>
-            </div>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={load}>Retry</Button>
-          </div>
-        )}
-
+        {error ? (
+          <ErrorState title="Could not load trip outcomes" detail={error} onRetry={load} />
+        ) : (
+        <>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
           <StatCard icon={ListChecks} label="Total requested" value={totals ? totals.requested.toLocaleString() : '-'} sub="Bookings created in the period" loading={loading} />
           <StatCard icon={CheckCircle2} label="Completed" value={totals ? totals.completed.toLocaleString() : '-'} sub={totals ? `${pctLabel(totals.completionRatePct)} of requested` : undefined} loading={loading} />
@@ -234,6 +228,8 @@ export default function TripOutcomesPage() {
             </ResponsiveContainer>
           )}
         </div>
+      </>
+        )}
       </div>
     </PageGuard>
   )

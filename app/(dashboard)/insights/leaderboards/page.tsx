@@ -319,7 +319,7 @@ export default function LeaderboardsPage() {
                 <div>
                   <Label className="text-xs text-gray-500 mb-1 block">Reward shortlist: at least</Label>
                   <div className="flex items-center gap-1.5">
-                    <Input type="number" min={0} value={minCompleted} onChange={e => setMinCompleted(Math.max(0, Number(e.target.value) || 0))} className="h-9 w-20 bg-white" />
+                    <Input type="number" min={0} aria-label="Reward shortlist minimum completed bookings" value={minCompleted} onChange={e => setMinCompleted(Math.max(0, Number(e.target.value) || 0))} className="h-9 w-20 bg-white" />
                     <span className="text-xs text-gray-500">completed</span>
                   </div>
                 </div>

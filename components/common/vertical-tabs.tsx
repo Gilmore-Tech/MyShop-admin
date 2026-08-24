@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useMemo } from 'react'
-import { cn } from '@/lib/utils'
 import { useRole } from '@/hooks/use-role'
+import { SegmentedControl } from '@/components/common/segmented-control'
 
 /** Which marketplace vertical a report covers. */
 export type Vertical = 'all' | 'rides' | 'artisans'
@@ -39,33 +39,13 @@ export function VerticalTabs({ value, onChange, className }: {
   useEffect(() => {
     if (!allowed.includes(value)) onChange(allowed[0])
   }, [allowed, value, onChange])
-  if (allowed.length === 1) {
-    return (
-      <span className={cn('inline-flex items-center h-9 px-3 rounded-lg bg-gray-100 text-xs font-semibold text-gray-600', className)}>
-        {VERTICAL_LABELS[allowed[0]]}
-      </span>
-    )
-  }
   return (
-    <div role="tablist" aria-label="Vertical" className={cn('inline-flex items-center h-9 rounded-lg bg-gray-100 p-[3px] gap-0.5', className)}>
-      {allowed.map(v => {
-        const active = v === value
-        return (
-          <button
-            key={v}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(v)}
-            className={cn(
-              'h-full px-3 rounded-md text-xs font-semibold transition-colors',
-              active ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800',
-            )}
-          >
-            {VERTICAL_LABELS[v]}
-          </button>
-        )
-      })}
-    </div>
+    <SegmentedControl
+      ariaLabel="Service line"
+      options={allowed.map(v => ({ value: v, label: VERTICAL_LABELS[v] }))}
+      value={allowed.includes(value) ? value : allowed[0]}
+      onChange={onChange}
+      className={className}
+    />
   )
 }
