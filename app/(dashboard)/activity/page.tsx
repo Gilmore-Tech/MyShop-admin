@@ -5,16 +5,21 @@ import { useRouter } from 'next/navigation'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
+import { FilterBar } from '@/components/common/filter-bar'
+import { DataTable, AvatarCell, type DataTableColumn } from '@/components/common/data-table'
+import { EmptyState } from '@/components/common/empty-state'
 import {
   DollarSign, UserCheck,
-  Scale, AlertCircle, RefreshCw, Activity, ArrowUpRight,
-  CheckCircle2, XCircle, Siren, ChevronLeft, ChevronRight,
+  Scale, Activity, ArrowUpRight,
+  CheckCircle2, XCircle, Siren,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { getRecentActivity, type ActivityItem, type ActivityEventType } from '@/lib/api'
 import { useDateRange } from '@/components/common/date-range-filter'
-import { formatDateTime } from '@/lib/format-date'
+import { formatDateTime, timeAgo } from '@/lib/format-date'
+import { formatGhs } from '@/lib/money'
+import { dateBasisCaption } from '@/lib/date-range'
 
 // ─── Event metadata ───────────────────────────────────────────────────────────
 
@@ -32,7 +37,7 @@ const EVENT_META: Record<ActivityEventType, {
   job_disputed:     { label: 'Job Disputed',     icon: Scale,        color: 'text-red-600',    bg: 'bg-red-50',      border: 'border-red-100' },
   escrow_released:  { label: 'Escrow Released',  icon: DollarSign,   color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
   sos_triggered:    { label: 'SOS Triggered',    icon: Siren,        color: 'text-red-700',    bg: 'bg-red-100',     border: 'border-red-200' },
-  kyc_submitted:    { label: 'KYC Submitted',    icon: UserCheck,    color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
+  kyc_submitted:    { label: 'Client ID Check Submitted', icon: UserCheck, color: 'text-gray-600', bg: 'bg-gray-100', border: 'border-gray-200' },
   dispute_resolved: { label: 'Dispute Resolved', icon: Scale,        color: 'text-gray-600',   bg: 'bg-gray-100',    border: 'border-gray-200' },
   emergency:        { label: 'Emergency / SOS',  icon: Siren,        color: 'text-red-700',    bg: 'bg-red-100',     border: 'border-red-200' },
   dispute:          { label: 'Dispute',          icon: Scale,        color: 'text-red-600',    bg: 'bg-red-50',      border: 'border-red-100' },
@@ -56,31 +61,7 @@ const ROLE_COLOR: Record<string, string> = {
   system:  'text-gray-500 bg-gray-100',
 }
 
-const ACTOR_BG: Record<string, string> = {
-  driver:  '#9CA3AF',
-  artisan: '#9CA3AF',
-  client:  '#9CA3AF',
-  system:  '#9CA3AF',
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function timeAgo(iso: string): string {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (diff < 60)    return `${diff}s ago`
-  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
-}
-
-function fmtAmount(p: number) {
-  return 'GHS ' + (p / 100).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function initials(name: string | null) {
-  if (!name) return '?'
-  return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-}
 
 function shortId(id: string | null) {
   if (!id) return null
@@ -165,18 +146,82 @@ export default function ActivityPage() {
     else if (item.bookingType === 'job') router.push(`/artisan-jobs/${item.bookingId}`)
   }
 
+  const columns: DataTableColumn<ActivityItem>[] = [
+    {
+      key: 'event', header: 'Event',
+      render: item => {
+        const meta = EVENT_META[item.eventType] ?? {
+          label: (item.eventType ?? 'unknown').replace(/_/g, ' '), icon: Activity,
+          color: 'text-gray-500', bg: 'bg-gray-100', border: 'border-gray-200',
+        }
+        const Icon = meta.icon
+        const isSos = item.eventType === 'emergency' || item.eventType === 'sos_triggered'
+        return (
+          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${meta.bg} ${meta.color} ${meta.border} ${isSos ? 'ring-1 ring-red-200' : ''}`}>
+            <Icon className="h-3 w-3" />
+            {meta.label}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'actor', header: 'Actor',
+      render: item => (
+        <AvatarCell
+          name={item.actorName || 'Unknown'}
+          size={28}
+          sub={
+            <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full ${ROLE_COLOR[item.actorRole] ?? 'text-gray-400 bg-gray-100'}`}>
+              {ROLE_LABEL[item.actorRole] ?? item.actorRole}
+            </span>
+          }
+        />
+      ),
+    },
+    {
+      key: 'details', header: 'Details', className: 'max-w-[220px] whitespace-normal',
+      render: item => <span className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{item.description}</span>,
+    },
+    {
+      key: 'amount', header: 'Amount', align: 'right',
+      render: item => item.amountPesewas != null ? (
+        <span className={`text-sm font-semibold ${
+          item.eventType === 'escrow_released' ? 'text-blue-700'
+          : item.eventType === 'ride_completed' || item.eventType === 'job_completed' ? 'text-emerald-700'
+          : 'text-gray-800'
+        }`}>
+          {formatGhs(item.amountPesewas)}
+        </span>
+      ) : <span className="text-gray-300">-</span>,
+    },
+    {
+      key: 'time', header: 'Time',
+      render: item => (
+        <>
+          <p className="text-xs font-medium text-gray-700">{timeAgo(item.occurredAt)}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">{formatDateTime(item.occurredAt)}</p>
+        </>
+      ),
+    },
+    {
+      key: 'ref', header: 'Ref',
+      render: item => item.bookingId ? (
+        <button
+          onClick={() => navigateToBooking(item)}
+          className="inline-flex items-center gap-1 text-[11px] font-mono font-medium text-orange-600 hover:text-orange-800 hover:underline transition-colors"
+          title={`View ${item.bookingType ?? 'booking'} ${item.bookingId}`}
+        >
+          {shortId(item.bookingId)}
+          <ArrowUpRight className="h-3 w-3" />
+        </button>
+      ) : <span className="text-gray-300">-</span>,
+    },
+  ]
+
   return (
     <PageGuard permission="view_activity">
       <div>
-        <PageHeader
-          title="Activity Feed"
-          subtitle="Platform-wide events by occurred date (GMT) - rides, jobs, payments, and safety."
-          actions={
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" onClick={load}>
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
-            </Button>
-          }
-        />
+        <PageHeader title="Activity feed" subtitle="Recent platform activity" />
 
         {/* Summary pills */}
         {!loading && items.length > 0 && (counts.sos > 0 || counts.disputed > 0 || counts.kyc > 0) && (
@@ -199,14 +244,21 @@ export default function ActivityPage() {
           </div>
         )}
 
-        {/* Filters */}
-        <div className="flex items-center gap-3 mb-5 flex-wrap">
+        <FilterBar
+          onRefresh={load}
+          refreshing={loading}
+          meta={
+            <span className="text-xs text-gray-400">
+              {filtered.length} event{filtered.length !== 1 ? 's' : ''} loaded - up to the latest 100 in range. {dateBasisCaption('Events', 'recorded')}
+            </span>
+          }
+        >
           <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-48 h-8 text-sm bg-gray-50">
+            <SelectTrigger className="h-9 w-44 bg-white">
               <SelectValue placeholder="Event type" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Events</SelectItem>
+              <SelectItem value="all">All events</SelectItem>
               {availableTypes.map(k => (
                 <SelectItem key={k} value={k}>{eventLabel(k)}</SelectItem>
               ))}
@@ -214,11 +266,11 @@ export default function ActivityPage() {
           </Select>
 
           <Select value={roleFilter} onValueChange={v => setRoleFilter(v as typeof roleFilter)}>
-            <SelectTrigger className="w-40 h-8 text-sm bg-gray-50">
+            <SelectTrigger className="h-9 w-36 bg-white">
               <SelectValue placeholder="Actor role" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Roles</SelectItem>
+              <SelectItem value="all">All roles</SelectItem>
               <SelectItem value="client">Client</SelectItem>
               <SelectItem value="driver">Driver</SelectItem>
               <SelectItem value="artisan">Artisan</SelectItem>
@@ -232,7 +284,7 @@ export default function ActivityPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 text-xs text-gray-500"
+              className="h-9 text-xs text-gray-500"
               onClick={() => {
                 setTypeFilter('all'); setRoleFilter('all')
                 setDateRange('all'); setCustomFrom(''); setCustomTo('')
@@ -241,182 +293,19 @@ export default function ActivityPage() {
               Clear filters
             </Button>
           )}
+        </FilterBar>
 
-          <span className="text-xs text-gray-400 ml-auto">
-            {filtered.length} loaded event{filtered.length !== 1 ? 's' : ''} · up to latest 100 in range
-          </span>
-        </div>
-
-        {/* Loading skeleton */}
-        {loading && (
-          <div className="overflow-hidden rounded-xl border border-gray-100">
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-gray-50">
-                {[...Array(8)].map((_, i) => (
-                  <tr key={i}>
-                    {[...Array(6)].map((_, j) => (
-                      <td key={j} className="px-4 py-3">
-                        <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${50 + (j * 13) % 40}%` }} />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Error */}
-        {!loading && error && (
-          <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3 border border-red-100">
-            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
-            <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={load}>Retry</Button>
-          </div>
-        )}
-
-        {/* Empty */}
-        {!loading && !error && filtered.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <Activity className="h-10 w-10 text-gray-200" />
-            <p className="text-sm text-gray-400">No events match the current filters</p>
-          </div>
-        )}
-
-        {/* Table */}
-        {!loading && !error && filtered.length > 0 && (
-          <div className="overflow-x-auto rounded-xl border border-gray-100">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Event</th>
-                  <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Actor</th>
-                  <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Details</th>
-                  <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Amount</th>
-                  <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Time</th>
-                  <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Ref</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {pageItems.map(item => {
-                  const meta = EVENT_META[item.eventType] ?? {
-                    label: (item.eventType ?? 'unknown').replace(/_/g, ' '), icon: Activity,
-                    color: 'text-gray-500', bg: 'bg-gray-100', border: 'border-gray-200',
-                  }
-                  const Icon = meta.icon
-                  const isSos = item.eventType === 'emergency' || item.eventType === 'sos_triggered'
-
-                  return (
-                    <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isSos ? 'bg-red-50/40' : ''}`}>
-
-                      {/* Event */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${meta.bg} ${meta.color} ${meta.border}`}>
-                          <Icon className="h-3 w-3" />
-                          {meta.label}
-                        </span>
-                      </td>
-
-                      {/* Actor */}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
-                            style={{ backgroundColor: ACTOR_BG[item.actorRole] ?? '#9CA3AF' }}
-                          >
-                            {initials(item.actorName)}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-gray-800 truncate max-w-[120px]">
-                              {item.actorName ?? <span className="text-gray-400 italic">Unknown</span>}
-                            </p>
-                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${ROLE_COLOR[item.actorRole] ?? 'text-gray-400 bg-gray-100'}`}>
-                              {ROLE_LABEL[item.actorRole] ?? item.actorRole}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Details / description */}
-                      <td className="px-4 py-3 text-xs text-gray-500 max-w-[200px]">
-                        <span className="line-clamp-2 leading-relaxed">{item.description}</span>
-                      </td>
-
-                      {/* Amount */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {item.amountPesewas != null ? (
-                          <span className={`text-sm font-semibold ${
-                            item.eventType === 'escrow_released' ? 'text-blue-700'
-                            : item.eventType === 'ride_completed' || item.eventType === 'job_completed' ? 'text-emerald-700'
-                            : 'text-gray-800'
-                          }`}>
-                            {fmtAmount(item.amountPesewas)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300">-</span>
-                        )}
-                      </td>
-
-                      {/* Time */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <p className="text-xs font-medium text-gray-700">{timeAgo(item.occurredAt)}</p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">{formatDateTime(item.occurredAt)}</p>
-                      </td>
-
-                      {/* Booking ref + link */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {item.bookingId ? (
-                          <button
-                            onClick={() => navigateToBooking(item)}
-                            className="inline-flex items-center gap-1 text-[11px] font-mono font-medium text-orange-600 hover:text-orange-800 hover:underline transition-colors"
-                            title={`View ${item.bookingType ?? 'booking'} ${item.bookingId}`}
-                          >
-                            {shortId(item.bookingId)}
-                            <ArrowUpRight className="h-3 w-3" />
-                          </button>
-                        ) : (
-                          <span className="text-gray-300">-</span>
-                        )}
-                      </td>
-
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Pagination */}
-        {!loading && !error && filtered.length > PAGE_SIZE && (
-          <div className="flex items-center justify-between mt-4">
-            <p className="text-xs text-gray-400">
-              Showing {pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, filtered.length)} of {filtered.length}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1 text-xs"
-                disabled={currentPage <= 1}
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-              >
-                <ChevronLeft className="h-3.5 w-3.5" /> Prev
-              </Button>
-              <span className="text-xs text-gray-500 tabular-nums px-1">
-                Page {currentPage} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1 text-xs"
-                disabled={currentPage >= totalPages}
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              >
-                Next <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-        )}
+        <DataTable
+          columns={columns}
+          rows={pageItems}
+          rowKey={item => item.id}
+          loading={loading}
+          error={error}
+          onRetry={load}
+          empty={<EmptyState icon={Activity} title="No events match the current filters" />}
+          pagination={{ page: currentPage, pageSize: PAGE_SIZE, total: filtered.length, onPage: setPage }}
+          minWidth={860}
+        />
       </div>
     </PageGuard>
   )

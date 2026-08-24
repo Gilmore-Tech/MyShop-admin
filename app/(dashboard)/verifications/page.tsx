@@ -5,17 +5,18 @@ import Link from 'next/link'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import {
-  Search, CheckCircle, XCircle, RefreshCw, FileText,
+  CheckCircle, XCircle, RefreshCw, FileText,
   ChevronLeft, ChevronRight, ExternalLink, Loader2,
   ImageOff, AlertCircle, Check, X,
 } from 'lucide-react'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { PageHeader } from '@/components/common/page-header'
+import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
+import { DataTable, AvatarCell } from '@/components/common/data-table'
+import { EmptyState } from '@/components/common/empty-state'
 import { DetailSheet } from '@/components/common/detail-sheet'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
@@ -1192,11 +1193,6 @@ export default function VerificationsPage() {
   // The stages a viewer may see, mirroring the server-side boundary: admin →
   // Stage 1 only; coordinator → Stages 1–2; RM and any global role → all three.
   const isGlobal = role ? (ROLE_DEFINITIONS[role]?.global ?? false) : false
-  const homeRole: PipelineRole =
-    can('finalize_verification') ? 'rm'
-    : can('validate_verification') ? 'coordinator'
-    : can('verify_documents') ? 'admin'
-    : 'viewer'
   const allowedStages: VerificationStage[] =
     isGlobal || can('finalize_verification') ? ['pending_documents', 'docs_verified', 'coordinator_validated']
     : can('validate_verification') ? ['pending_documents', 'docs_verified']
@@ -1249,146 +1245,109 @@ export default function VerificationsPage() {
     <PageGuard permission="view_verifications">
     <div>
       <PageHeader
-        title="Provider Verification Queue"
-        subtitle={
-          isGlobal ? 'All providers across the verification pipeline'
-          : homeRole === 'admin' ? 'Stage 1 — check each document for authenticity, then submit to the coordinator'
-          : homeRole === 'coordinator' ? 'Stage 2 — validate the admin-approved documents for your category'
-          : homeRole === 'rm' ? 'Stage 3 — final verification that makes the provider eligible to go online'
-          : 'Provider identity and document submissions'
-        }
-        actions={
-          <div className="flex items-center gap-3">
-            <div className="text-sm text-gray-500 bg-white rounded-lg px-3 py-1.5 flex items-center gap-3">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
-                {pendingCount} Pending Docs
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
-                {items.length} Providers
-              </span>
-            </div>
-            <Button variant="outline" size="sm" onClick={load} className="gap-2">
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
-            </Button>
-          </div>
-        }
+        title="Provider verifications"
+        subtitle="Documents and approval stages for drivers and artisans"
       />
 
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <div className="relative flex-1 min-w-48 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-          <Input placeholder="Search by name or ID…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
+      <FilterBar onRefresh={load} refreshing={loading} meta={`${pendingCount} pending docs - ${items.length} providers`}>
+        <FilterSearch value={search} onChange={setSearch} placeholder="Search by name or ID..." />
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-36 bg-white"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectTrigger className="h-9 w-36 bg-white"><SelectValue placeholder="Type" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="all">All types</SelectItem>
             <SelectItem value="driver">Drivers</SelectItem>
             <SelectItem value="artisan">Artisans</SelectItem>
           </SelectContent>
         </Select>
         {allowedStages.length > 1 && (
           <Select value={stageFilter} onValueChange={v => setStageFilter(v as VerificationStage | 'all')}>
-            <SelectTrigger className="w-52 bg-white"><SelectValue placeholder="Stage" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-56 bg-white"><SelectValue placeholder="Stage" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Stages</SelectItem>
+              <SelectItem value="all">All stages</SelectItem>
               {allowedStages.map(s => (
                 <SelectItem key={s} value={s}>{STAGE_LABEL[s] ?? s}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
-        <div className="ml-auto text-sm text-gray-400">{filtered.length} in queue</div>
-      </div>
+      </FilterBar>
 
-      {error && (
-        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50">
-              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Provider</TableHead>
-              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</TableHead>
-              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Stage</TableHead>
-              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Documents</TableHead>
-              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">First Upload</TableHead>
-              <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <TableRow key={i}>
-                  {Array.from({ length: 6 }).map((_, j) => (
-                    <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-gray-400">
-                  <FileText className="h-8 w-8 mx-auto mb-2 text-gray-200" />
-                  {search || typeFilter !== 'all' ? 'No results match your filters.' : 'Verification queue is empty.'}
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map(v => (
-                <TableRow key={v.provider_id} className="hover:bg-gray-50">
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-gray-100 text-gray-600 text-xs font-bold">
-                          {initials(v.provider_name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium text-sm text-gray-900">{v.provider_name ?? 'Unknown'}</p>
-                        <p className="text-xs text-gray-400 font-mono">{v.provider_id.slice(0, 8)}…</p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell><StatusBadge status={v.provider_type} /></TableCell>
-                  <TableCell className="text-xs text-gray-500">
-                    {v.verification_stage
-                      ? `${STAGE_LABEL[v.verification_stage] ?? v.verification_stage}${v.document_review_only ? ' · Document' : ''}`
-                      : '—'}
-                  </TableCell>
-                  <TableCell>
-                    <DocsProgress
-                      pending={Number(v.docs_pending)}
-                      approved={Number(v.docs_approved)}
-                      rejected={Number(v.docs_rejected)}
-                      total={Number(v.total_docs)}
-                    />
-                  </TableCell>
-                  <TableCell className="text-sm text-gray-500">{formatDate(v.first_upload_at)}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2 justify-end">
-                      <Button
-                        size="sm"
-                        className="gap-1.5 text-xs h-7 text-white"
-                        style={{ backgroundColor: '#F5A623' }}
-                        onClick={() => setReviewing(v)}
-                      >
-                        Review
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
-          <p className="text-xs text-gray-400">
-            {loading ? 'Loading…' : `Showing ${filtered.length} of ${items.length} providers`}
-          </p>
-        </div>
-      </div>
+      <DataTable
+        columns={[
+          {
+            key: 'provider',
+            header: 'Provider',
+            render: v => (
+              <AvatarCell
+                name={v.provider_name}
+                sub={<span className="font-mono">{v.provider_id.slice(0, 8)}...</span>}
+              />
+            ),
+          },
+          {
+            key: 'type',
+            header: 'Type',
+            render: v => <StatusBadge status={v.provider_type} />,
+          },
+          {
+            key: 'stage',
+            header: 'Stage',
+            render: v => (
+              <span className="text-xs text-gray-500">
+                {v.verification_stage
+                  ? `${STAGE_LABEL[v.verification_stage] ?? v.verification_stage}${v.document_review_only ? ' - Document' : ''}`
+                  : '-'}
+              </span>
+            ),
+          },
+          {
+            key: 'documents',
+            header: 'Documents',
+            render: v => (
+              <DocsProgress
+                pending={Number(v.docs_pending)}
+                approved={Number(v.docs_approved)}
+                rejected={Number(v.docs_rejected)}
+                total={Number(v.total_docs)}
+              />
+            ),
+          },
+          {
+            key: 'first_upload',
+            header: 'First upload',
+            render: v => <span className="text-sm text-gray-500">{formatDate(v.first_upload_at)}</span>,
+          },
+          {
+            key: 'actions',
+            header: '',
+            align: 'right',
+            render: v => (
+              <Button
+                size="sm"
+                variant="brand"
+                className="gap-1.5 text-xs h-7"
+                onClick={e => { e.stopPropagation(); setReviewing(v) }}
+              >
+                Review
+              </Button>
+            ),
+          },
+        ]}
+        rows={filtered}
+        rowKey={v => v.provider_id}
+        loading={loading}
+        error={error || null}
+        onRetry={load}
+        onRowClick={v => setReviewing(v)}
+        rowAriaLabel={v => `Review ${v.provider_name ?? 'provider'}`}
+        empty={
+          <EmptyState
+            icon={FileText}
+            title={search || typeFilter !== 'all' ? 'No results match your filters' : 'Verification queue is empty'}
+          />
+        }
+        caption={loading ? 'Loading...' : `Showing ${filtered.length} of ${items.length} providers`}
+      />
 
       {reviewing && (
         <ReviewDrawer

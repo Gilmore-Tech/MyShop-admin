@@ -5,6 +5,13 @@ import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
+import { StatCard } from '@/components/common/stat-card'
+import { FilterBar } from '@/components/common/filter-bar'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { ErrorState } from '@/components/common/error-state'
+import { EmptyState } from '@/components/common/empty-state'
+import { PageSkeleton } from '@/components/common/load-state'
+import { Pager } from '@/components/common/pager'
 import {
   ShieldAlert,
   HeartPulse,
@@ -14,25 +21,20 @@ import {
   Car,
   Wrench,
   User,
-  RefreshCw,
   AlertCircle,
+  AlertTriangle,
   ExternalLink,
   Mic,
-  Loader2,
   Phone,
   PhoneCall,
   UserCheck,
   Cpu,
-  AlertTriangle,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   History,
   Check,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -40,14 +42,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   getEmergencyAlerts,
@@ -64,18 +58,10 @@ import {
 import { ApiError } from '@/lib/api-client'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { useDateRange } from '@/components/common/date-range-filter'
-import { isInstantInInclusiveDateRange } from '@/lib/date-range'
-import { formatDateTime as fmtDate } from '@/lib/format-date'
+import { isInstantInInclusiveDateRange, dateBasisCaption } from '@/lib/date-range'
+import { formatDateTime as fmtDate, timeAgo } from '@/lib/format-date'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function timeAgo(iso: string): string {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (diff < 60) return `${diff}s ago`
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
-}
 
 const OTHER_PAGE_SIZE = 10 // rows per page in the acknowledged/monitored history
 const ACTION_CAP = 20 // needs-action rows shown before "Show all" expander
@@ -226,8 +212,8 @@ function AlertCard({
           isSos ? (
             <Button
               size="sm"
-              className="h-8 text-xs gap-1.5 text-white"
-              style={{ backgroundColor: '#EF4444' }}
+              variant="destructive"
+              className="h-8 text-xs gap-1.5"
               disabled={busy}
               onClick={(e) => {
                 e.stopPropagation()
@@ -239,8 +225,8 @@ function AlertCard({
           ) : (
             <Button
               size="sm"
-              className="h-8 text-xs gap-1.5 text-white"
-              style={{ backgroundColor: '#F5A623' }}
+              variant="brand"
+              className="h-8 text-xs gap-1.5"
               disabled={busy}
               onClick={(e) => {
                 e.stopPropagation()
@@ -368,83 +354,68 @@ export default function EmergencyPage() {
     <PageGuard permission="view_emergency">
       <div>
         <PageHeader
-          title="Emergency Alerts"
+          title="Emergency alerts"
           subtitle="SOS triggers and welfare checks requiring admin acknowledgement."
-          actions={
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" onClick={load}>
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
-            </Button>
-          }
         />
 
         {/* KPI strip */}
         <div className="grid grid-cols-3 gap-3 mb-5">
-          <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
-            <p className="text-xs text-gray-400 font-medium">Needs action</p>
-            <p
-              className={`text-2xl font-bold mt-0.5 ${needsActionCount > 0 ? 'text-red-600' : 'text-gray-800'}`}
-            >
-              {needsActionCount}
-            </p>
-          </div>
-          <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
-            <p className="text-xs text-gray-400 font-medium">Active SOS</p>
-            <p
-              className={`text-2xl font-bold mt-0.5 ${sosCount > 0 ? 'text-red-600' : 'text-gray-800'}`}
-            >
-              {sosCount}
-            </p>
-          </div>
-          <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
-            <p className="text-xs text-gray-400 font-medium">Welfare Checks</p>
-            <p
-              className={`text-2xl font-bold mt-0.5 ${welfareCount > 0 ? 'text-amber-600' : 'text-gray-800'}`}
-            >
-              {welfareCount}
-            </p>
-          </div>
+          <StatCard
+            icon={AlertTriangle}
+            label="Needs action"
+            value={needsActionCount}
+            tone={needsActionCount > 0 ? 'negative' : 'neutral'}
+            sub={needsActionCount > 0 ? 'Waiting on an admin' : 'All caught up'}
+            loading={loading && alerts.length === 0}
+          />
+          <StatCard
+            icon={ShieldAlert}
+            label="Active SOS"
+            value={sosCount}
+            tone={sosCount > 0 ? 'negative' : 'neutral'}
+            sub={sosCount > 0 ? 'Unacknowledged' : 'None active'}
+            loading={loading && alerts.length === 0}
+          />
+          <StatCard
+            icon={HeartPulse}
+            label="Welfare checks"
+            value={welfareCount}
+            tone={welfareCount > 0 ? 'negative' : 'neutral'}
+            sub={welfareCount > 0 ? 'Escalated to admin' : 'None escalated'}
+            loading={loading && alerts.length === 0}
+          />
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <FilterBar
+          onRefresh={load}
+          refreshing={loading}
+          meta={
+            <span className="text-xs text-gray-400">
+              {needsActionList.length} live, {otherList.length} history in range (latest 200 max). {dateBasisCaption('History alerts', 'recorded')} Live alerts always show.
+            </span>
+          }
+        >
           <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as typeof typeFilter)}>
-            <SelectTrigger className="w-44 h-8 text-sm bg-gray-50">
+            <SelectTrigger className="h-9 w-44 bg-white">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="sos">SOS Only</SelectItem>
-              <SelectItem value="welfare_check">Welfare Checks Only</SelectItem>
+              <SelectItem value="all">All types</SelectItem>
+              <SelectItem value="sos">SOS only</SelectItem>
+              <SelectItem value="welfare_check">Welfare checks only</SelectItem>
             </SelectContent>
           </Select>
 
           {dateControl}
-          <span className="text-xs text-gray-400">History by occurred date · live alerts always shown</span>
-
-          <span className="text-xs text-gray-400 ml-auto">
-            {needsActionList.length} live · {otherList.length} history in range (latest 200 max)
-          </span>
-        </div>
+        </FilterBar>
 
         {/* Content */}
-        {loading && (
-          <div className="space-y-3">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-28 rounded-xl bg-gray-50 animate-pulse" />
-            ))}
-          </div>
-        )}
-
-        {!loading && error && (
-          <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3 border border-red-100">
-            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
-            <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={load}>
-              Retry
-            </Button>
-          </div>
-        )}
-
-        {!loading && !error && (
+        {error ? (
+          <ErrorState title="Could not load emergency alerts" detail={error} onRetry={load} />
+        ) : loading ? (
+          <PageSkeleton variant="cards" />
+        ) : (
           <>
             {/* Needs action now */}
             <section className="space-y-2.5">
@@ -460,17 +431,12 @@ export default function EmergencyPage() {
               </div>
 
               {needsActionList.length === 0 ? (
-                <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white px-4 py-4">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-700">All clear</p>
-                    <p className="text-xs text-gray-400">
-                      {alerts.length === 0
-                        ? 'No emergency alerts.'
-                        : 'No alerts need action right now.'}
-                    </p>
-                  </div>
-                </div>
+                <EmptyState
+                  icon={CheckCircle2}
+                  title="All clear"
+                  description={alerts.length === 0 ? 'No emergency alerts.' : 'No alerts need action right now.'}
+                  className="bg-white rounded-xl border border-gray-100 py-8"
+                />
               ) : (
                 <>
                   {(showAllAction ? needsActionList : needsActionList.slice(0, ACTION_CAP)).map(
@@ -522,36 +488,7 @@ export default function EmergencyPage() {
                     <div className="space-y-2.5 mt-3">{otherPageItems.map(renderCard)}</div>
 
                     {otherList.length > OTHER_PAGE_SIZE && (
-                      <div className="flex items-center justify-between mt-3">
-                        <p className="text-xs text-gray-400">
-                          Showing {otherStart + 1}-
-                          {Math.min(otherStart + OTHER_PAGE_SIZE, otherList.length)} of{' '}
-                          {otherList.length}
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 gap-1 text-xs"
-                            disabled={otherPage <= 1}
-                            onClick={() => setPage((p) => Math.max(1, p - 1))}
-                          >
-                            <ChevronLeft className="h-3.5 w-3.5" /> Prev
-                          </Button>
-                          <span className="text-xs text-gray-500 tabular-nums px-1">
-                            Page {otherPage} of {otherTotalPages}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 gap-1 text-xs"
-                            disabled={otherPage >= otherTotalPages}
-                            onClick={() => setPage((p) => Math.min(otherTotalPages, p + 1))}
-                          >
-                            Next <ChevronRight className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </div>
+                      <Pager page={otherPage} pageSize={OTHER_PAGE_SIZE} total={otherList.length} onPage={setPage} />
                     )}
                   </>
                 )}
@@ -584,40 +521,21 @@ export default function EmergencyPage() {
       />
 
       {/* Confirm acknowledge dialog */}
-      <Dialog
+      <ConfirmDialog
         open={!!ackTarget}
-        onOpenChange={(open) => {
-          if (!open) setAckTarget(null)
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-              Acknowledge Alert
-            </DialogTitle>
-            <DialogDescription>
-              Confirm you have reviewed and responded to this{' '}
-              <strong>{ackTarget?.type === 'sos' ? 'SOS emergency' : 'welfare check'}</strong> for{' '}
-              <strong>{ackTarget?.actorName ?? 'unknown user'}</strong>. This action is recorded in
-              the audit log.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAckTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAcknowledge}
-              disabled={acking}
-              className="text-white gap-2"
-              style={{ backgroundColor: '#10B981' }}
-            >
-              {acking ? 'Acknowledging…' : 'Confirm'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onClose={() => setAckTarget(null)}
+        title={ackTarget?.type === 'sos' ? 'Acknowledge this SOS emergency?' : 'Acknowledge this welfare check?'}
+        description={
+          <>
+            Confirm you have reviewed and responded to this{' '}
+            <strong>{ackTarget?.type === 'sos' ? 'SOS emergency' : 'welfare check'}</strong> for{' '}
+            <strong>{ackTarget?.actorName ?? 'unknown user'}</strong>. This action is recorded in the audit log.
+          </>
+        }
+        confirmLabel="Acknowledge alert"
+        onConfirm={() => handleAcknowledge()}
+        loading={acking}
+      />
     </PageGuard>
   )
 }
@@ -840,14 +758,12 @@ function EmergencyDetailDrawer({
                 This alert is not linked to a ride or job.
               </div>
             ) : loadingBooking ? (
-              <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 rounded-lg p-3">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading booking…
+              <div className="space-y-1.5 bg-gray-50 rounded-lg p-3">
+                <div className="h-3 w-32 bg-gray-200 rounded animate-pulse" />
+                <div className="h-3 w-48 bg-gray-200 rounded animate-pulse" />
               </div>
             ) : bookingError ? (
-              <div className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg p-3">
-                {bookingError}
-              </div>
+              <ErrorState compact title="Could not load this booking" detail={bookingError} />
             ) : ride ? (
               <RideDetailCard ride={ride} bookingId={alert.bookingId} />
             ) : job ? (
@@ -903,11 +819,7 @@ function EmergencyDetailDrawer({
           {/* Action */}
           {isSos && !isAck && (
             <div className="pt-2 border-t border-gray-100">
-              <Button
-                onClick={() => onAcknowledge(alert)}
-                className="w-full gap-2 text-white"
-                style={{ backgroundColor: '#EF4444' }}
-              >
+              <Button onClick={() => onAcknowledge(alert)} variant="destructive" className="w-full gap-2">
                 <CheckCircle2 className="h-4 w-4" /> Acknowledge this alert
               </Button>
               <p className="text-[10px] text-gray-400 text-center mt-2">
@@ -917,11 +829,7 @@ function EmergencyDetailDrawer({
           )}
           {!isSos && !isAck && (
             <div className="pt-2 border-t border-gray-100">
-              <Button
-                onClick={() => onResolveWelfare(alert)}
-                className="w-full gap-2 text-white"
-                style={{ backgroundColor: '#F5A623' }}
-              >
+              <Button onClick={() => onResolveWelfare(alert)} variant="brand" className="w-full gap-2">
                 <UserCheck className="h-4 w-4" /> Resolve welfare check
               </Button>
               <p className="text-[10px] text-gray-400 text-center mt-2">
@@ -957,7 +865,7 @@ function RideDetailCard({ ride, bookingId }: { ride: RideDetail; bookingId: stri
           onClick={(e) => e.stopPropagation()}
           className="font-mono text-xs text-orange-600 hover:underline"
         >
-          #{bookingId.slice(0, 8)}…
+          #{bookingId.slice(0, 8)}...
         </a>
         <StatusBadge status={ride.status} />
       </div>
@@ -1009,7 +917,7 @@ function JobDetailCard({ job, bookingId }: { job: JobDetail; bookingId: string }
           onClick={(e) => e.stopPropagation()}
           className="font-mono text-xs text-orange-600 hover:underline"
         >
-          #{bookingId.slice(0, 8)}…
+          #{bookingId.slice(0, 8)}...
         </a>
         <StatusBadge status={job.status} />
       </div>
@@ -1081,29 +989,25 @@ function WelfareResolveDialog({
   onClose: () => void
   onResolved: () => void
 }) {
-  const [note, setNote] = useState('')
   const [contactMethod, setContactMethod] = useState<WelfareContactMethod>('phone')
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
-    setNote('')
     setContactMethod('phone')
     setErrorMsg(null)
   }, [alert?.id])
 
   if (!alert) return null
 
-  const valid = note.trim().length >= 10
-
-  async function handleSubmit() {
+  async function handleSubmit(reason: string) {
     if (!alert?.welfareCheck) return
     setErrorMsg(null)
     setSubmitting(true)
     try {
       // The welfare-check id is in alert.id — backend unions welfare_checks
       // into /admin/emergency, and our resolve endpoint takes that id directly.
-      await resolveWelfareCheck(alert.id, { note: note.trim(), contactMethod })
+      await resolveWelfareCheck(alert.id, { note: reason.trim(), contactMethod })
       onResolved()
     } catch (err) {
       if (err instanceof ApiError && err.code === 'WELFARE_CHECK_ALREADY_RESOLVED') {
@@ -1117,131 +1021,79 @@ function WelfareResolveDialog({
   }
 
   return (
-    <Dialog
+    <ConfirmDialog
       open={!!alert}
-      onOpenChange={(open) => {
-        if (!open && !submitting) onClose()
-      }}
+      onClose={onClose}
+      title="Resolve this welfare check?"
+      description="Confirm the artisan is safe. This is logged with your admin id, a note, and the contact method."
+      confirmLabel="Resolve welfare check"
+      onConfirm={handleSubmit}
+      loading={submitting}
+      error={errorMsg}
+      requireReason
+      minReason={10}
+      reasonLabel="Note (kept in the audit log)"
+      reasonPlaceholder="e.g. Reached artisan by phone - they finished the job and forgot to mark it done. Reminded them to update status."
     >
-      <DialogContent className="max-w-md p-0 overflow-hidden gap-0">
-        {/* Header */}
-        <DialogHeader className="px-5 pt-5 pb-4 border-b border-gray-100 space-y-0">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
-              <HeartPulse className="h-5 w-5 text-amber-600" />
-            </div>
-            <div className="min-w-0 text-left">
-              <DialogTitle className="text-base text-gray-900">Resolve welfare check</DialogTitle>
-              <DialogDescription className="text-xs text-gray-500 mt-0.5">
-                Confirm the artisan is safe. Logged with your admin id, note, and contact method.
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
-
-        <div className="px-5 py-4 space-y-4">
-          {/* Who / when / where */}
-          <div className="rounded-lg bg-gray-50 px-3 py-2.5">
-            <p className="text-sm font-semibold text-gray-800 truncate">
-              {alert.actorName ?? 'Unknown artisan'}
-            </p>
-            <p className="text-xs text-gray-400 mt-0.5 flex items-center flex-wrap gap-x-3 gap-y-0.5">
-              <span className="capitalize">{alert.actorRole}</span>
-              <span className="inline-flex items-center gap-1">
-                <Clock className="h-3 w-3" /> raised {timeAgo(alert.occurredAt)}
-              </span>
-              {alert.locationDescription && (
-                <span className="inline-flex items-center gap-1 min-w-0">
-                  <MapPin className="h-3 w-3 shrink-0" />{' '}
-                  <span className="truncate">{alert.locationDescription}</span>
-                </span>
-              )}
-            </p>
-          </div>
-
-          {/* Contact method */}
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              How did you verify?
-            </Label>
-            <div className="space-y-2">
-              {METHOD_OPTIONS.map(({ key, icon: Icon, label, desc }) => {
-                const selected = contactMethod === key
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setContactMethod(key)}
-                    className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                      selected ? 'border-gray-300 bg-gray-50' : 'border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                        selected ? 'bg-gray-200 text-gray-700' : 'bg-gray-100 text-gray-500'
-                      }`}
-                    >
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800">{label}</p>
-                      <p className="text-xs text-gray-400">{desc}</p>
-                    </div>
-                    <span
-                      className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                        selected ? 'border-gray-800 bg-gray-800' : 'border-gray-300'
-                      }`}
-                    >
-                      {selected && <Check className="h-2.5 w-2.5 text-white" />}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Note */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              Note <span className="font-normal normal-case text-gray-400">(audit-logged)</span>
-            </Label>
-            <Textarea
-              rows={3}
-              placeholder="e.g. Reached artisan by phone - they finished the job and forgot to mark it done. Reminded them to update status."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="text-sm resize-none"
-            />
-            <p className={`text-[11px] ${valid ? 'text-emerald-600' : 'text-gray-400'}`}>
-              {valid
-                ? 'Looks good'
-                : `Minimum 10 characters - ${Math.max(0, 10 - note.trim().length)} more needed`}
-            </p>
-          </div>
-
-          {errorMsg && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-              <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-700">{errorMsg}</p>
-            </div>
+      {/* Who / when / where */}
+      <div className="rounded-lg bg-gray-50 px-3 py-2.5">
+        <p className="text-sm font-semibold text-gray-800 truncate">
+          {alert.actorName ?? 'Unknown artisan'}
+        </p>
+        <p className="text-xs text-gray-400 mt-0.5 flex items-center flex-wrap gap-x-3 gap-y-0.5">
+          <span className="capitalize">{alert.actorRole}</span>
+          <span className="inline-flex items-center gap-1">
+            <Clock className="h-3 w-3" /> raised {timeAgo(alert.occurredAt)}
+          </span>
+          {alert.locationDescription && (
+            <span className="inline-flex items-center gap-1 min-w-0">
+              <MapPin className="h-3 w-3 shrink-0" />{' '}
+              <span className="truncate">{alert.locationDescription}</span>
+            </span>
           )}
-        </div>
+        </p>
+      </div>
 
-        <DialogFooter className="px-5 py-4 border-t border-gray-100">
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!valid || submitting}
-            onClick={handleSubmit}
-            className="text-white gap-2"
-            style={{ backgroundColor: '#10B981' }}
-          >
-            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Confirm resolved
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {/* Contact method */}
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          How did you verify?
+        </Label>
+        <div className="space-y-2">
+          {METHOD_OPTIONS.map(({ key, icon: Icon, label, desc }) => {
+            const selected = contactMethod === key
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setContactMethod(key)}
+                className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                  selected ? 'border-gray-300 bg-gray-50' : 'border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    selected ? 'bg-gray-200 text-gray-700' : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800">{label}</p>
+                  <p className="text-xs text-gray-400">{desc}</p>
+                </div>
+                <span
+                  className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                    selected ? 'border-gray-800 bg-gray-800' : 'border-gray-300'
+                  }`}
+                >
+                  {selected && <Check className="h-2.5 w-2.5 text-white" />}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </ConfirmDialog>
   )
 }

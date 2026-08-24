@@ -2,33 +2,33 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, IdCard, RefreshCw, Search, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle, ExternalLink, IdCard, XCircle } from 'lucide-react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { VerifyClientKycDialog } from '@/components/users/verify-client-kyc-dialog'
+import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
+import { PageSkeleton } from '@/components/common/load-state'
+import { ErrorState } from '@/components/common/error-state'
+import { EmptyState } from '@/components/common/empty-state'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { formatDayShort, timeAgo, formatDateTime } from '@/lib/format-date'
 import { getClientKycQueue, reviewClientKyc, type ClientKycQueueItem } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 
-function fmtSubmitted(iso: string | null) {
+type Decision = 'approve' | 'reject'
+
+function submittedCaption(iso: string | null) {
   if (!iso) return '-'
-  const d = new Date(iso)
-  const diffH = (Date.now() - d.getTime()) / 36e5
-  const ageLabel =
-    diffH < 1   ? `${Math.round(diffH * 60)}m ago` :
-    diffH < 24  ? `${Math.round(diffH)}h ago` :
-                  `${Math.round(diffH / 24)}d ago`
-  return `${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} - ${ageLabel}`
+  return `${formatDayShort(iso)} - ${timeAgo(iso)}`
 }
 
-function ageBadgeColour(iso: string | null) {
+// Submissions waiting 24h+ get a heavier tone so an admin can spot the oldest
+// backlog at a glance; everything else reads at the same neutral weight.
+function ageTone(iso: string | null) {
   if (!iso) return 'text-gray-400'
   const diffH = (Date.now() - new Date(iso).getTime()) / 36e5
-  if (diffH >= 24) return 'text-gray-600 font-semibold'
-  if (diffH >= 6)  return 'text-gray-500'
-  return 'text-gray-500'
+  return diffH >= 24 ? 'text-gray-600 font-semibold' : 'text-gray-500'
 }
 
 export default function ClientKycQueuePage() {
@@ -38,11 +38,9 @@ export default function ClientKycQueuePage() {
   const [search, setSearch] = useState('')
 
   const [selected, setSelected] = useState<ClientKycQueueItem | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [action, setAction] = useState<'approve' | 'reject'>('approve')
-  const [reason, setReason] = useState('')
+  const [decision, setDecision] = useState<Decision>('approve')
   const [submitting, setSubmitting] = useState(false)
-  const [dialogError, setDialogError] = useState('')
+  const [submitError, setSubmitError] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -51,7 +49,7 @@ export default function ClientKycQueuePage() {
       const res = await getClientKycQueue()
       setItems(res)
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to load KYC queue')
+      setError(e instanceof ApiError ? e.message : 'Failed to load the queue.')
     } finally {
       setLoading(false)
     }
@@ -60,29 +58,23 @@ export default function ClientKycQueuePage() {
   useEffect(() => { load() }, [load])
   useAutoRefresh(load)
 
-  function openReview(item: ClientKycQueueItem) {
+  function openReview(item: ClientKycQueueItem, initialDecision: Decision = 'approve') {
     setSelected(item)
-    setAction('approve')
-    setReason('')
-    setDialogError('')
-    setDialogOpen(true)
+    setDecision(initialDecision)
+    setSubmitError('')
   }
 
-  async function handleConfirm() {
+  async function handleConfirm(reason: string) {
     if (!selected) return
-    if (action === 'reject' && reason.trim().length < 5) {
-      setDialogError('Reason must be at least 5 characters when rejecting.')
-      return
-    }
     setSubmitting(true)
-    setDialogError('')
+    setSubmitError('')
     try {
-      await reviewClientKyc(selected.clientId, action, action === 'reject' ? reason.trim() : (reason.trim() || undefined))
-      setDialogOpen(false)
-      // Optimistically remove the item from the queue
+      await reviewClientKyc(selected.clientId, decision, decision === 'reject' ? reason : (reason || undefined))
+      setSelected(null)
+      // Optimistically remove the item from the queue.
       setItems(prev => prev.filter(i => i.clientId !== selected.clientId))
     } catch (err) {
-      setDialogError(err instanceof ApiError ? err.message : 'Action failed.')
+      setSubmitError(err instanceof ApiError ? err.message : 'Action failed.')
     } finally {
       setSubmitting(false)
     }
@@ -102,71 +94,33 @@ export default function ClientKycQueuePage() {
     <PageGuard permission="view_verifications">
       <div>
         <PageHeader
-          title="Client KYC Queue"
-          subtitle="Ghana Card submissions awaiting admin review (oldest first)"
+          title="Client ID checks"
+          subtitle="Ghana Card checks for cash-paying clients (KYC)"
           actions={
-            <div className="flex items-center gap-2">
-              <Link href="/users/clients">
-                <Button variant="outline" size="sm" className="gap-1.5">
-                  <ArrowLeft className="h-3.5 w-3.5" /> Back to Clients
-                </Button>
-              </Link>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={load} disabled={loading}>
-                <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            <Link href="/users/clients">
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <ArrowLeft className="h-3.5 w-3.5" /> Back to clients
               </Button>
-            </div>
+            </Link>
           }
         />
 
-        {/* Toolbar */}
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <div className="relative flex-1 min-w-48 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-            <Input
-              placeholder="Search by name, phone, or email…"
-              className="pl-9"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="ml-auto flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
-            <IdCard className="h-3.5 w-3.5 text-gray-600" />
-            <span className="text-sm font-semibold text-gray-700">{items.length}</span>
-            <span className="text-xs text-gray-500">pending review</span>
-          </div>
-        </div>
+        <FilterBar onRefresh={load} refreshing={loading} meta={`${items.length} pending - oldest first`}>
+          <FilterSearch value={search} onChange={setSearch} placeholder="Search by name, phone, or email" />
+        </FilterBar>
 
-        {error && (
-          <div className="flex items-center gap-2 bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3 mb-4">
-            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
-          </div>
-        )}
-
-        {/* Cards grid */}
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="aspect-[16/10] bg-gray-100 animate-pulse" />
-                <div className="px-4 py-3 space-y-2">
-                  <div className="h-4 bg-gray-100 rounded animate-pulse w-2/3" />
-                  <div className="h-3 bg-gray-100 rounded animate-pulse w-1/2" />
-                </div>
-              </div>
-            ))}
-          </div>
+        {error ? (
+          <ErrorState title="Could not load the queue" detail={error} onRetry={load} />
+        ) : loading ? (
+          <PageSkeleton variant="cards" />
         ) : filtered.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm p-12 text-center">
-            <CheckCircle className="h-10 w-10 text-emerald-300 mx-auto mb-3" />
-            <p className="text-sm font-semibold text-gray-700">
-              {items.length === 0 ? 'Nothing to review' : 'No matches'}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              {items.length === 0
-                ? 'All client Ghana Card submissions have been processed.'
-                : 'Try adjusting your search.'}
-            </p>
-          </div>
+          <EmptyState
+            icon={CheckCircle}
+            title={items.length === 0 ? 'Nothing to review' : 'No matches'}
+            description={items.length === 0
+              ? 'All client Ghana Card checks have been processed.'
+              : 'Try a different search.'}
+          />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map(item => (
@@ -175,7 +129,7 @@ export default function ClientKycQueuePage() {
                 <button
                   type="button"
                   onClick={() => openReview(item)}
-                  className="aspect-[16/10] bg-gray-50 border-b border-gray-100 overflow-hidden flex items-center justify-center group hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-300"
+                  className="aspect-[16/10] bg-gray-50 border-b border-gray-100 overflow-hidden flex items-center justify-center group hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
                 >
                   {item.ghanaCardImageUrl ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
@@ -202,16 +156,17 @@ export default function ClientKycQueuePage() {
                         <p className="text-[11px] text-gray-400 truncate">{item.email}</p>
                       )}
                     </div>
-                    <span className={`text-[11px] whitespace-nowrap shrink-0 ${ageBadgeColour(item.submittedAt)}`}>
-                      {fmtSubmitted(item.submittedAt)}
+                    <span className={`text-[11px] whitespace-nowrap shrink-0 ${ageTone(item.submittedAt)}`}>
+                      {submittedCaption(item.submittedAt)}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2 mt-3">
                     <Button
                       size="sm"
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
-                      onClick={() => { setSelected(item); setAction('approve'); setReason(''); setDialogError(''); setDialogOpen(true) }}
+                      variant="brand"
+                      className="flex-1 gap-1.5"
+                      onClick={() => openReview(item, 'approve')}
                     >
                       <CheckCircle className="h-3.5 w-3.5" /> Approve
                     </Button>
@@ -219,7 +174,7 @@ export default function ClientKycQueuePage() {
                       size="sm"
                       variant="outline"
                       className="flex-1 border-red-200 text-red-600 hover:bg-red-50 gap-1.5"
-                      onClick={() => { setSelected(item); setAction('reject'); setReason(''); setDialogError(''); setDialogOpen(true) }}
+                      onClick={() => openReview(item, 'reject')}
                     >
                       <XCircle className="h-3.5 w-3.5" /> Reject
                     </Button>
@@ -231,20 +186,74 @@ export default function ClientKycQueuePage() {
         )}
       </div>
 
-      <VerifyClientKycDialog
-        open={dialogOpen}
-        fullName={selected?.fullName ?? null}
-        ghanaCardImageUrl={selected?.ghanaCardImageUrl ?? null}
-        submittedAt={selected?.submittedAt ?? null}
-        action={action}
-        reason={reason}
+      <ConfirmDialog
+        open={!!selected}
+        onClose={() => { if (!submitting) setSelected(null) }}
+        title={decision === 'approve'
+          ? `Approve ${selected?.fullName ?? 'this'}'s Ghana Card?`
+          : `Reject ${selected?.fullName ?? 'this'}'s Ghana Card?`}
+        description={decision === 'approve'
+          ? 'The client is verified and can pay with cash. This is recorded in the audit log.'
+          : 'The client keeps their current status and is asked to resubmit. This is recorded in the audit log.'}
+        confirmLabel={decision === 'approve' ? 'Approve card' : 'Reject card'}
+        destructive={decision === 'reject'}
+        requireReason={decision === 'reject'}
+        minReason={5}
+        reasonLabel={decision === 'reject' ? 'Reason (shown to the client)' : 'Reason (kept in the audit log)'}
+        reasonPlaceholder={decision === 'approve'
+          ? 'Card verified - name and number match (optional).'
+          : 'e.g. Image is blurry. Please re-upload a clearer photo of the front.'}
         loading={submitting}
-        error={dialogError}
-        onActionChange={a => { setAction(a); setDialogError('') }}
-        onReasonChange={r => { setReason(r); setDialogError('') }}
+        error={submitError || null}
         onConfirm={handleConfirm}
-        onClose={() => { if (!submitting) setDialogOpen(false) }}
-      />
+      >
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Ghana Card</p>
+            {selected?.submittedAt && (
+              <p className="text-[11px] text-gray-400">Submitted {formatDateTime(selected.submittedAt)}</p>
+            )}
+          </div>
+          {selected?.ghanaCardImageUrl ? (
+            <div className="rounded-lg border border-gray-100 bg-gray-50 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={selected.ghanaCardImageUrl} alt="Ghana Card" className="w-full max-h-56 object-contain bg-gray-50" />
+              <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-end">
+                <a
+                  href={selected.ghanaCardImageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                >
+                  Open full size <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-1.5 py-8 text-center bg-gray-50 rounded-lg">
+              <IdCard className="h-6 w-6 text-gray-300" />
+              <p className="text-xs text-gray-400">No Ghana Card image uploaded</p>
+            </div>
+          )}
+          <div className="flex gap-2">
+            {(['approve', 'reject'] as const).map(d => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDecision(d)}
+                className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium border transition-colors ${
+                  decision === d
+                    ? 'bg-gray-100 text-gray-800 border-gray-300'
+                    : 'text-gray-500 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {d === 'approve' ? <CheckCircle className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+                {d === 'approve' ? 'Approve' : 'Reject'}
+              </button>
+            ))}
+          </div>
+        </div>
+      </ConfirmDialog>
     </PageGuard>
   )
 }
