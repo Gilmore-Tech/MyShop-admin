@@ -1,12 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
+import { FormDialog } from '@/components/common/form-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -182,11 +178,10 @@ export function CampaignFormDialog({
     }))
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleSubmit() {
     setError('')
 
-    // The audience is authoritative over the type — stale Select emissions can
+    // The audience is authoritative over the type - stale Select emissions can
     // never produce an illegal pair (see effectiveCampaignType).
     const campaignType = effectiveCampaignType(form.audience, form.campaignType)
 
@@ -270,300 +265,284 @@ export function CampaignFormDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={o => { if (!o && !saving) onClose() }}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? `Edit campaign: ${existing!.name}` : 'New promo campaign'}</DialogTitle>
-          <DialogDescription>
-            {isEdit
-              ? existing!.status === 'pending_approval'
-                ? 'Editing a campaign that is awaiting approval returns it to draft — it must be re-submitted.'
-                : 'Campaigns stay in draft until submitted for maker-checker approval.'
-              : 'Campaigns apply automatically at checkout — clients never type a code. A different admin must approve before it goes live.'}
-          </DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={open}
+      onClose={onClose}
+      title={isEdit ? `Edit campaign: ${existing!.name}` : 'New promo campaign'}
+      description={isEdit
+        ? existing!.status === 'pending_approval'
+          ? 'Editing a campaign that is awaiting approval returns it to draft - it must be re-submitted.'
+          : 'Campaigns stay in draft until submitted for approval from a different admin.'
+        : 'Campaigns apply automatically at checkout - clients never type a code. A different admin must approve before it goes live.'}
+      submitLabel={isEdit ? 'Save draft' : 'Create draft'}
+      onSubmit={handleSubmit}
+      size="lg"
+      loading={saving}
+      error={error || null}
+    >
+      {/* Audience */}
+      <div className="space-y-1.5">
+        <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Audience</Label>
+        <Select value={form.audience} onValueChange={v => setAudience(v as PromoCampaignAudience)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="client">Client</SelectItem>
+            <SelectItem value="driver">Drivers</SelectItem>
+            <SelectItem value="artisan">Artisans</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-gray-400">
+          {isProvider
+            ? 'Provider campaigns forgive a share of the platform commission instead of discounting the fare.'
+            : 'Client campaigns discount the fare at checkout.'}
+        </p>
+      </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 pt-1">
-          {/* Audience */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Audience</Label>
-            <Select value={form.audience} onValueChange={v => setAudience(v as PromoCampaignAudience)}>
+      {/* Name */}
+      <div className="space-y-1.5">
+        <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</Label>
+        <Input
+          value={form.name}
+          onChange={e => set('name', e.target.value)}
+          placeholder="Kumasi launch week"
+          maxLength={120}
+        />
+      </div>
+
+      {/* Description + terms */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</Label>
+          <Textarea
+            rows={2}
+            value={form.description}
+            onChange={e => set('description', e.target.value)}
+            placeholder="Internal note shown to admins."
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Terms shown to {isProvider ? 'providers' : 'clients'}
+          </Label>
+          <Textarea
+            rows={2}
+            value={form.termsText}
+            onChange={e => set('termsText', e.target.value)}
+            placeholder={isProvider
+              ? 'e.g. Relief applies to the platform commission only.'
+              : 'e.g. Discount applies to the pre-promo fare.'}
+          />
+        </div>
+      </div>
+
+      {/* Type + value + cap */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</Label>
+          {isProvider ? (
+            // Static field, deliberately not a Select: swapping a Radix
+            // Select's item list mid-render can re-emit the previous
+            // value and overwrite the commission_relief that
+            // setAudience() just wrote (seen as PROMO_AUDIENCE_TYPE_MISMATCH
+            // when switching Client -> Drivers).
+            <div className="flex h-9 items-center rounded-md border border-gray-200 bg-gray-50 px-3 text-sm text-gray-600">
+              Commission relief
+            </div>
+          ) : (
+            <Select
+              value={form.campaignType === 'commission_relief' ? 'percentage_discount' : form.campaignType}
+              onValueChange={v => set('campaignType', v as PromoCampaignType)}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="client">Client</SelectItem>
-                <SelectItem value="driver">Drivers</SelectItem>
-                <SelectItem value="artisan">Artisans</SelectItem>
+                <SelectItem value="percentage_discount">% off</SelectItem>
+                <SelectItem value="fixed_discount">Flat amount off</SelectItem>
               </SelectContent>
             </Select>
+          )}
+          {isProvider && (
+            <p className="text-[10px] text-gray-400">Provider campaigns always forgive commission.</p>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            {isRelief ? 'Commission relief % (1-100)' : isPercent ? 'Percent off (1-100)' : 'Amount off (GHS)'}
+          </Label>
+          <Input
+            type="number"
+            min={form.campaignType === 'fixed_discount' ? 0.01 : 1}
+            max={form.campaignType === 'fixed_discount' ? undefined : 100}
+            step={form.campaignType === 'fixed_discount' ? 0.01 : 1}
+            value={form.discountValue}
+            onChange={e => set('discountValue', e.target.value)}
+          />
+        </div>
+        {(isPercent || isRelief) && (
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              {isRelief ? 'Relief cap (GHS)' : 'Max discount (GHS)'}
+            </Label>
+            <Input
+              type="number"
+              min={0.01}
+              step={0.01}
+              placeholder={isRelief ? 'Uncapped' : undefined}
+              value={form.maxDiscountGhs}
+              onChange={e => set('maxDiscountGhs', e.target.value)}
+            />
             <p className="text-[10px] text-gray-400">
-              {isProvider
-                ? 'Provider campaigns forgive a share of the platform commission instead of discounting the fare.'
-                : 'Client campaigns discount the fare at checkout.'}
+              {isRelief ? 'Optional cap on forgone commission per booking.' : 'Required for % campaigns.'}
             </p>
           </div>
+        )}
+      </div>
 
-          {/* Name */}
+      {/* Scope + min booking. Provider audiences imply their scope
+          server-side (driver -> ride, artisan -> artisan_job), so the
+          selector is hidden and promoScope is never sent for them. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {!isProvider && (
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</Label>
-            <Input
-              value={form.name}
-              onChange={e => set('name', e.target.value)}
-              placeholder="Kumasi launch week"
-              maxLength={120}
+            <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scope</Label>
+            <Select value={form.promoScope} onValueChange={v => set('promoScope', v as PromoCampaignScope)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="both">Rides & artisan jobs</SelectItem>
+                <SelectItem value="ride">Rides only</SelectItem>
+                <SelectItem value="artisan_job">Artisan jobs only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Min booking (GHS)</Label>
+          <Input
+            type="number"
+            min={0}
+            step={0.01}
+            placeholder="No minimum"
+            value={form.minBookingGhs}
+            onChange={e => set('minBookingGhs', e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* Category targeting */}
+      {(showRideCategories || showServiceCategories) && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {showRideCategories && (
+            <CategoryPicker
+              label="Ride tiers"
+              emptyHint="All ride tiers"
+              options={rideCategories}
+              selected={form.rideCategoryIds}
+              onToggle={id => toggleCategory('rideCategoryIds', id)}
             />
-          </div>
-
-          {/* Description + terms */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</Label>
-              <Textarea
-                rows={2}
-                value={form.description}
-                onChange={e => set('description', e.target.value)}
-                placeholder="Internal note shown to admins."
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                Terms shown to {isProvider ? 'providers' : 'clients'}
-              </Label>
-              <Textarea
-                rows={2}
-                value={form.termsText}
-                onChange={e => set('termsText', e.target.value)}
-                placeholder={isProvider
-                  ? 'e.g. Relief applies to the platform commission only.'
-                  : 'e.g. Discount applies to the pre-promo fare.'}
-              />
-            </div>
-          </div>
-
-          {/* Type + value + cap */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</Label>
-              {isProvider ? (
-                // Static field, deliberately not a Select: swapping a Radix
-                // Select's item list mid-render can re-emit the previous
-                // value and overwrite the commission_relief that
-                // setAudience() just wrote (seen as PROMO_AUDIENCE_TYPE_MISMATCH
-                // when switching Client -> Drivers).
-                <div className="flex h-9 items-center rounded-md border border-gray-200 bg-gray-50 px-3 text-sm text-gray-600">
-                  Commission relief
-                </div>
-              ) : (
-                <Select
-                  value={form.campaignType === 'commission_relief' ? 'percentage_discount' : form.campaignType}
-                  onValueChange={v => set('campaignType', v as PromoCampaignType)}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="percentage_discount">% off</SelectItem>
-                    <SelectItem value="fixed_discount">Flat amount off</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-              {isProvider && (
-                <p className="text-[10px] text-gray-400">Provider campaigns always forgive commission.</p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                {isRelief ? 'Commission relief % (1-100)' : isPercent ? 'Percent off (1-100)' : 'Amount off (GHS)'}
-              </Label>
-              <Input
-                type="number"
-                min={form.campaignType === 'fixed_discount' ? 0.01 : 1}
-                max={form.campaignType === 'fixed_discount' ? undefined : 100}
-                step={form.campaignType === 'fixed_discount' ? 0.01 : 1}
-                value={form.discountValue}
-                onChange={e => set('discountValue', e.target.value)}
-              />
-            </div>
-            {(isPercent || isRelief) && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  {isRelief ? 'Relief cap (GHS)' : 'Max discount (GHS)'}
-                </Label>
-                <Input
-                  type="number"
-                  min={0.01}
-                  step={0.01}
-                  placeholder={isRelief ? 'Uncapped' : undefined}
-                  value={form.maxDiscountGhs}
-                  onChange={e => set('maxDiscountGhs', e.target.value)}
-                />
-                <p className="text-[10px] text-gray-400">
-                  {isRelief ? 'Optional cap on forgone commission per booking.' : 'Required for % campaigns.'}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Scope + min booking. Provider audiences imply their scope
-              server-side (driver -> ride, artisan -> artisan_job), so the
-              selector is hidden and promoScope is never sent for them. */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {!isProvider && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scope</Label>
-                <Select value={form.promoScope} onValueChange={v => set('promoScope', v as PromoCampaignScope)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="both">Rides & artisan jobs</SelectItem>
-                    <SelectItem value="ride">Rides only</SelectItem>
-                    <SelectItem value="artisan_job">Artisan jobs only</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Min booking (GHS)</Label>
-              <Input
-                type="number"
-                min={0}
-                step={0.01}
-                placeholder="No minimum"
-                value={form.minBookingGhs}
-                onChange={e => set('minBookingGhs', e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Category targeting */}
-          {(showRideCategories || showServiceCategories) && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {showRideCategories && (
-                <CategoryPicker
-                  label="Ride tiers"
-                  emptyHint="All ride tiers"
-                  options={rideCategories}
-                  selected={form.rideCategoryIds}
-                  onToggle={id => toggleCategory('rideCategoryIds', id)}
-                />
-              )}
-              {showServiceCategories && (
-                <CategoryPicker
-                  label="Service categories"
-                  emptyHint="All service categories"
-                  options={serviceCategories}
-                  selected={form.serviceCategoryIds}
-                  onToggle={id => toggleCategory('serviceCategoryIds', id)}
-                />
-              )}
-            </div>
           )}
-
-          {/* Targeting + usage caps */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                Max uses / {isProvider ? 'provider' : 'client'}
-              </Label>
-              <Input
-                type="number"
-                min={1}
-                placeholder="Unlimited"
-                value={form.maxUsesPerUser}
-                onChange={e => set('maxUsesPerUser', e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                Max daily uses / {isProvider ? 'provider' : 'client'}
-              </Label>
-              <Input
-                type="number"
-                min={1}
-                placeholder="Unlimited"
-                value={form.maxUsesPerUserPerDay}
-                onChange={e => set('maxUsesPerUserPerDay', e.target.value)}
-              />
-            </div>
-            <div className="flex items-end pb-2">
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <Checkbox
-                  checked={form.newClientsOnly}
-                  onCheckedChange={checked => set('newClientsOnly', checked === true)}
-                />
-                {isProvider ? 'New providers only' : 'New clients only'}
-              </label>
-            </div>
-          </div>
-
-          {/* Budget + banner priority */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Budget cap (GHS)</Label>
-              <Input
-                type="number"
-                min={0.01}
-                step={0.01}
-                placeholder="Uncapped"
-                value={form.budgetCapGhs}
-                onChange={e => set('budgetCapGhs', e.target.value)}
-              />
-              <p className="text-[10px] text-gray-400">The campaign auto-stops when total discounts reach this amount.</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Banner priority</Label>
-              <Input
-                type="number"
-                min={0}
-                step={1}
-                value={form.bannerPriority}
-                onChange={e => set('bannerPriority', e.target.value)}
-              />
-              <p className="text-[10px] text-gray-400">
-                Higher shows first in the {isProvider ? 'provider' : 'client'} app carousel.
-              </p>
-            </div>
-          </div>
-
-          {/* Window */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Starts</Label>
-              <Input
-                type="datetime-local"
-                value={form.startsAt}
-                onChange={e => set('startsAt', e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ends</Label>
-              <Input
-                type="datetime-local"
-                value={form.endsAt}
-                onChange={e => set('endsAt', e.target.value)}
-              />
-            </div>
-          </div>
-
-          {previewText && (
-            <div className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 text-xs text-orange-700">
-              <span className="font-semibold">Preview:</span> {previewText}
-            </div>
+          {showServiceCategories && (
+            <CategoryPicker
+              label="Service categories"
+              emptyHint="All service categories"
+              options={serviceCategories}
+              selected={form.serviceCategoryIds}
+              onToggle={id => toggleCategory('serviceCategoryIds', id)}
+            />
           )}
+        </div>
+      )}
 
-          {error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
-              <p className="text-xs text-red-700">{error}</p>
-            </div>
-          )}
+      {/* Targeting + usage caps */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Max uses / {isProvider ? 'provider' : 'client'}
+          </Label>
+          <Input
+            type="number"
+            min={1}
+            placeholder="Unlimited"
+            value={form.maxUsesPerUser}
+            onChange={e => set('maxUsesPerUser', e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Max daily uses / {isProvider ? 'provider' : 'client'}
+          </Label>
+          <Input
+            type="number"
+            min={1}
+            placeholder="Unlimited"
+            value={form.maxUsesPerUserPerDay}
+            onChange={e => set('maxUsesPerUserPerDay', e.target.value)}
+          />
+        </div>
+        <div className="flex items-end pb-2">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <Checkbox
+              checked={form.newClientsOnly}
+              onCheckedChange={checked => set('newClientsOnly', checked === true)}
+            />
+            {isProvider ? 'New providers only' : 'New clients only'}
+          </label>
+        </div>
+      </div>
 
-          <DialogFooter className="pt-1">
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button type="submit" disabled={saving} className="gap-2 text-white" style={{ backgroundColor: '#F5A623' }}>
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isEdit ? 'Save draft' : 'Create draft'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      {/* Budget + banner priority */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Budget cap (GHS)</Label>
+          <Input
+            type="number"
+            min={0.01}
+            step={0.01}
+            placeholder="Uncapped"
+            value={form.budgetCapGhs}
+            onChange={e => set('budgetCapGhs', e.target.value)}
+          />
+          <p className="text-[10px] text-gray-400">The campaign auto-stops when total discounts reach this amount.</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Banner priority</Label>
+          <Input
+            type="number"
+            min={0}
+            step={1}
+            value={form.bannerPriority}
+            onChange={e => set('bannerPriority', e.target.value)}
+          />
+          <p className="text-[10px] text-gray-400">
+            Higher shows first in the {isProvider ? 'provider' : 'client'} app carousel.
+          </p>
+        </div>
+      </div>
+
+      {/* Window */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Starts</Label>
+          <Input
+            type="datetime-local"
+            value={form.startsAt}
+            onChange={e => set('startsAt', e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ends</Label>
+          <Input
+            type="datetime-local"
+            value={form.endsAt}
+            onChange={e => set('endsAt', e.target.value)}
+          />
+        </div>
+      </div>
+
+      {previewText && (
+        <div className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 text-xs text-orange-700">
+          <span className="font-semibold">Preview:</span> {previewText}
+        </div>
+      )}
+    </FormDialog>
   )
 }
 
@@ -595,7 +574,7 @@ function CategoryPicker({
         )}
       </div>
       <p className="text-[10px] text-gray-400">
-        {selected.length === 0 ? `None selected — applies to ${emptyHint.toLowerCase()}.` : `${selected.length} selected.`}
+        {selected.length === 0 ? `None selected - applies to ${emptyHint.toLowerCase()}.` : `${selected.length} selected.`}
       </p>
     </div>
   )

@@ -1,12 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Award, Clock, Gift, Loader2, Search, Undo2, Users } from 'lucide-react'
+import { Award, Clock, Gift, Undo2, Users } from 'lucide-react'
 import { PageGuard } from '@/components/common/page-guard'
 import { RoleGate } from '@/components/common/role-gate'
 import { PageHeader } from '@/components/common/page-header'
+import { StatCard } from '@/components/common/stat-card'
+import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
+import { DataTable, type DataTableColumn } from '@/components/common/data-table'
+import { EmptyState } from '@/components/common/empty-state'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select,
@@ -15,14 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { useRole } from '@/hooks/use-role'
 import { formatDate } from '@/lib/format-date'
 import {
@@ -41,26 +36,6 @@ import { RewardConfigCard } from './_components/reward-config-card'
 import { ReferralAvailabilityCard } from './_components/referral-availability-card'
 import { PlatformReferralCodesPanel } from './_components/platform-referral-codes-panel'
 
-function MetricCard({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string
-  value: string
-  icon: React.ElementType
-}) {
-  return (
-    <div className="rounded-xl bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</p>
-        <Icon className="h-4 w-4 text-orange-500" />
-      </div>
-      <p className="mt-2 text-2xl font-bold text-gray-900">{value}</p>
-    </div>
-  )
-}
-
 function ExactRoleCell({
   person,
   onOpen,
@@ -70,7 +45,7 @@ function ExactRoleCell({
 }) {
   return (
     <button className="text-left group" onClick={onOpen} title="View exact-role funnel">
-      <p className="text-sm font-medium text-gray-900 group-hover:text-orange-600">
+      <p className="text-sm font-medium text-gray-900 group-hover:text-primary">
         {person.fullName ?? 'Unknown'}
       </p>
       <RoleChips roles={[person.role]} className="mt-1" />
@@ -130,7 +105,69 @@ export default function ReferralsPage() {
     void load()
   }, [load])
 
-  const totalPages = Math.max(1, Math.ceil(total / limit))
+  const columns: DataTableColumn<ReferralListItem>[] = [
+    { key: 'code', header: 'Code', render: item => <span className="font-mono text-xs">{item.referralCode}</span> },
+    {
+      key: 'referrer', header: 'Referrer role',
+      render: item => (
+        <ExactRoleCell
+          person={item.referrer}
+          onOpen={() =>
+            setDrilldown({
+              role: item.referrer.role,
+              roleAccountId: item.referrer.roleAccountId,
+              name: item.referrer.fullName,
+            })
+          }
+        />
+      ),
+    },
+    {
+      key: 'referee', header: 'Referred role',
+      render: item => (
+        <ExactRoleCell
+          person={item.referee}
+          onOpen={() =>
+            setDrilldown({
+              role: item.referee.role,
+              roleAccountId: item.referee.roleAccountId,
+              name: item.referee.fullName,
+            })
+          }
+        />
+      ),
+    },
+    { key: 'status', header: 'Status', render: item => <ReferralStatusBadge awarded={item.bonusAwarded} /> },
+    { key: 'reward', header: 'Reward', render: item => formatPoints(item.bonusPoints) },
+    {
+      key: 'created', header: 'Created', responsiveClassName: 'hidden md:table-cell',
+      render: item => <span className="text-sm text-gray-500">{formatDate(item.createdAt)}</span>,
+    },
+    {
+      key: 'action', header: '', align: 'right',
+      render: item => canManage ? (
+        <RoleGate permission="manage_referrals">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setActionTarget({
+                referral: item,
+                action: item.bonusAwarded ? 'void' : 'award',
+              })
+            }
+          >
+            {item.bonusAwarded ? (
+              <Undo2 className="mr-1 h-3.5 w-3.5" />
+            ) : (
+              <Gift className="mr-1 h-3.5 w-3.5" />
+            )}
+            {item.bonusAwarded ? 'Void' : 'Award'}
+          </Button>
+        </RoleGate>
+      ) : null,
+    },
+  ]
 
   return (
     <PageGuard permission="view_referrals">
@@ -147,201 +184,69 @@ export default function ReferralsPage() {
           </TabsList>
 
           <TabsContent value="role-referrals" className="mt-4">
+            {!error && (
+              <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <StatCard label="Total referrals" value={metrics?.totalReferrals ?? 0} icon={Gift} loading={loading} />
+                <StatCard label="Awarded" value={metrics?.awardedCount ?? 0} icon={Award} loading={loading} />
+                <StatCard label="Pending" value={metrics?.pendingCount ?? 0} icon={Clock} loading={loading} />
+                <StatCard label="Conversion" value={`${(metrics?.conversionRatePct ?? 0).toFixed(1)}%`} icon={Users} loading={loading} />
+              </div>
+            )}
 
-        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <MetricCard
-            label="Total referrals"
-            value={loading ? '…' : String(metrics?.totalReferrals ?? 0)}
-            icon={Gift}
-          />
-          <MetricCard
-            label="Awarded"
-            value={loading ? '…' : String(metrics?.awardedCount ?? 0)}
-            icon={Award}
-          />
-          <MetricCard
-            label="Pending"
-            value={loading ? '…' : String(metrics?.pendingCount ?? 0)}
-            icon={Clock}
-          />
-          <MetricCard
-            label="Conversion"
-            value={loading ? '…' : `${(metrics?.conversionRatePct ?? 0).toFixed(1)}%`}
-            icon={Users}
-          />
-        </div>
-
-        <div className="mb-5 grid gap-5 lg:grid-cols-2">
-          <ReferralAvailabilityCard />
-          <RewardConfigCard />
-        </div>
-
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[240px] flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <Input
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(1)
-              }}
-              placeholder="Search role name or code"
-              className="bg-white pl-9"
-            />
-          </div>
-          <Select
-            value={status}
-            onValueChange={(value) => {
-              setStatus(value as ReferralStatusFilter)
-              setPage(1)
-            }}
-          >
-            <SelectTrigger className="w-40 bg-white">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="awarded">Awarded</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Refresh
-          </Button>
-        </div>
-
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        <div className="overflow-hidden rounded-xl bg-white shadow-sm">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50">
-                <TableHead>Code</TableHead>
-                <TableHead>Referrer role</TableHead>
-                <TableHead>Referred role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Reward</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-12 text-center text-gray-400">
-                    <Loader2 className="mx-auto h-5 w-5 animate-spin" />
-                  </TableCell>
-                </TableRow>
-              ) : items.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-12 text-center text-gray-400">
-                    No exact-role referrals match this view.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-mono text-xs">{item.referralCode}</TableCell>
-                    <TableCell>
-                      <ExactRoleCell
-                        person={item.referrer}
-                        onOpen={() =>
-                          setDrilldown({
-                            role: item.referrer.role,
-                            roleAccountId: item.referrer.roleAccountId,
-                            name: item.referrer.fullName,
-                          })
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <ExactRoleCell
-                        person={item.referee}
-                        onOpen={() =>
-                          setDrilldown({
-                            role: item.referee.role,
-                            roleAccountId: item.referee.roleAccountId,
-                            name: item.referee.fullName,
-                          })
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <ReferralStatusBadge awarded={item.bonusAwarded} />
-                    </TableCell>
-                    <TableCell>{formatPoints(item.bonusPoints)}</TableCell>
-                    <TableCell className="text-sm text-gray-500">
-                      {formatDate(item.createdAt)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {canManage && (
-                        <RoleGate permission="manage_referrals">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              setActionTarget({
-                                referral: item,
-                                action: item.bonusAwarded ? 'void' : 'award',
-                              })
-                            }
-                          >
-                            {item.bonusAwarded ? (
-                              <Undo2 className="mr-1 h-3.5 w-3.5" />
-                            ) : (
-                              <Gift className="mr-1 h-3.5 w-3.5" />
-                            )}
-                            {item.bonusAwarded ? 'Void' : 'Award'}
-                          </Button>
-                        </RoleGate>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-          <div className="flex items-center justify-between border-t bg-gray-50 px-4 py-3">
-            <p className="text-xs text-gray-500">{total} exact-role referral(s)</p>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={page <= 1 || loading}
-                onClick={() => setPage((current) => current - 1)}
-              >
-                Previous
-              </Button>
-              <span className="text-xs text-gray-500">
-                {page} / {totalPages}
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={page >= totalPages || loading}
-                onClick={() => setPage((current) => current + 1)}
-              >
-                Next
-              </Button>
+            <div className="mb-5 grid gap-5 lg:grid-cols-2">
+              <ReferralAvailabilityCard />
+              <RewardConfigCard />
             </div>
-          </div>
-        </div>
 
-        <ReferralActionDialog
-          referral={actionTarget?.referral ?? null}
-          action={actionTarget?.action ?? null}
-          onClose={() => setActionTarget(null)}
-          onDone={() => {
-            setActionTarget(null)
-            void load()
-          }}
-        />
-        <ReferralUserSheet target={drilldown} onClose={() => setDrilldown(null)} />
+            <FilterBar
+              onRefresh={() => void load()}
+              refreshing={loading}
+              meta={`${total} exact-role referral${total === 1 ? '' : 's'}`}
+            >
+              <FilterSearch
+                value={search}
+                onChange={value => { setSearch(value); setPage(1) }}
+                placeholder="Search role name or code"
+              />
+              <Select
+                value={status}
+                onValueChange={(value) => {
+                  setStatus(value as ReferralStatusFilter)
+                  setPage(1)
+                }}
+              >
+                <SelectTrigger className="w-40 bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="awarded">Awarded</SelectItem>
+                </SelectContent>
+              </Select>
+            </FilterBar>
+
+            <DataTable<ReferralListItem>
+              columns={columns}
+              rows={items}
+              rowKey={item => item.id}
+              loading={loading}
+              error={error}
+              onRetry={() => void load()}
+              empty={<EmptyState title="No exact-role referrals match this view." />}
+              pagination={{ page, pageSize: limit, total, onPage: setPage }}
+            />
+
+            <ReferralActionDialog
+              referral={actionTarget?.referral ?? null}
+              action={actionTarget?.action ?? null}
+              onClose={() => setActionTarget(null)}
+              onDone={() => {
+                setActionTarget(null)
+                void load()
+              }}
+            />
+            <ReferralUserSheet target={drilldown} onClose={() => setDrilldown(null)} />
           </TabsContent>
 
           <TabsContent value="platform-codes" className="mt-4">
