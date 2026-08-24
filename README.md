@@ -20,6 +20,24 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Testing
+
+```bash
+npm test                 # every contract test under tests/ (Node's built-in runner)
+npm run test:<name>      # one file, e.g. npm run test:commission-ledger
+npm run lint && npm run build
+```
+
+## Insights and reports
+
+The stakeholder-facing reports live under **Insights** in the sidebar (`/insights/revenue`,
+`/insights/trips`, `/insights/leaderboards`), **Operations** (`/online-providers`) and
+**Payments** (`/payments/commission-ledger`). Each page reads one endpoint through a
+tolerant normaliser in `lib/*-contract.ts`, shares the kit in `components/common/`
+(`StatCard`, `PeriodControls`, `ReportTable`, `LeaderboardList`, `VerticalTabs`), and
+shows a "not yet available" state when the backing endpoint is not deployed. See
+`docs/admin-module.md` for the endpoint registry and the revenue definitions.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

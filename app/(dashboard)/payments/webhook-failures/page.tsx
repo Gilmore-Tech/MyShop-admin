@@ -1,12 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
 import { AlertTriangle, BellRing, Loader2, RefreshCw } from 'lucide-react'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PaymentsTabs } from '@/components/payments/payments-tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ApiError } from '@/lib/api-client'
 import { listWebhookFailures, type WebhookFailure } from '@/lib/api'
@@ -59,15 +58,7 @@ export default function WebhookFailuresPage() {
       <div>
         <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
 
-        <Tabs defaultValue="webhook-failures" className="mb-6">
-          <TabsList className="bg-white">
-            <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Payment Activity</Link></TabsTrigger>
-            <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Money Summary</Link></TabsTrigger>
-            <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Provider Payments</Link></TabsTrigger>
-            <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Money Owed</Link></TabsTrigger>
-            <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Payment Errors</Link></TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <PaymentsTabs active="webhook-failures" />
 
         <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950">
           <div className="flex items-start gap-3">

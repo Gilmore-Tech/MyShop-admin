@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PaymentsTabs } from '@/components/payments/payments-tabs'
 import { Textarea } from '@/components/ui/textarea'
 import {
   escalateClawback,
@@ -55,12 +55,16 @@ function statusBadgeClass(status: string) {
   const base = 'inline-flex rounded-full px-2 py-0.5 text-xs font-medium '
   if (status === 'settled') return base + 'bg-emerald-50 text-emerald-700'
   if (status === 'partial' || status === 'mixed') return base + 'bg-amber-50 text-amber-700'
+  if (status === 'reconciliation_required') return base + 'bg-violet-50 text-violet-700'
   if (status === 'escalated') return base + 'bg-red-50 text-red-700'
   return base + 'bg-gray-100 text-gray-600'
 }
 
 function isWriteOffEligible(debt: AdminClawback) {
-  return debt.outstandingPesewas < WRITEOFF_THRESHOLD && debt.daysOutstanding >= WRITEOFF_INACTIVE_DAYS
+  return debt.status !== 'reconciliation_required'
+    && debt.outstandingPesewas > 0
+    && debt.outstandingPesewas < WRITEOFF_THRESHOLD
+    && debt.daysOutstanding >= WRITEOFF_INACTIVE_DAYS
 }
 
 /** Ghana calendar date of a record, or null when the backend sent no usable date. */
@@ -89,7 +93,9 @@ export default function ClawbacksPage() {
   const [truncated, setTruncated] = useState(false)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(15)
-  const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setSelectedGroupKey(null) })
+  // Deep links from the Commission Ledger ("Debtors by date") carry ?from=&to=
+  // so both pages show the same settlement day.
+  const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setSelectedGroupKey(null), readUrl: true })
   const dateFiltered = useMemo(
     () => (from || to ? clawbacks.filter(item => isWithinRange(item, from, to)) : clawbacks),
     [clawbacks, from, to],
@@ -167,15 +173,7 @@ export default function ClawbacksPage() {
       <div>
         <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
 
-        <Tabs defaultValue="clawbacks" className="mb-6">
-          <TabsList className="bg-white">
-            <TabsTrigger value="transactions" asChild><Link href="/payments/transactions">Payment Activity</Link></TabsTrigger>
-            <TabsTrigger value="revenue" asChild><Link href="/payments/revenue">Money Summary</Link></TabsTrigger>
-            <TabsTrigger value="batch-payouts" asChild><Link href="/payments/batch-payouts">Provider Payments</Link></TabsTrigger>
-            <TabsTrigger value="clawbacks" asChild><Link href="/payments/clawbacks">Money Owed</Link></TabsTrigger>
-            <TabsTrigger value="webhook-failures" asChild><Link href="/payments/webhook-failures">Payment Errors</Link></TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <PaymentsTabs active="clawbacks" />
 
         <div className="mb-5 flex items-start gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -335,15 +333,25 @@ function DebtDetailsSheet({
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [smsResult, setSmsResult] = useState('')
+  const hasCollectibleDebt = Boolean(
+    group?.clawbacks.some(debt =>
+      debt.status !== 'reconciliation_required' && debt.outstandingPesewas > 0
+    )
+  )
+  const hasReconciliation = Boolean(
+    group?.clawbacks.some(debt => debt.status === 'reconciliation_required')
+  )
 
   useEffect(() => {
     if (!group) return
-    setMessage(`Hello ${group.providerName ?? 'there'}, this is a reminder that you still owe MyShop ${formatGhs(group.outstandingPesewas)}. Please make payment as soon as possible. Thank you.`)
+    setMessage(hasCollectibleDebt
+      ? `Hello ${group.providerName ?? 'there'}, this is a reminder that you still owe MyShop ${formatGhs(group.outstandingPesewas)}. Please make payment as soon as possible. Thank you.`
+      : '')
     setSmsResult('')
-  }, [group])
+  }, [group, hasCollectibleDebt])
 
   async function sendReminder() {
-    if (!group?.providerPhone) return
+    if (!group?.providerPhone || !hasCollectibleDebt) return
     setSending(true)
     setSmsResult('')
     try {
@@ -375,10 +383,18 @@ function DebtDetailsSheet({
                   <div><p className="text-xs text-gray-500">Role on the app</p><p className="font-medium">{providerRoleLabel(group.providerType)}</p></div>
                   <div className="sm:col-span-2"><p className="text-xs text-gray-500">Provider ID</p><p className="break-all font-mono text-xs">{group.providerId || 'Not provided'}</p></div>
                 </div>
+                {group.providerId && (
+                  <Link
+                    href={`/payments/commission-ledger?providerId=${encodeURIComponent(group.providerId)}${group.providerType ? `&providerType=${encodeURIComponent(group.providerType.toLowerCase())}` : ''}`}
+                    className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                  >
+                    Open in Commission Ledger <ArrowUpRight className="h-3 w-3" />
+                  </Link>
+                )}
               </section>
 
               <section className="grid grid-cols-3 gap-3">
-                <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">Total owed</p><p className="mt-1 font-semibold">{formatGhs(group.amountPesewas)}</p></div>
+                <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">{hasReconciliation ? 'Original recorded amount' : 'Total owed'}</p><p className="mt-1 font-semibold">{formatGhs(group.amountPesewas)}</p></div>
                 <div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs text-emerald-700">Already paid</p><p className="mt-1 font-semibold text-emerald-700">{formatGhs(group.paidAmountPesewas)}</p></div>
                 <div className="rounded-lg bg-red-50 p-3"><p className="text-xs text-red-700">Still to pay</p><p className="mt-1 font-semibold text-red-700">{formatGhs(group.outstandingPesewas)}</p></div>
               </section>
@@ -398,6 +414,11 @@ function DebtDetailsSheet({
                               {debt.settledAt ? ` · closed ${formatDate(debt.settledAt)}` : ''}
                             </p>
                             {debt.reason && <p className="mt-1 text-xs text-gray-500">Reason: {debt.reason}</p>}
+                            {debt.status === 'reconciliation_required' && (
+                              <p className="mt-2 rounded-md bg-violet-50 px-2 py-1.5 text-xs text-violet-800">
+                                Collection is paused. Reconcile the provider payout and any amount already recovered before taking another debt action.
+                              </p>
+                            )}
                           </div>
                           <span className={statusBadgeClass(debt.status)}>{paymentStatusLabel(debt.status)}</span>
                         </div>
@@ -435,18 +456,27 @@ function DebtDetailsSheet({
                 </div>
               </section>
 
-              <section className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-blue-950"><MessageSquareText className="h-4 w-4" />Send payment reminder by SMS</h3>
-                <Textarea className="mt-3 min-h-28 bg-white" value={message} onChange={event => setMessage(event.target.value)} maxLength={480} />
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <p className={`text-xs ${smsResult.includes('successfully') ? 'text-emerald-700' : 'text-red-600'}`}>{smsResult}</p>
-                  <Button onClick={sendReminder} disabled={sending || !group.providerPhone || !message.trim()}>
-                    {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageSquareText className="mr-2 h-4 w-4" />}
-                    Send SMS reminder
-                  </Button>
-                </div>
-                {!group.providerPhone && <p className="mt-2 text-xs text-amber-700">A phone number is required before a reminder can be sent.</p>}
-              </section>
+              {hasCollectibleDebt ? (
+                <section className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-blue-950"><MessageSquareText className="h-4 w-4" />Send payment reminder by SMS</h3>
+                  <Textarea className="mt-3 min-h-28 bg-white" value={message} onChange={event => setMessage(event.target.value)} maxLength={480} />
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <p className={`text-xs ${smsResult.includes('successfully') ? 'text-emerald-700' : 'text-red-600'}`}>{smsResult}</p>
+                    <Button onClick={sendReminder} disabled={sending || !group.providerPhone || !message.trim()}>
+                      {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageSquareText className="mr-2 h-4 w-4" />}
+                      Send SMS reminder
+                    </Button>
+                  </div>
+                  {!group.providerPhone && <p className="mt-2 text-xs text-amber-700">A phone number is required before a reminder can be sent.</p>}
+                </section>
+              ) : (
+                <Alert className="border-violet-200 bg-violet-50 text-violet-900">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Payment reminders are disabled while these records require financial reconciliation.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
           </>
         )}

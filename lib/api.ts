@@ -15,6 +15,30 @@ import {
   apiErrorFromResponse,
 } from './api-client'
 import type { Permission, Role, CategoryScope } from './roles'
+import type { ReportGroupBy } from './format-date'
+import { normaliseRevenueReport, type RevenueReport, type RevenueGroupBy } from './revenue-report-contract'
+import { normaliseBookingOutcomesReport, type BookingOutcomesReport, type OutcomeVertical } from './booking-outcomes-contract'
+import { normaliseCommissionLedger, type CommissionLedgerReport, type LedgerGroupBy } from './commission-ledger-contract'
+import {
+  normaliseProviderLeaderboard,
+  normaliseTopClients,
+  type ProviderLeaderboardReport,
+  type ProviderLeaderboardVertical,
+  type TopClientsReport,
+  type ClientLeaderboardVertical,
+} from './leaderboard-contract'
+import {
+  normaliseOnlineProviders,
+  normaliseOnlineProviderCounts,
+  type OnlineProvidersResponse,
+  type OnlineProviderCounts,
+} from './online-providers-contract'
+import {
+  normaliseRideGpsTrail,
+  normaliseRideGpsTrailMeta,
+  type RideGpsPoint,
+  type RideGpsTrailMeta,
+} from './ride-gps-trail-contract'
 import {
   assertExactRoleAccountEnvelope,
   roleAccountPath,
@@ -54,6 +78,13 @@ import {
   type DistanceSafeguardState,
   type SaveDistanceSafeguardDraftInput,
 } from './ride-distance-safeguard-contract'
+import {
+  normaliseRideTollPolicyPreview,
+  normaliseRideTollPolicyState,
+  type RideTollPolicyPreview,
+  type RideTollPolicyState,
+  type SaveRideTollPolicyDraftInput,
+} from './ride-toll-policy-contract'
 import {
   normaliseAdminRideListResponse,
   type AdminRideListResponse as NormalisedAdminRideListResponse,
@@ -157,54 +188,17 @@ export async function getOverviewReport(params?: {
 }
 
 // ── Revenue Report ────────────────────────────────────────────────────────────
+// Shapes + tolerant parsing live in lib/revenue-report-contract.ts (tested).
 
-export interface RevenueDataPoint {
-  period: string
-  collectionsGhs: number
-  commissionGhs: number
-  payoutsGhs: number
-  tipsGhs: number
-  // Refunds returned to clients and dispute-clawbacks recovered from providers
-  // in this period. netRevenueGhs = commission − refunds + clawbacks (the
-  // platform's true take; can be negative in a refund-heavy period).
-  refundsGhs: number
-  clawbacksGhs: number
-  netRevenueGhs: number
-  totalPayments: number
-  successfulPayments: number
-  paymentSuccessRatePct: number | null
-  momoCount: number
-  cardCount: number
-  cashCount: number
-  // Per-vertical split (rides vs artisan services). Used to show revenue by
-  // category — coordinators see only their vertical; RM/global can filter.
-  byVertical?: {
-    rides: VerticalRevenue
-    artisans: VerticalRevenue
-  }
-}
-
-export interface VerticalRevenue {
-  collectionsGhs: number
-  commissionGhs: number
-  payoutsGhs: number
-  totalPayments: number
-}
-
-export interface RevenueReport {
-  from: string
-  to: string
-  groupBy: string
-  periods: RevenueDataPoint[]
-}
+export type { RevenueDataPoint, VerticalRevenue, RevenueReport, RevenueGroupBy } from './revenue-report-contract'
 
 export async function getRevenueReport(params?: {
   from?: string
   to?: string
-  groupBy?: 'day' | 'week' | 'month'
-}) {
+  groupBy?: RevenueGroupBy
+}): Promise<RevenueReport> {
   const groupBy = params?.groupBy ?? 'day'
-  const defaultDays = groupBy === 'month' ? 365 : groupBy === 'week' ? 90 : 30
+  const defaultDays = groupBy === 'year' ? 730 : groupBy === 'month' ? 365 : groupBy === 'week' ? 90 : 30
   const from =
     params?.from ??
     (() => {
@@ -214,33 +208,116 @@ export async function getRevenueReport(params?: {
     })()
   const to = params?.to ?? new Date().toISOString().split('T')[0]
   const qs = '?' + new URLSearchParams({ from, to, groupBy }).toString()
-  const raw = await api.get<any>(`/admin/reports/revenue${qs}`)
-  const periods: RevenueDataPoint[] = (raw.periods ?? raw.data ?? []).map((p: any) => ({
-    period: p.period ?? p.date ?? '',
-    collectionsGhs: p.collectionsGhs ?? p.collections_ghs ?? 0,
-    commissionGhs: p.commissionGhs ?? p.commission_ghs ?? 0,
-    payoutsGhs: p.payoutsGhs ?? p.payouts_ghs ?? 0,
-    tipsGhs: p.tipsGhs ?? p.tips_ghs ?? 0,
-    refundsGhs: p.refundsGhs ?? p.refunds_ghs ?? 0,
-    clawbacksGhs: p.clawbacksGhs ?? p.clawbacks_ghs ?? 0,
-    netRevenueGhs:
-      p.netRevenueGhs ??
-      p.net_revenue_ghs ??
-      (p.commissionGhs ?? 0) - (p.refundsGhs ?? 0) + (p.clawbacksGhs ?? 0),
-    totalPayments: p.totalPayments ?? p.total_payments ?? 0,
-    successfulPayments: p.successfulPayments ?? p.successful_payments ?? 0,
-    paymentSuccessRatePct: p.paymentSuccessRatePct ?? p.payment_success_rate_pct ?? null,
-    momoCount: p.momoCount ?? p.momo_count ?? 0,
-    cardCount: p.cardCount ?? p.card_count ?? 0,
-    cashCount: p.cashCount ?? p.cash_count ?? 0,
-    byVertical: p.byVertical,
-  }))
-  return {
-    from: raw.from ?? '',
-    to: raw.to ?? '',
-    groupBy: raw.groupBy ?? 'day',
-    periods,
-  }
+  const raw = await api.get<unknown>(`/admin/reports/revenue${qs}`)
+  return normaliseRevenueReport(raw, groupBy)
+}
+
+// ── Booking outcomes (Trip Outcomes page + dashboard mini-table) ──────────────
+
+export type { BookingOutcomesReport, BookingOutcomePeriod, BookingOutcomeCounters, OutcomeVertical } from './booking-outcomes-contract'
+
+export async function getBookingOutcomesReport(params: {
+  from?: string
+  to?: string
+  groupBy?: ReportGroupBy
+  vertical?: OutcomeVertical
+}): Promise<BookingOutcomesReport> {
+  const query = new URLSearchParams()
+  if (params.from) query.set('from', params.from)
+  if (params.to) query.set('to', params.to)
+  query.set('groupBy', params.groupBy ?? 'day')
+  query.set('vertical', params.vertical ?? 'all')
+  const raw = await api.get<unknown>(`/admin/reports/bookings/outcomes?${query}`)
+  return normaliseBookingOutcomesReport(raw, { groupBy: params.groupBy ?? 'day', vertical: params.vertical ?? 'all' })
+}
+
+// ── Commission ledger (Payments → Commission Ledger) ──────────────────────────
+
+export type { CommissionLedgerReport, CommissionLedgerRow, CommissionLedgerMoney, LedgerGroupBy } from './commission-ledger-contract'
+
+export async function getCommissionLedger(params: {
+  from?: string
+  to?: string
+  groupBy?: LedgerGroupBy
+  providerId?: string
+  providerType?: 'driver' | 'artisan'
+  page?: number
+  limit?: number
+}): Promise<CommissionLedgerReport> {
+  const groupBy = params.groupBy ?? 'provider'
+  const query = new URLSearchParams()
+  if (params.from) query.set('from', params.from)
+  if (params.to) query.set('to', params.to)
+  query.set('groupBy', groupBy)
+  if (params.providerId) query.set('providerId', params.providerId)
+  if (params.providerType) query.set('providerType', params.providerType)
+  if (params.page) query.set('page', String(params.page))
+  if (params.limit) query.set('limit', String(params.limit))
+  const raw = await api.get<unknown>(`/admin/reports/commission-ledger?${query}`)
+  return normaliseCommissionLedger(raw, { groupBy, page: params.page, limit: params.limit })
+}
+
+// ── Leaderboards (Insights → Leaderboards) ────────────────────────────────────
+
+export type {
+  ProviderLeaderboardReport, ProviderLeaderboardRow, ProviderLeaderboardVertical,
+  TopClientsReport, TopClientRow, ClientLeaderboardVertical,
+} from './leaderboard-contract'
+
+export async function getProviderLeaderboard(params: {
+  from?: string
+  to?: string
+  vertical?: ProviderLeaderboardVertical
+  page?: number
+  limit?: number
+}): Promise<ProviderLeaderboardReport> {
+  const vertical = params.vertical ?? 'all'
+  const query = new URLSearchParams()
+  if (params.from) query.set('from', params.from)
+  if (params.to) query.set('to', params.to)
+  query.set('vertical', vertical)
+  if (params.page) query.set('page', String(params.page))
+  if (params.limit) query.set('limit', String(params.limit))
+  const raw = await api.get<unknown>(`/admin/reports/providers/leaderboard?${query}`)
+  return normaliseProviderLeaderboard(raw, { vertical, page: params.page, limit: params.limit })
+}
+
+export async function getTopClientsReport(params: {
+  from?: string
+  to?: string
+  vertical?: ClientLeaderboardVertical
+  limit?: number
+}): Promise<TopClientsReport> {
+  const vertical = params.vertical ?? 'all'
+  const query = new URLSearchParams()
+  if (params.from) query.set('from', params.from)
+  if (params.to) query.set('to', params.to)
+  query.set('vertical', vertical)
+  if (params.limit) query.set('limit', String(params.limit))
+  const raw = await api.get<unknown>(`/admin/reports/clients/top?${query}`)
+  return normaliseTopClients(raw, { vertical, limit: params.limit })
+}
+
+// ── Online providers (Operations → Online Providers, dashboard live strip) ────
+
+export type { OnlineProviderCounts, OnlineProviderRow, OnlineProvidersResponse } from './online-providers-contract'
+
+export async function getOnlineProviders(params: {
+  role?: 'driver' | 'artisan' | 'all'
+  page?: number
+  limit?: number
+} = {}): Promise<OnlineProvidersResponse> {
+  const query = new URLSearchParams()
+  query.set('role', params.role ?? 'all')
+  if (params.page) query.set('page', String(params.page))
+  if (params.limit) query.set('limit', String(params.limit))
+  const raw = await api.get<unknown>(`/admin/providers/online?${query}`)
+  return normaliseOnlineProviders(raw, { page: params.page, limit: params.limit })
+}
+
+export async function getOnlineProviderCounts(): Promise<OnlineProviderCounts> {
+  const raw = await api.get<unknown>('/admin/providers/online/counts')
+  return normaliseOnlineProviderCounts(raw)
 }
 
 // ── Provider Report ───────────────────────────────────────────────────────────
@@ -2481,6 +2558,58 @@ export async function deactivateDistanceSafeguard(input: {
   return normaliseDistanceSafeguardState(raw)
 }
 
+// ── Ride toll policy ─────────────────────────────────────────────────────────
+// Exact-Super-Admin-only complete-revision workflow. Publishing is always
+// bound to a server preview token; there is deliberately no direct enable or
+// disable endpoint.
+
+const RIDE_TOLL_POLICY_PATH = '/admin/ride-toll-policy'
+
+export async function getRideTollPolicyState(): Promise<RideTollPolicyState> {
+  return normaliseRideTollPolicyState(await api.get<unknown>(RIDE_TOLL_POLICY_PATH))
+}
+
+export async function saveRideTollPolicyDraft(
+  input: SaveRideTollPolicyDraftInput,
+): Promise<RideTollPolicyState> {
+  const raw = await api.put<unknown>(`${RIDE_TOLL_POLICY_PATH}/draft`, {
+    expectedRevision: input.expectedRevision,
+    enabled: input.enabled,
+    effectiveFrom: input.effectiveFrom,
+    reason: input.reason.trim(),
+    zones: input.zones.map((zone) => ({
+      stableKey: zone.stableKey,
+      label: zone.label.trim(),
+      amountPesewas: zone.amountPesewas,
+      applicationMode: zone.applicationMode,
+      boundary: zone.boundary,
+    })),
+  })
+  return normaliseRideTollPolicyState(raw)
+}
+
+export async function previewRideTollPolicyDraft(
+  expectedRevision: number,
+): Promise<RideTollPolicyPreview> {
+  const raw = await api.post<unknown>(`${RIDE_TOLL_POLICY_PATH}/preview`, {
+    expectedRevision,
+  })
+  return normaliseRideTollPolicyPreview(raw)
+}
+
+export async function publishRideTollPolicy(input: {
+  expectedRevision: number
+  previewToken: string
+  reason: string
+}): Promise<RideTollPolicyState> {
+  const raw = await api.post<unknown>(`${RIDE_TOLL_POLICY_PATH}/publish`, {
+    expectedRevision: input.expectedRevision,
+    previewToken: input.previewToken,
+    reason: input.reason.trim(),
+  })
+  return normaliseRideTollPolicyState(raw)
+}
+
 // ── Driver tier verification ──────────────────────────────────────────────────
 // Per-driver, per-tier approve/reject. Matching is mutually exclusive: a driver
 // only receives a tier's requests once an admin approves them for it.
@@ -2783,6 +2912,8 @@ export interface RideDetail {
   createdAt: string
   stops: { stopOrder: number; addressText: string | null }[]
   gpsTrail: RideGpsPoint[]
+  /** Point count / distance / pickup & dropoff coordinates when the backend returns them. */
+  gpsTrailMeta: RideGpsTrailMeta
   client: { id: string; fullName: string; phone: string } | null
   driver: {
     id: string
@@ -2795,35 +2926,21 @@ export interface RideDetail {
   } | null
 }
 
-export interface RideGpsPoint {
-  lat: number
-  lng: number
-  recordedAt: string | null
-}
-
-function normaliseRideGpsPoint(raw: any): RideGpsPoint | null {
-  const coordinates = raw?.location?.coordinates ?? raw?.coordinates
-  const lat = Number(raw?.lat ?? raw?.latitude ?? (Array.isArray(coordinates) ? coordinates[1] : NaN))
-  const lng = Number(raw?.lng ?? raw?.longitude ?? (Array.isArray(coordinates) ? coordinates[0] : NaN))
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
-  return {
-    lat,
-    lng,
-    recordedAt: raw?.recordedAt ?? raw?.recorded_at ?? raw?.createdAt ?? raw?.timestamp ?? null,
-  }
-}
+export type { RideGpsPoint, RideGpsTrailMeta } from './ride-gps-trail-contract'
 
 export async function getRideDetail(rideId: string): Promise<RideDetail> {
   const raw = await api.get<any>(`/admin/rides/${rideId}`)
-  const trailSource = raw?.gpsTrail ?? raw?.gps_trail ?? raw?.routeHistory ?? raw?.route_history ?? []
-  const gpsTrail = Array.isArray(trailSource)
-    ? trailSource.map(normaliseRideGpsPoint).filter((point): point is RideGpsPoint => point !== null)
-    : []
+  // Trail parsing (array of points or GeoJSON LineString) lives in
+  // lib/ride-gps-trail-contract.ts so it is unit-tested.
+  const gpsTrail = normaliseRideGpsTrail(
+    raw?.gpsTrail ?? raw?.gps_trail ?? raw?.routeHistory ?? raw?.route_history ?? [],
+  )
   return {
     ...raw,
     pricing: normaliseRidePricing(raw?.pricing),
     stops: Array.isArray(raw?.stops) ? raw.stops : [],
     gpsTrail,
+    gpsTrailMeta: normaliseRideGpsTrailMeta(raw, gpsTrail),
   }
 }
 

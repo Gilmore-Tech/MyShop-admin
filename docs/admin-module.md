@@ -348,13 +348,25 @@ lifting providers auto-suspended for exceeding the cancellation limit, plus a
 | Method | Path                          | Roles  | Description                 | Status |
 | ------ | ----------------------------- | ------ | --------------------------- | ------ |
 | GET    | `/v1/admin/reports/overview`  | L1, L2 | KPI dashboard metrics       | ✅     |
-| GET    | `/v1/admin/reports/revenue`   | L1     | Revenue breakdown by period | ✅     |
-| GET    | `/v1/admin/reports/providers` | L1, L2 | Provider performance report | ✅     |
+| GET    | `/v1/admin/reports/revenue`   | L1     | Revenue breakdown by period (+ promo fields, `groupBy=year`) | ✅ |
+| GET    | `/v1/admin/reports/providers` | L1, L2 | Provider performance report (lifetime) | ✅     |
 | GET    | `/v1/admin/reports/pilot`     | L1     | 10 pilot target metrics     | ✅     |
+| GET    | `/v1/admin/reports/bookings/outcomes` | `view_reports` | Bookings requested per period split into completed / cancelled / unassigned / active, rides + artisan jobs | ✅ (2026-08) |
+| GET    | `/v1/admin/reports/providers/leaderboard` | `view_reports` | Dated driver/artisan ranking by completed bookings (pesewas money fields, paginated) | ✅ (2026-08) |
+| GET    | `/v1/admin/reports/clients/top` | `view_reports` | Top clients by completed bookings in range, with spend and promo received | ✅ (2026-08) |
+| GET    | `/v1/admin/reports/commission-ledger` | `view_payments` | Full commission per provider / settlement day / booking with cash netting and clawback columns | ✅ (2026-08) |
+| GET    | `/v1/admin/providers/online` (+ `/counts`) | `view_live_map` | Providers currently online, heartbeat, last location, active booking; region/category scoped | ✅ (2026-08) |
 
 **DTO:**
 
-- `RevenueReportQueryDto`: `from` (ISO date), `to` (ISO date), `groupBy` (day|week|month, default: day)
+- `RevenueReportQueryDto`: `from` (ISO date), `to` (ISO date), `groupBy` (day|week|month|year, default: day)
+- `BookingOutcomesQueryDto`: `from`, `to`, `groupBy` (day|week|month|year), `vertical` (rides|artisans|all)
+- `ProviderLeaderboardQueryDto`: `from`, `to`, `vertical` (drivers|artisans|all), `page`, `limit` (≤100)
+- `TopClientsQueryDto`: `from`, `to`, `vertical` (rides|artisans|all), `limit` (≤100)
+- `CommissionLedgerQueryDto`: `from`, `to`, `groupBy` (provider|day|booking — `booking` requires `providerId`), `providerId`, `providerType`, `page`, `limit`
+- `OnlineProvidersQueryDto`: `role` (driver|artisan|all), `page`, `limit`
+
+**Stakeholder definitions (Aug 2026):** Gross revenue = `commissionGhs` (platform commission on pre-promo fares); Promo funded = `subsidyGhs` (promo + loyalty the platform paid); Net revenue = `netCommissionAfterPromoGhs` = commission − relief − subsidy. The commission ledger mirrors `payment.service.ts` cash netting: `netted = min(commission − relief, subsidy)`, `cashCommissionOwed = commission_owed_pesewas`, so `commission − relief = netted + cashOwed + digitalWithheld` on every row.
 
 **Caching:** All reports cached 60s in Redis (except provider report — no cache)
 
@@ -397,6 +409,18 @@ lifting providers auto-suspended for exceeding the cancellation limit, plus a
 - Tab 2 — Revenue: summary stats + date-grouped table, `groupBy` selector (day/week/month)
 - Tab 3 — Provider Performance: top drivers + top artisans side-by-side from `/reports/providers`
 - Tab 4 — Pilot Targets: progress bars for all 10 PRD §1.3 metrics from `/reports/pilot`
+
+**Insights pages added Aug 2026 (stakeholder dashboard requests):**
+
+| Route | Permission | Backed by | What it shows |
+| ----- | ---------- | --------- | ------------- |
+| `/insights/revenue` | `view_revenue_report` | `/reports/revenue` | Gross / Promo / Net revenue by day, week, month or year; All / Rides / Artisan Services; CSV |
+| `/insights/trips` | `view_reports` | `/reports/bookings/outcomes` | Completed / cancelled / unassigned / active per period; rows partition the total requested; deep-links into the rides and jobs lists |
+| `/insights/leaderboards` | `view_reports` (+ per-vertical report perms) | `/reports/providers/leaderboard`, `/reports/clients/top` | Ranked drivers, artisans and clients over a period; reward shortlist for clients |
+| `/online-providers` | `view_live_map` | `/providers/online` | Who is online now, idle vs on a booking, stale heartbeats |
+| `/payments/commission-ledger` | `view_payments` | `/reports/commission-ledger` | Full commission per provider whether or not a promo applied; Debtors-by-date tab reconciles with Money Owed on the same settlement-date basis |
+
+The Dashboard also gained a "Live now" strip (online counts + active rides/jobs), a "Trips by outcome" mini-table and Gross/Net revenue tiles. All new pages degrade to a "not yet available" empty state when the backing endpoint returns 404.
 
 ---
 
@@ -522,6 +546,9 @@ Engagement. Page degrades gracefully (404 → "not yet available") until the rou
 | `lib/api-client.ts` | Base `apiFetch`, `ApiError`, token helpers, `getAdminUser()`, `AdminUser` type |
 | `lib/api.ts`    | All typed API methods grouped by domain (auth, reports, users, categories, etc.) |
 | `lib/roles.ts`  | Role model: `AdminRole`, `Permission`, `PERMISSIONS`, `can()`, `ROLE_LABELS` |
+| `lib/*-contract.ts` | Tolerant normalisers for one endpoint each (revenue report, booking outcomes, commission ledger, leaderboard, online providers, ride GPS trail, …) — unit-tested under `tests/` |
+| `lib/contract-utils.ts` | Shared parsing helpers for the contract files (`pick`, `count`, `nullableInteger`, `pct`, …) |
+| `lib/chart-palette.ts` | Fixed, CVD-validated categorical palette for the Insights charts |
 
 ### Hooks (`hooks/`)
 
@@ -538,6 +565,13 @@ Engagement. Page degrades gracefully (404 → "not yet available") until the rou
 | `access-denied.tsx`     | 403 page with role label and back-to-dashboard link  |
 | `role-gate.tsx`         | Inline permission guard (hides children if no perm)  |
 | `page-guard.tsx`        | Full-page permission guard (renders AccessDenied)    |
+| `stat-card.tsx`         | Shared KPI tile (+ `SectionLabel`)                   |
+| `period-controls.tsx`   | `usePeriod()` + filter bar: date presets (incl. this week/month/year, last 12 months), group-by day/week/month/year, refresh, caption |
+| `report-table.tsx`      | Typed report table: sticky header, numeric alignment, totals footer, skeleton/empty states, expandable rows |
+| `leaderboard-list.tsx`  | Ranked list with share-of-leader bars                |
+| `vertical-tabs.tsx`     | All / Rides / Artisan Services control, scoped by the admin's category |
+| `empty-state.tsx`, `pager.tsx` | Empty/unavailable state and Prev/Next pager   |
+| `date-range-filter.tsx` | `useDateRange({ readUrl })` honours `?from=&to=` deep links; `useLinkedParam` for `?status=` |
 
 ### User Components (`components/users/`)
 

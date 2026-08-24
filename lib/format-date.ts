@@ -29,13 +29,33 @@ export function formatDayShort(iso: string | null | undefined): string {
   return d.toLocaleDateString(LOCALE, { day: '2-digit', month: 'short', timeZone: TIME_ZONE })
 }
 
-/** Label a reporting period sensibly for its grouping (day/week → "11 May", month → "May 2026"). */
-export function formatPeriodLabel(iso: string | null | undefined, groupBy?: 'day' | 'week' | 'month'): string {
+export type ReportGroupBy = 'day' | 'week' | 'month' | 'year'
+
+/**
+ * Label a reporting period sensibly for its grouping (compact, for chart ticks
+ * and dense rows): day → "11 May", week → "Wk of 11 May", month → "May 2026",
+ * year → "2026". Use `formatDate` when the year must be visible.
+ */
+export function formatPeriodLabel(iso: string | null | undefined, groupBy?: ReportGroupBy): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return String(iso)
+  if (groupBy === 'year') return d.toLocaleDateString(LOCALE, { year: 'numeric', timeZone: TIME_ZONE })
   if (groupBy === 'month') return d.toLocaleDateString(LOCALE, { month: 'short', year: 'numeric', timeZone: TIME_ZONE })
+  if (groupBy === 'week') return 'Wk of ' + d.toLocaleDateString(LOCALE, { day: '2-digit', month: 'short', timeZone: TIME_ZONE })
   return d.toLocaleDateString(LOCALE, { day: '2-digit', month: 'short', timeZone: TIME_ZONE })
+}
+
+/** Relative age for feeds: "12s ago", "5 min ago", "3h ago", "2d ago". */
+export function timeAgo(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return '-'
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return '-'
+  const diff = Math.max(0, Math.floor((now.getTime() - then) / 1000))
+  if (diff < 60) return `${diff}s ago`
+  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
 }
 
 /** Sunday = 0 ... Saturday = 6, pinned to the reporting timezone. */

@@ -4,11 +4,12 @@ import { useState, useEffect } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import { useRole } from '@/hooks/use-role'
 import type { Permission, CategoryScope } from '@/lib/roles'
-import { Download, FileText, Calendar, Loader2, TrendingUp, Car, Wrench, Star, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Download, FileText, Calendar, Loader2, TrendingUp, Car, Wrench, Star, CheckCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/common/page-header'
+import { Pager } from '@/components/common/pager'
 import {
   getOverviewReport, getRevenueReport, getProviderReport, getPilotReport,
   type OverviewReport, type RevenueReport, type RevenueDataPoint, type ProviderReport, type PilotMetric,
@@ -19,31 +20,6 @@ import {
 import { formatDate } from '@/lib/format-date'
 import { useDateRange } from '@/components/common/date-range-filter'
 import { userSafeAdminError } from '@/lib/api-client'
-
-// Shared pagination control.
-function Pager({ page, pageSize, total, onPage }: {
-  page: number; pageSize: number; total: number; onPage: (p: number) => void
-}) {
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  if (totalPages <= 1) return null
-  const start = (page - 1) * pageSize
-  return (
-    <div className="flex items-center justify-between mt-3">
-      <p className="text-xs text-gray-400">
-        Showing {start + 1}-{Math.min(start + pageSize, total)} of {total}
-      </p>
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-          <ChevronLeft className="h-3.5 w-3.5" /> Prev
-        </Button>
-        <span className="text-xs text-gray-500 tabular-nums px-1">Page {page} of {totalPages}</span>
-        <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>
-          Next <ChevronRight className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </div>
-  )
-}
 
 function fmt(ghs: number) {
   return 'GHS ' + ghs.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
