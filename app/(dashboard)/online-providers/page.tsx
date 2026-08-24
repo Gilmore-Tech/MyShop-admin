@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Car, Wrench, RefreshCw, Search, WifiOff, Radio, Navigation, Download } from 'lucide-react'
+import { Car, Wrench, RefreshCw, Search, WifiOff, Radio, Navigation, Download } from 'lucide-react'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { StatCard } from '@/components/common/stat-card'
@@ -10,6 +10,8 @@ import { ReportTable, type ReportColumn } from '@/components/common/report-table
 import { EmptyState } from '@/components/common/empty-state'
 import { Pager } from '@/components/common/pager'
 import { VerticalTabs, type Vertical } from '@/components/common/vertical-tabs'
+import { SegmentedControl } from '@/components/common/segmented-control'
+import { ErrorState } from '@/components/common/error-state'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -185,20 +187,12 @@ export default function OnlineProvidersPage() {
 
         <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex items-center gap-3 flex-wrap">
           <VerticalTabs value={vertical} onChange={setVertical} />
-          <div role="tablist" aria-label="Activity" className="inline-flex items-center h-9 rounded-lg bg-gray-100 p-[3px] gap-0.5">
-            {([['all', 'All'], ['idle', 'Idle'], ['busy', 'On booking']] as const).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                role="tab"
-                aria-selected={activity === value}
-                onClick={() => setActivity(value)}
-                className={`h-full px-3 rounded-md text-xs font-semibold transition-colors ${activity === value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            ariaLabel="Activity"
+            options={[{ value: 'all', label: 'All' }, { value: 'idle', label: 'Idle' }, { value: 'busy', label: 'On booking' }]}
+            value={activity}
+            onChange={setActivity}
+          />
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
             <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, phone or region" className="h-9 w-64 pl-8 bg-white" />
@@ -212,17 +206,9 @@ export default function OnlineProvidersPage() {
           </div>
         </div>
 
-        {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <p className="font-medium">Couldn&apos;t load online providers</p>
-              <p className="text-xs mt-0.5">{error}</p>
-            </div>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={load}>Retry</Button>
-          </div>
-        )}
-
+        {error ? (
+          <ErrorState title="Could not load online providers" detail={error} onRetry={load} />
+        ) : (
         <ReportTable<OnlineProviderRow>
           columns={columns}
           rows={rows}
@@ -234,7 +220,8 @@ export default function OnlineProvidersPage() {
             : <EmptyState icon={WifiOff} title={activity === 'all' && !search ? 'No providers are online right now' : 'No providers match this filter'} />}
           caption="Online means the provider switched themselves on in the app. A stale heartbeat (no update for over 5 minutes) usually means the app is closed or has lost signal; the server switches them off automatically after a while."
         />
-        {data && data.total > PAGE_SIZE && (
+        )}
+        {!error && data && data.total > PAGE_SIZE && (
           <Pager page={page} pageSize={PAGE_SIZE} total={data.total} onPage={setPage} />
         )}
       </div>

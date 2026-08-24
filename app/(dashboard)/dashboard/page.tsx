@@ -622,6 +622,7 @@ export default function DashboardPage() {
                         </div>
                         {sos ? (
                           <button
+                            type="button"
                             onClick={() => handleAcknowledge(alert.id)}
                             className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors bg-red-500 text-white hover:bg-red-600"
                           >

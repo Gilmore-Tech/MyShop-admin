@@ -11,8 +11,8 @@ export function Pager({ page, pageSize, total, onPage, className }: {
   if (totalPages <= 1) return null
   const start = (page - 1) * pageSize
   return (
-    <div className={`flex items-center justify-between mt-3 ${className ?? ''}`}>
-      <p className="text-xs text-gray-400">
+    <div className={`flex items-center justify-between gap-4 mt-3 ${className ?? ''}`}>
+      <p className="text-xs text-gray-400 whitespace-nowrap">
         Showing {start + 1}-{Math.min(start + pageSize, total)} of {total}
       </p>
       <div className="flex items-center gap-2">
