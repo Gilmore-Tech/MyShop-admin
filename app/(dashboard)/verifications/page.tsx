@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { PageHeader } from '@/components/common/page-header'
+import { DetailSheet } from '@/components/common/detail-sheet'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PdfViewer } from '@/components/common/pdf-viewer'
 import {
@@ -48,9 +49,9 @@ const STAGE_FOR_ROLE: Record<PipelineRole, VerificationStage | undefined> = {
 }
 
 const STAGE_LABEL: Record<string, string> = {
-  pending_documents: 'Stage 1 — Document check',
-  docs_verified: 'Stage 2 — Coordinator',
-  coordinator_validated: 'Stage 3 — RM final',
+  pending_documents: 'Stage 1 - Document check',
+  docs_verified: 'Stage 2 - Coordinator validation',
+  coordinator_validated: 'Stage 3 - Regional Manager decision',
   // The backend's historical stage value is "online", but final verification
   // only makes the provider eligible to go online. Availability is a separate
   // provider-controlled state.
@@ -1080,48 +1081,38 @@ function ReviewDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40" onClick={onClose}>
-      <div
-        className="relative h-full w-full max-w-lg bg-white shadow-2xl flex flex-col"
-        style={{ animation: 'slideInRight 0.25s ease-out' }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100 shrink-0">
-          <div className="flex items-center gap-3">
-            <Avatar className="h-9 w-9">
-              <AvatarFallback className="bg-gray-100 text-gray-600 text-sm font-bold">
-                {initials(item.provider_name)}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-semibold text-sm text-gray-900">{item.provider_name ?? 'Unknown Provider'}</p>
-              <div className="flex items-center gap-2 mt-0.5">
-                <StatusBadge status={item.provider_type} />
-                <span className="text-xs text-gray-400 font-mono">{item.provider_id.slice(0, 8)}…</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => { refresh().catch(() => {}) }}
-              disabled={refreshing}
-              title="Reload latest document versions"
-              className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-100 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-100"
-            >
-              <XCircle className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+    <DetailSheet
+      open
+      onClose={onClose}
+      size="lg"
+      title={
+        <span className="flex items-center gap-3">
+          <Avatar className="h-9 w-9">
+            <AvatarFallback className="bg-gray-100 text-gray-600 text-sm font-bold">
+              {initials(item.provider_name)}
+            </AvatarFallback>
+          </Avatar>
+          <span>{item.provider_name ?? 'Unknown provider'}</span>
+        </span>
+      }
+      subtitle={<span className="font-mono">{item.provider_id.slice(0, 8)}...</span>}
+      status={
+        <>
+          <StatusBadge status={item.provider_type} />
+          <button
+            type="button"
+            onClick={() => { refresh().catch(() => {}) }}
+            disabled={refreshing}
+            aria-label="Reload latest document versions"
+            title="Reload latest document versions"
+            className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-100 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+        </>
+      }
+    >
+      <div>
           {history && chainStages.length > 0 && (
             <ApprovalChain history={history} showStages={chainStages} />
           )}
@@ -1139,7 +1130,7 @@ function ReviewDrawer({
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" className="flex-1" onClick={onClose}>Close</Button>
-                <Button size="sm" className="flex-1 text-white" style={{ backgroundColor: '#F5A623' }} onClick={() => { refresh().catch(() => {}) }} disabled={refreshing}>
+                <Button size="sm" variant="brand" className="flex-1" onClick={() => { refresh().catch(() => {}) }} disabled={refreshing}>
                   {refreshing ? 'Reloading…' : 'Reload Documents'}
                 </Button>
               </div>
@@ -1183,23 +1174,15 @@ function ReviewDrawer({
                 submitting={submitting}
                 canReviewTiers={canReviewTiers}
                 showTiers={action === 'rm'}
-                heading={action === 'rm' ? 'Final Verification' : 'Validate Documents'}
-                approveLabel={action === 'rm' ? 'Approve Provider' : 'Send to RM'}
-                rejectLabel={action === 'rm' ? 'Reject Provider' : 'Bounce to Admin'}
+                heading={action === 'rm' ? 'Final verification' : 'Validate documents'}
+                approveLabel={action === 'rm' ? 'Approve provider' : 'Send to Regional Manager'}
+                rejectLabel={action === 'rm' ? 'Reject provider' : 'Return to admin'}
                 requireRejectedDocuments={action === 'rm'}
               />
             )
           ) : null}
-        </div>
       </div>
-
-      <style jsx>{`
-        @keyframes slideInRight {
-          from { transform: translateX(100%); }
-          to   { transform: translateX(0); }
-        }
-      `}</style>
-    </div>
+    </DetailSheet>
   )
 }
 
