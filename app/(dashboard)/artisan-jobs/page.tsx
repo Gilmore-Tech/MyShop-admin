@@ -24,11 +24,11 @@ import { statusLabel } from '@/lib/status-labels'
 import { dateBasisCaption } from '@/lib/date-range'
 
 // In-progress jobs have a payout (so 48h+ means a frozen payout); pre-assignment
-// jobs (queued, pending_admin, …) are merely stuck awaiting action.
+// jobs (queued, pending_admin, ...) are merely stuck awaiting action.
 const IN_PROGRESS_STATUSES = ['confirmed', 'en_route', 'arrived', 'in_progress']
 
 // Minimal idle indicator: a clock + hours, coloured by severity. The full
-// meaning lives in the tooltip and on the detail page — the table stays clean.
+// meaning lives in the tooltip and on the detail page - the table stays clean.
 function StalenessFlag({ hours, status }: { hours: number; status: string }) {
   if (!hours || hours === 0) return null
   const inProgress = IN_PROGRESS_STATUSES.includes(status)
@@ -53,7 +53,7 @@ function staleHoursOf(job: AdminJob): number {
 }
 
 // Backend only permits *deleting* terminal records. Anything live (incl.
-// queued / pending_admin) returns 400 JOB_NOT_DELETABLE — those are cancelled.
+// queued / pending_admin) returns 400 JOB_NOT_DELETABLE - those are cancelled.
 const DELETABLE_JOB_STATUSES = ['completed', 'cancelled', 'expired', 'refunded']
 // States the backend allows an admin to cancel (the remedy for stuck jobs).
 const CANCELLABLE_JOB_STATUSES = ['queued', 'pending_admin', 'admin_assigned', 'open_for_bids', 'bids_received', 'confirmed']
@@ -85,7 +85,7 @@ export default function ArtisanJobsPage() {
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
   const { from, to, control: dateControl } = useDateRange('all', { onChange: () => setPage(1), readUrl: true })
-  // Trip Outcomes deep-links here with ?status=…
+  // Booking outcomes deep-links here with ?status=...
   useLinkedParam('status', JOB_STATUS_FILTERS, setStatusFilter)
   const requestSequence = useRef(0)
 
@@ -147,7 +147,7 @@ export default function ArtisanJobsPage() {
     }
   }
 
-  // Cancel is the remedy for stuck/live jobs (queued, pending_admin, …).
+  // Cancel is the remedy for stuck/live jobs (queued, pending_admin, ...).
   async function handleCancelJob(reason: string) {
     if (!cancelTarget) return
     setCancelling(true); setCancelError(null)

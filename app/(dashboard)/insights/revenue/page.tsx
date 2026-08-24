@@ -22,11 +22,11 @@ import { exportTableCsv } from '@/lib/report-export'
 import { REVENUE_SERIES, CHART_GRID, CHART_AXIS_TEXT, CHART_TOOLTIP_STYLE } from '@/lib/chart-palette'
 
 /**
- * The one Revenue page. Vocabulary (approved glossary — "Net" alone is banned):
+ * The one Revenue page. Vocabulary (approved glossary - "Net" alone is banned):
  *   Money received      = collections (what clients paid)
  *   Commission earned   = the platform's 20% of pre-promo fares
- *   Kept after promos   = commission earned − promo funded − commission relief
- *   Kept after refunds  = commission earned − refunds + debts recovered
+ *   Kept after promos   = commission earned - promo funded - commission relief
+ *   Kept after refunds  = commission earned - refunds + debts recovered
  */
 interface RevenueRow {
   key: string

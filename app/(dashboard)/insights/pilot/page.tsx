@@ -14,7 +14,7 @@ import { userSafeAdminError } from '@/lib/api-client'
 import { exportPilotCsv } from '@/lib/report-export'
 
 /**
- * The 10 pilot success targets for the Ashanti Region open beta — all-time
+ * The 10 pilot success targets for the Ashanti Region open beta - all-time
  * figures against fixed targets (carried over from the retired Reports page).
  */
 export default function PilotTargetsPage() {

@@ -22,7 +22,7 @@ import {
 import { ApiError } from '@/lib/api-client'
 import { useDateRange } from '@/components/common/date-range-filter'
 import { PageSizeSelect } from '@/components/common/table-controls'
-import { ghanaDateKey } from '@/lib/date-range'
+import { ghanaDateKey, dateBasisCaption } from '@/lib/date-range'
 import { groupClawbacksByProvider, type ProviderClawbackGroup } from '@/lib/clawback-groups'
 import { paymentStatusLabel } from '@/lib/payment-labels'
 
@@ -34,7 +34,7 @@ function formatGhs(pesewas: number) {
 }
 
 function formatDate(iso: string) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
@@ -100,7 +100,7 @@ export default function ClawbacksPage() {
     () => (from || to ? clawbacks.filter(item => isWithinRange(item, from, to)) : clawbacks),
     [clawbacks, from, to],
   )
-  // Records the backend sent without a date can't be placed in a range — say so
+  // Records the backend sent without a date can't be placed in a range - say so
   // rather than dropping them silently.
   const undatedHidden = from || to ? clawbacks.filter(item => !recordDateKey(item.initiatedAt)).length : 0
 
@@ -109,7 +109,7 @@ export default function ClawbacksPage() {
   const eligibleCount = dateFiltered.filter(isWriteOffEligible).length
   const visibleOutstanding = groups.reduce((sum, group) => sum + group.outstandingPesewas, 0)
 
-  // Everything is already in memory, so paging is a slice — the totals below the
+  // Everything is already in memory, so paging is a slice - the totals below the
   // table stay whole-set figures, not per-page ones.
   const totalPages = Math.max(1, Math.ceil(groups.length / limit))
   const currentPage = Math.min(page, totalPages)
@@ -211,7 +211,7 @@ export default function ClawbacksPage() {
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="flex-1">
-              <p className="font-medium">{error ? 'Couldn’t load amounts owed' : 'Action not completed'}</p>
+              <p className="font-medium">{error ? 'Could not load amounts owed' : 'Action not completed'}</p>
               <p className="mt-0.5 text-xs">{error || actionError}</p>
             </div>
             {error && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={load}>Retry</Button>}
@@ -255,7 +255,7 @@ export default function ClawbacksPage() {
                   <TableCell>
                     <p className="text-sm font-medium text-gray-900">{group.providerName ?? 'Name not provided'}</p>
                     <p className="text-xs text-gray-500">
-                      {providerRoleLabel(group.providerType)} · {group.providerPhone ?? 'Phone not provided'}
+                      {providerRoleLabel(group.providerType)} - {group.providerPhone ?? 'Phone not provided'}
                     </p>
                   </TableCell>
                   <TableCell className="text-right text-sm">{group.clawbacks.length}</TableCell>
@@ -275,7 +275,7 @@ export default function ClawbacksPage() {
               {loading && <Loader2 className="inline h-3 w-3 animate-spin" />}
               {!loading && groups.length === 0 && 'Nothing to show'}
               {!loading && groups.length > 0 &&
-                `Showing ${firstRowNumber}–${lastRowNumber} of ${groups.length} ${groups.length === 1 ? 'person' : 'people'} · ${dateFiltered.length} record${dateFiltered.length === 1 ? '' : 's'}`}
+                `Showing ${firstRowNumber}-${lastRowNumber} of ${groups.length} ${groups.length === 1 ? 'person' : 'people'} - ${dateFiltered.length} record${dateFiltered.length === 1 ? '' : 's'} - ${dateBasisCaption('Debts', 'recorded')}`}
             </p>
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-500">Page {currentPage} of {totalPages}</span>
@@ -297,11 +297,11 @@ export default function ClawbacksPage() {
             Total still to be paid{from || to ? ' in this date range' : ''}
             {totalPages > 1 ? ', across all pages' : ''}:{' '}
             <strong className="text-red-600">
-              {loading ? '—' : formatGhs(from || to ? visibleOutstanding : totalOutstanding || visibleOutstanding)}
+              {loading ? '-' : formatGhs(from || to ? visibleOutstanding : totalOutstanding || visibleOutstanding)}
             </strong>
             {undatedHidden > 0 && (
               <span className="ml-2 text-amber-700">
-                {undatedHidden} record{undatedHidden === 1 ? '' : 's'} hidden — no start date recorded. Choose “All time” to see {undatedHidden === 1 ? 'it' : 'them'}.
+                {undatedHidden} record{undatedHidden === 1 ? '' : 's'} hidden - no start date recorded. Choose &quot;All time&quot; to see {undatedHidden === 1 ? 'it' : 'them'}.
               </span>
             )}
           </div>
@@ -412,8 +412,8 @@ function DebtDetailsSheet({
                           <div>
                             <p className="text-sm font-medium">{plainLabel(debt.source)}</p>
                             <p className="text-xs text-gray-500">
-                              Recorded {formatDate(debt.initiatedAt)} · unpaid for {debt.daysOutstanding} days
-                              {debt.settledAt ? ` · closed ${formatDate(debt.settledAt)}` : ''}
+                              Recorded {formatDate(debt.initiatedAt)} - unpaid for {debt.daysOutstanding} days
+                              {debt.settledAt ? ` - closed ${formatDate(debt.settledAt)}` : ''}
                             </p>
                             {debt.reason && <p className="mt-1 text-xs text-gray-500">Reason: {debt.reason}</p>}
                             {debt.status === 'reconciliation_required' && (

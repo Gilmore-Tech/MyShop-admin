@@ -192,7 +192,7 @@ function DocViewer({ doc }: { doc: ProviderDocument }) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 h-56 bg-gray-50 rounded-xl border border-gray-100">
         <Loader2 className="h-7 w-7 animate-spin text-orange-400" />
-        <p className="text-sm text-gray-500">Opening secure document…</p>
+        <p className="text-sm text-gray-500">Opening secure document...</p>
       </div>
     )
   }
@@ -298,7 +298,7 @@ function DocumentStep({
   saving: boolean
   saveError: string | null
   refreshNote: string | null
-  // When true the per-document approve/reject controls are hidden — used by the
+  // When true the per-document approve/reject controls are hidden - used by the
   // coordinator/RM who view (not re-decide) the admin's document verdicts.
   readOnly?: boolean
   finishLabel?: string
@@ -341,7 +341,7 @@ function DocumentStep({
     await onSave({ action, reason: reason.trim() })
   }
 
-  // Progress dots — all docs, highlight current
+  // Progress dots - all docs, highlight current
   return (
     <div className="flex flex-col gap-4">
       {/* Progress bar */}
@@ -443,7 +443,7 @@ function DocumentStep({
           onChange={e => { setReason(e.target.value); setError('') }}
           rows={2}
           className="w-full rounded-lg border border-gray-200 text-sm px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200"
-          placeholder={action === 'approve' ? 'Document looks valid.' : 'Describe the issue…'}
+          placeholder={action === 'approve' ? 'Document looks valid.' : 'Describe the issue...'}
         />
       </div>
 
@@ -488,7 +488,7 @@ function DocumentStep({
             style={{ backgroundColor: action === 'approve' ? '#059669' : '#DC2626' }}
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : action === 'approve' ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-            {saving ? 'Saving…' : action === 'approve' ? 'Approve' : 'Reject'}
+            {saving ? 'Saving...' : action === 'approve' ? 'Approve' : 'Reject'}
           </Button>
         )}
         {isLast ? (
@@ -711,7 +711,7 @@ function FinalDecisionStep({
                     />
                     <span className="min-w-0">
                       <span className="block text-sm font-medium text-gray-800">{document.label || document.type}</span>
-                      <span className="block text-[11px] text-gray-500">Version {document.version} · {document.id.slice(0, 8)}…</span>
+                      <span className="block text-[11px] text-gray-500">Version {document.version} - {document.id.slice(0, 8)}...</span>
                     </span>
                   </label>
                 )
@@ -734,7 +734,7 @@ function FinalDecisionStep({
           onChange={e => { setReason(e.target.value); setError('') }}
           rows={3}
           className="w-full rounded-lg border border-gray-200 text-sm px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-orange-200"
-          placeholder={action === 'approve' ? 'All documents reviewed and verified.' : 'Provide a reason for rejection…'}
+          placeholder={action === 'approve' ? 'All documents reviewed and verified.' : 'Provide a reason for rejection...'}
         />
       </div>
 
@@ -756,7 +756,7 @@ function FinalDecisionStep({
           style={{ backgroundColor: action === 'approve' ? '#059669' : '#DC2626' }}
         >
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {submitting ? 'Submitting…' : `Confirm ${action === 'approve' ? 'Approval' : 'Rejection'}`}
+          {submitting ? 'Submitting...' : `Confirm ${action === 'approve' ? 'Approval' : 'Rejection'}`}
         </Button>
       </div>
     </div>
@@ -804,7 +804,7 @@ function AdminSubmitStep({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Stage 1 of 3 — Admin</p>
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">Stage 1 of 3 - Admin</p>
         <p className="text-base font-semibold text-gray-900 mt-0.5">Submit to Coordinator</p>
         <p className="text-xs text-gray-400 mt-0.5">
           {reviewOnly
@@ -858,7 +858,7 @@ function AdminSubmitStep({
           style={{ backgroundColor: '#F5A623' }}
         >
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {submitting ? 'Submitting…' : 'Submit to Coordinator'}
+          {submitting ? 'Submitting...' : 'Submit to Coordinator'}
         </Button>
       </div>
     </div>
@@ -886,7 +886,7 @@ function InspectStep({
         <AlertCircle className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
         <p className="text-sm text-gray-600">
           This provider is at <strong>{label}</strong>. You can review the documents above, but the next
-          action belongs to a different level of the pipeline — there is nothing for you to submit here.
+          action belongs to a different level of the pipeline - there is nothing for you to submit here.
         </p>
       </div>
       <div className="flex gap-2 pt-2 border-t border-gray-100">
@@ -899,12 +899,12 @@ function InspectStep({
   )
 }
 
-// ── Approval chain (who did each stage) — gated to coordinator/RM/global ───────
+// ── Approval chain (who did each stage) - gated to coordinator/RM/global ───────
 function ApprovalChain({ history, showStages }: { history: VerificationHistory; showStages: VerificationStage[] }) {
   const rows: { key: VerificationStage; label: string; who: { by: string; at: string } | null; decision?: string }[] = [
-    { key: 'pending_documents' as VerificationStage, label: 'Document check · Admin', who: history.stage1 },
-    { key: 'docs_verified' as VerificationStage, label: 'Validation · Coordinator', who: history.stage2 },
-    { key: 'coordinator_validated' as VerificationStage, label: 'Final · Regional Manager', who: history.stage3, decision: history.stage3?.decision },
+    { key: 'pending_documents' as VerificationStage, label: 'Document check - Admin', who: history.stage1 },
+    { key: 'docs_verified' as VerificationStage, label: 'Validation - Coordinator', who: history.stage2 },
+    { key: 'coordinator_validated' as VerificationStage, label: 'Final - Regional Manager', who: history.stage3, decision: history.stage3?.decision },
   ].filter(r => showStages.includes(r.key))
   if (rows.length === 0) return null
   return (
@@ -954,12 +954,12 @@ function ReviewDrawer({
 }) {
   const { can, role } = useRole()
   // The available action is decided by the item's current stage + the viewer's
-  // permission — not the viewer's "home" role. This prevents, e.g., an RM
+  // permission - not the viewer's "home" role. This prevents, e.g., an RM
   // opening a pending_documents item from being offered "Approve & Send Online".
   const action = effectiveAction(item.verification_stage, can)
   const canReviewTiers = can('finalize_verification')
   // The approval chain (who did each stage) is restricted: admins (entry level)
-  // don't see it; coordinators see Stages 1–2; RM/global see all stages.
+  // don't see it; coordinators see Stages 1-2; RM/global see all stages.
   const isGlobal = role ? (ROLE_DEFINITIONS[role]?.global ?? false) : false
   const chainStages: VerificationStage[] =
     isGlobal || can('finalize_verification') ? ['pending_documents', 'docs_verified', 'coordinator_validated']
@@ -1024,12 +1024,12 @@ function ReviewDrawer({
         code: e?.code,
         supportReference: e?.supportReference,
       })
-      // A re-upload supersedes the version we're holding — refetch the current
+      // A re-upload supersedes the version we're holding - refetch the current
       // version and prompt a retry instead of surfacing a raw 404.
       if (e?.code === 'DOCUMENT_NOT_FOUND' || e?.status === 404) {
         try {
           await refresh()
-          setRefreshNote('This document was re-uploaded since you opened the queue. The latest version is now loaded — please review it again.')
+          setRefreshNote('This document was re-uploaded since you opened the queue. The latest version is now loaded - please review it again.')
         } catch {
           setSaveError('This document was re-uploaded and the latest version could not be reloaded. Close and reopen the review to continue.')
         }
@@ -1043,7 +1043,7 @@ function ReviewDrawer({
 
   const providerType = item.provider_type as 'driver' | 'artisan'
 
-  // Coordinator (validate) / RM (finalize) decision — chosen by the item's stage.
+  // Coordinator (validate) / RM (finalize) decision - chosen by the item's stage.
   async function handleDecisionSubmit(
     decision: 'approve' | 'reject',
     reason: string,
@@ -1132,7 +1132,7 @@ function ReviewDrawer({
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" className="flex-1" onClick={onClose}>Close</Button>
                 <Button size="sm" variant="brand" className="flex-1" onClick={() => { refresh().catch(() => {}) }} disabled={refreshing}>
-                  {refreshing ? 'Reloading…' : 'Reload Documents'}
+                  {refreshing ? 'Reloading...' : 'Reload Documents'}
                 </Button>
               </div>
             </div>
@@ -1190,15 +1190,15 @@ function ReviewDrawer({
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function VerificationsPage() {
   const { can, role } = useRole()
-  // The stages a viewer may see, mirroring the server-side boundary: admin →
-  // Stage 1 only; coordinator → Stages 1–2; RM and any global role → all three.
+  // The stages a viewer may see, mirroring the server-side boundary: admin ->
+  // Stage 1 only; coordinator -> Stages 1-2; RM and any global role -> all three.
   const isGlobal = role ? (ROLE_DEFINITIONS[role]?.global ?? false) : false
   const allowedStages: VerificationStage[] =
     isGlobal || can('finalize_verification') ? ['pending_documents', 'docs_verified', 'coordinator_validated']
     : can('validate_verification') ? ['pending_documents', 'docs_verified']
     : can('verify_documents') ? ['pending_documents']
     : ['pending_documents', 'docs_verified', 'coordinator_validated']
-  // A single allowed stage (admin) needs no filter — lock to it and hide the UI.
+  // A single allowed stage (admin) needs no filter - lock to it and hide the UI.
   const defaultStage: VerificationStage | 'all' =
     allowedStages.length === 1 ? allowedStages[0] : 'all'
 

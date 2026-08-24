@@ -81,13 +81,13 @@ const ROLE_COLOR: Record<string, string> = {
 // Determines whether a row still needs admin attention.
 // For SOS: needs ack if not yet acknowledged.
 // For welfare check: needs action if status is `escalated` (no response within
-// the response window). `pending` is harmless — the cron is still waiting.
+// the response window). `pending` is harmless - the cron is still waiting.
 function needsAction(alert: EmergencyAlert): boolean {
   if (alert.type === 'sos') return !alert.acknowledgedAt
   return alert.welfareCheck?.status === 'escalated'
 }
 
-// Welfare-check status → human label + styling
+// Welfare-check status -> human label + styling
 function welfareStatusLabel(s: WelfareCheckStatus): {
   label: string
   cls: string
@@ -1005,7 +1005,7 @@ function WelfareResolveDialog({
     setErrorMsg(null)
     setSubmitting(true)
     try {
-      // The welfare-check id is in alert.id — backend unions welfare_checks
+      // The welfare-check id is in alert.id - backend unions welfare_checks
       // into /admin/emergency, and our resolve endpoint takes that id directly.
       await resolveWelfareCheck(alert.id, { note: reason.trim(), contactMethod })
       onResolved()

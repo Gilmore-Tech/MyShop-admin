@@ -77,7 +77,7 @@ function CountCard({
         <p className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</p>
         <Icon className="h-4 w-4 text-orange-500" />
       </div>
-      <p className="mt-2 text-2xl font-bold text-gray-900">{value ?? '…'}</p>
+      <p className="mt-2 text-2xl font-bold text-gray-900">{value ?? '...'}</p>
     </div>
   )
 }

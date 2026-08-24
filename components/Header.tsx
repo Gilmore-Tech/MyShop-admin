@@ -166,7 +166,7 @@ function adminInitials(name: string) {
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 
-/** "Good morning, Ayiks" + the full date — the app's one greeting (per the approved redesign). */
+/** "Good morning, Ayiks" + the full date - the app's one greeting (per the approved redesign). */
 function Greeting({ name }: { name: string | null }) {
   const [now, setNow] = useState<Date | null>(null)
   useEffect(() => {

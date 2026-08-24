@@ -54,7 +54,7 @@ export function RidePricingBreakdown({
   return (
     <div className="rounded-lg border border-gray-100 p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-semibold text-gray-700">Trip pricing</p>
+        <p className="text-xs font-semibold text-gray-700">Ride pricing</p>
         <span
           className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
             presentation.isEstimate

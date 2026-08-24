@@ -393,12 +393,12 @@ export default function LiveMapPage() {
     })
   }, [])
 
-  // Fallback poll (no-op while auto-refresh is globally disabled — see
+  // Fallback poll (no-op while auto-refresh is globally disabled - see
   // AUTO_REFRESH_DISABLED). Live updates come from the WebSocket below.
   useAutoRefresh(loadMarkers, 30_000)
 
   useEffect(() => {
-    // WebSocket — subscribe to real-time marker updates
+    // WebSocket - subscribe to real-time marker updates
     const token = typeof window !== 'undefined' ? localStorage.getItem('myshop_admin_token') : null
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'https://myshop-api-2hy2.onrender.com'
     const socket: Socket = io(wsUrl, {
@@ -442,7 +442,7 @@ export default function LiveMapPage() {
 
   return (
     <PageGuard permission="view_live_map">
-      {/* Outer wrapper — scrollable so the table can live below the map */}
+      {/* Outer wrapper - scrollable so the table can live below the map */}
       <div className="-m-6 flex flex-col min-h-[calc(100vh-4rem)]">
 
         {/* ── Map section (fixed height) ──────────────────────────────────── */}

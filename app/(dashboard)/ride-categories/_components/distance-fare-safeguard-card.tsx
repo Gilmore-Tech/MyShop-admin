@@ -146,7 +146,7 @@ function validateWorkingDraft(
 ): DraftValidation {
   const includedDistanceMeters = kmInputToMetres(draft.includedDistanceKm)
   const distanceError = includedDistanceMeters === null
-    ? `Enter 0.001–${MAX_DISTANCE_SAFEGUARD_METRES / 1000} km with no more than three decimal places.`
+    ? `Enter 0.001-${MAX_DISTANCE_SAFEGUARD_METRES / 1000} km with no more than three decimal places.`
     : null
   const reason = draft.reason.trim()
   const reasonError = reason.length === 0
@@ -292,7 +292,7 @@ function PreviewResults({ preview }: { preview: DistanceSafeguardPreview }) {
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
             <p className="text-sm font-semibold text-gray-900">{category.name}</p>
             <p className="text-xs text-gray-500">
-              Minimum {formatGhs(category.minimumFarePesewas)} · Per km {formatGhs(category.perKmPesewas)} · Effective floor {formatGhs(category.effectiveFloorPesewas)}
+              Minimum {formatGhs(category.minimumFarePesewas)} - Per km {formatGhs(category.perKmPesewas)} - Effective floor {formatGhs(category.effectiveFloorPesewas)}
             </p>
           </div>
           <Table>
@@ -494,7 +494,7 @@ export function DistanceFareSafeguardCard() {
         <CardContent className="flex min-h-32 items-center justify-center p-6">
           {operation === 'load' ? (
             <div className="flex items-center gap-2 text-sm text-gray-500" role="status" aria-live="polite">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading distance fare safeguard…
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading distance fare safeguard...
             </div>
           ) : (
             <div className="max-w-xl text-center">
@@ -639,7 +639,7 @@ export function DistanceFareSafeguardCard() {
             {state.draft && !savedDraftCurrent && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status" aria-live="polite">
                 The saved draft no longer covers the current active tiers exactly. Missing tiers have
-                been added with “Use category minimum” and obsolete tiers will be removed. Review any
+                been added with &quot;Use category minimum&quot; and obsolete tiers will be removed. Review any
                 highlighted custom floor, then Save Draft to create a repair revision before previewing.
               </div>
             )}

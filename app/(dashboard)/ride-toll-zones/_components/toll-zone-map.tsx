@@ -184,7 +184,7 @@ export function TollZoneMap({
       </APIProvider>
       {drawing && (
         <div className="pointer-events-none absolute left-3 top-3 rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white shadow">
-          Click at least three boundary points in order · {drawingPoints.length} selected
+          Click at least three boundary points in order - {drawingPoints.length} selected
         </div>
       )}
     </div>

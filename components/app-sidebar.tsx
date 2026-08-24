@@ -24,7 +24,7 @@ type NavItem = {
   icon: React.ElementType
   badge?: number
   permission?: Permission
-  // Constrain to one vertical — hidden from a coordinator scoped to the other.
+  // Constrain to one vertical - hidden from a coordinator scoped to the other.
   category?: CategoryScope
   // Visible only to the single root admin (is_super_admin). Used for the Admin
   // Accounts entry so account/permission management is root-only.
@@ -243,7 +243,7 @@ export default function AppSidebar() {
       label: 'Marketplace',
       items: [
         {
-          // No parent-level permission — each child is gated and category-scoped
+          // No parent-level permission - each child is gated and category-scoped
           // so a rides coordinator sees only ride surfaces and vice-versa.
           title: 'Bookings', href: '/rides', icon: Car,
           children: [
@@ -371,7 +371,7 @@ export default function AppSidebar() {
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{roleLabel(role)}</p>
             <p className="text-[11px] text-gray-600 mt-0.5">
               {region.name ?? 'All regions'}
-              {category ? ` · ${category === 'rides' ? 'Rides' : 'Artisan'}` : ''}
+              {category ? ` - ${category === 'rides' ? 'Rides' : 'Artisan'}` : ''}
             </p>
           </div>
         )}

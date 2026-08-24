@@ -105,7 +105,7 @@ export function useDateRange(
   options: {
     includeAll?: boolean
     onChange?: () => void
-    /** Honour `?from=&to=` deep links (e.g. from the Commission Ledger or Trip Outcomes). */
+    /** Honour `?from=&to=` deep links (e.g. from Commission charges or Booking outcomes). */
     readUrl?: boolean
   } = {},
 ) {

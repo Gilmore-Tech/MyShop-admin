@@ -37,7 +37,7 @@ const ROLE_CHIP_STYLE: Record<string, string> = {
 
 export function RoleChips({ roles, className }: { roles: string[]; className?: string }) {
   if (!roles || roles.length === 0) {
-    return <span className="text-[11px] text-gray-300">—</span>
+    return <span className="text-[11px] text-gray-300">-</span>
   }
   return (
     <span className={cn('inline-flex flex-wrap gap-1', className)}>
@@ -59,6 +59,6 @@ export function RoleChips({ roles, className }: { roles: string[]; className?: s
 // ── Points helper ──────────────────────────────────────────────────────────────
 
 export function formatPoints(points: number | null | undefined): string {
-  if (points == null) return '—'
+  if (points == null) return '-'
   return `${points.toLocaleString('en-GH')} pt${points === 1 ? '' : 's'}`
 }

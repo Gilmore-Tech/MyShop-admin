@@ -32,10 +32,10 @@ function MatIcon({ name, className, size = 20 }: { name: string; className?: str
   )
 }
 
-// miscellaneous_services is the generic catch-all — multiple categories may use it.
+// miscellaneous_services is the generic catch-all - multiple categories may use it.
 const REUSABLE_ICON = 'miscellaneous_services'
 
-/** Searchable icon grid — pick an unused icon. `usedIcons` are taken by other categories. */
+/** Searchable icon grid - pick an unused icon. `usedIcons` are taken by other categories. */
 function IconPicker({ value, onChange, usedIcons }: {
   value: string
   onChange: (name: string) => void
@@ -232,10 +232,10 @@ function CategoryDialog({
   }, [open, category, defaultParentId])
 
   // Only top-level (parent-less, active) categories can themselves act as
-  // parents — backend Prisma schema doesn't enforce depth, but keeping the tree
+  // parents - backend Prisma schema doesn't enforce depth, but keeping the tree
   // 2-deep matches the mobile client's model and prevents weird nesting.
   const parentOptions = allCategories.filter(c => c.parentId === null && c.id !== category?.id)
-  // Icons already taken by other categories — so a new category gets a distinct one.
+  // Icons already taken by other categories - so a new category gets a distinct one.
   const usedIcons = new Set(
     allCategories.filter(c => c.id !== category?.id && c.iconName).map(c => c.iconName as string),
   )

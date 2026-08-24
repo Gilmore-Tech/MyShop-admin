@@ -188,7 +188,7 @@ function validateDraft(state: RideTollPolicyState, form: WorkingDraft): Validate
       ...zone,
     })))
     for (const [left, right] of overlaps) {
-      topErrors.push(`Zones “${left}” and “${right}” overlap or touch. Separate their boundaries.`)
+      topErrors.push(`Zones "${left}" and "${right}" overlap or touch. Separate their boundaries.`)
     }
   }
   const payload = topErrors.length === 0 && Object.keys(zoneErrors).length === 0
@@ -585,7 +585,7 @@ function RideTollZonesContent() {
 
           {validation.topErrors.length > 0 && (
             <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-              {validation.topErrors.map((message) => <p key={message}>• {message}</p>)}
+              {validation.topErrors.map((message) => <p key={message}>- {message}</p>)}
             </div>
           )}
 
@@ -708,7 +708,7 @@ function RideTollZonesContent() {
 
                   {(validation.zoneErrors[selectedZone.localId] ?? []).length > 0 && (
                     <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-                      {validation.zoneErrors[selectedZone.localId].map((message) => <p key={message}>• {message}</p>)}
+                      {validation.zoneErrors[selectedZone.localId].map((message) => <p key={message}>- {message}</p>)}
                     </div>
                   )}
 
@@ -908,7 +908,7 @@ function RideTollZonesContent() {
             <DialogTitle>Publish this exact toll policy?</DialogTitle>
             <DialogDescription>
               This consumes the one-time preview token. Existing rides keep their captured price;
-              eligible new estimates use this revision only after its GMT effective time and runtime enablement.
+              eligible new estimates use this revision only after its GMT effective time and only while it is turned on.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">

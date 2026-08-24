@@ -110,7 +110,7 @@ export function ReferralAvailabilityCard() {
           {loading ? (
             <div className="flex items-center gap-2 py-2 text-sm text-gray-400">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Loading referral availability…
+              Loading referral availability...
             </div>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-4">

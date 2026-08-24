@@ -18,10 +18,10 @@ import { formatDate } from '@/lib/format-date'
 // Per-tier approve/reject for a driver. A driver picks the tiers they want at
 // signup and each lands as a `pending` request; an admin verifies the driver's
 // vehicle is good enough for that tier before approving. Matching is mutually
-// exclusive — a driver only receives a tier's requests once approved for it.
+// exclusive - a driver only receives a tier's requests once approved for it.
 // See docs/ride-categories-admin-integration.md Surface B.
 //
-// Shared by the driver profile sheet (Users → Drivers) and the document
+// Shared by the driver profile sheet (Users -> Drivers) and the document
 // verification drawer (Verifications) so both review surfaces stay in sync.
 
 function tierStatusBadge(status: string) {
@@ -99,7 +99,7 @@ export function DriverRideCategoriesSection({ driverId, canReview }: { driverId:
     setGrantTierId('')
     setGrantError('')
     setGrantOpen(true)
-    // Active tiers only — exclude any the driver already has a row for.
+    // Active tiers only - exclude any the driver already has a row for.
     getRideCategories()
       .then(tiers => setAllTiers(tiers.filter(t => t.isActive)))
       .catch(() => setAllTiers([]))
@@ -110,7 +110,7 @@ export function DriverRideCategoriesSection({ driverId, canReview }: { driverId:
     setGrantLoading(true)
     setGrantError('')
     try {
-      // PATCH upserts — approving a tier the driver never requested creates the row.
+      // PATCH upserts - approving a tier the driver never requested creates the row.
       await reviewDriverRideCategory(driverId, grantTierId, 'approve')
       setGrantOpen(false)
       load()
@@ -247,7 +247,7 @@ export function DriverRideCategoriesSection({ driverId, canReview }: { driverId:
             <div>
               <Label className="text-xs text-gray-500">Tier</Label>
               <Select value={grantTierId} onValueChange={v => { setGrantTierId(v); setGrantError('') }}>
-                <SelectTrigger className="mt-1.5 bg-white"><SelectValue placeholder="Select a tier…" /></SelectTrigger>
+                <SelectTrigger className="mt-1.5 bg-white"><SelectValue placeholder="Select a tier..." /></SelectTrigger>
                 <SelectContent>
                   {grantableTiers.length === 0 ? (
                     <div className="px-2 py-1.5 text-xs text-gray-400">No further tiers to grant</div>

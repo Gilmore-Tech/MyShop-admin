@@ -37,7 +37,7 @@ function formatExpiry(iso: string): string {
  * Renders next to the approve/reject affordance on any document-review surface
  * (the verification queue drawer and a provider's document list). Only shown for
  * document types that carry a real-world expiry (see EXPIRY_TRACKED_DOC_TYPES) and
- * only editable by admins holding `verify_documents` — the same permission that
+ * only editable by admins holding `verify_documents` - the same permission that
  * gates approve/reject. See docs/admin-frontend-spec-document-expiry.md.
  *
  * Calls PATCH /admin/verifications/documents/:id/expiry. The row updates
@@ -59,7 +59,7 @@ export function DocumentExpiryControl({
   onStale?: () => void
   /**
    * Whether the Add/Edit affordance is offered. Pass false for superseded
-   * (non-current) versions — the backend only patches the current version, so
+   * (non-current) versions - the backend only patches the current version, so
    * editing there would always 404. Defaults to true.
    */
   editable?: boolean
@@ -78,7 +78,7 @@ export function DocumentExpiryControl({
   const [savedFlash, setSavedFlash] = useState(false)
 
   // Keep local state in sync only when the parent genuinely hands us a *different*
-  // expiry (e.g. after a refetch) — never on every render, or we'd clobber the
+  // expiry (e.g. after a refetch) - never on every render, or we'd clobber the
   // optimistic value we just saved (the parent doesn't refetch on success). Also
   // deferred while mid-edit so an in-progress entry isn't overwritten.
   const lastSyncedRef = useRef(expiresAt)
@@ -120,7 +120,7 @@ export function DocumentExpiryControl({
       return
     }
     // A past date has a provider-facing consequence (marks the document expired
-    // and prompts re-upload) — confirm once before committing.
+    // and prompts re-upload) - confirm once before committing.
     if (isPastDate(value) && !confirmingPast) {
       setConfirmingPast(true)
       return
@@ -140,7 +140,7 @@ export function DocumentExpiryControl({
     } catch (err) {
       const e = err instanceof ApiError ? err : null
       if (e?.status === 404 || e?.code === 'DOCUMENT_NOT_FOUND') {
-        setError('This document is no longer the current version — refresh and try again.')
+        setError('This document is no longer the current version - refresh and try again.')
         onStale?.()
       } else if (e?.status === 400) {
         setError('Enter a valid date.')
@@ -172,7 +172,7 @@ export function DocumentExpiryControl({
             style={{ backgroundColor: '#F5A623' }}
           >
             {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-            {saving ? 'Saving…' : confirmingPast ? 'Confirm' : 'Save'}
+            {saving ? 'Saving...' : confirmingPast ? 'Confirm' : 'Save'}
           </button>
           <button
             type="button"
@@ -203,7 +203,7 @@ export function DocumentExpiryControl({
     )
   }
 
-  // ── View mode — expiry already set ───────────────────────────────────────────
+  // ── View mode - expiry already set ───────────────────────────────────────────
   if (current) {
     const expired = isPastDate(toInputValue(current))
     return (
@@ -232,8 +232,8 @@ export function DocumentExpiryControl({
     )
   }
 
-  // ── View mode — legacy backfill case (no expiry set) ─────────────────────────
-  // Hidden entirely for admins who can't edit — there is nothing to show.
+  // ── View mode - legacy backfill case (no expiry set) ─────────────────────────
+  // Hidden entirely for admins who can't edit - there is nothing to show.
   if (!canEdit) return null
 
   return (

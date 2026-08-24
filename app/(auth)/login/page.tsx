@@ -158,7 +158,7 @@ export default function LoginPage() {
             {loading ? (
               <>
                 <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                Signing in…
+                Signing in...
               </>
             ) : (
               <>
