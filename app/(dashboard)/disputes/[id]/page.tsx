@@ -8,6 +8,7 @@ import {
   ArrowLeft, AlertTriangle, Loader2, Scale, MapPin, User as UserIcon,
   Wrench, Car, Clock, Receipt, CheckCircle2, XCircle, Info,
 } from 'lucide-react'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { PageGuard } from '@/components/common/page-guard'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
@@ -70,6 +71,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -134,6 +136,17 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
     return null
   }
 
+  // The resolve button validates and opens the confirm dialog; the money only
+  // moves from the dialog's confirm (an irreversible action never fires from
+  // an inline form button — approved redesign, high-risk flow standard).
+  function requestResolve() {
+    if (!detail) return
+    const validationError = validate()
+    if (validationError) { setSubmitError(validationError); return }
+    setSubmitError('')
+    setConfirmOpen(true)
+  }
+
   async function handleSubmit() {
     if (!detail) return
     const validationError = validate()
@@ -170,7 +183,7 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
         if (err.code === 'CASH_REFUND_DESTINATION_REQUIRED') {
           setSubmitError('The client must OTP-verify a refund MoMo destination before approval.')
         } else if (err.code === 'PAYOUT_OUTCOME_PENDING') {
-          setSubmitError('The provider payout outcome is still being reconciled. Try again after reconciliation.')
+          setSubmitError('The provider payout is still under financial review. Try again shortly.')
         } else if (err.code === 'DISPUTE_ALREADY_RESOLVED' || err.status === 409) {
           setSubmitError('This dispute has already been resolved.')
         } else if (err.code === 'REFUND_AMOUNT_REQUIRED') {
@@ -511,12 +524,16 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
                     </Link>
                     <Button
                       size="sm"
+                      variant={mode === 'REJECT' ? 'destructive' : 'brand'}
                       disabled={submitting || (mode !== 'REJECT' && detail.refundDestination?.required && !detail.refundDestination.verified)}
-                      onClick={handleSubmit}
-                      className="flex-1 text-white"
-                      style={{ backgroundColor: mode === 'REJECT' ? '#EF4444' : '#10B981' }}
+                      onClick={requestResolve}
+                      className="flex-1"
                     >
-                      {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Resolve'}
+                      {mode === 'REJECT'
+                        ? 'Reject dispute'
+                        : mode === 'REFUND_PARTIAL'
+                          ? `Refund ${partialAmountGhs ? `GHS ${Number(partialAmountGhs).toFixed(2)}` : 'partially'}`
+                          : `Refund ${maxRefundPesewas != null ? formatGhs(maxRefundPesewas) : 'in full'}`}
                     </Button>
                   </div>
 
@@ -536,6 +553,33 @@ export default function DisputeDetailPage({ params }: { params: Promise<{ id: st
           </div>
         )}
       </div>
+      {detail && (
+        <ConfirmDialog
+          open={confirmOpen}
+          onClose={() => { if (!submitting) setConfirmOpen(false) }}
+          title={mode === 'REJECT'
+            ? 'Reject this dispute?'
+            : mode === 'REFUND_PARTIAL'
+              ? `Refund GHS ${Number(partialAmountGhs || 0).toFixed(2)} to the client?`
+              : `Refund ${maxRefundPesewas != null ? formatGhs(maxRefundPesewas) : 'the full amount'} to the client?`}
+          description={mode === 'REJECT'
+            ? 'No refund - the provider keeps the full earning. This cannot be undone and is recorded in the audit log.'
+            : 'The client gets this money back and the provider\u2019s earning is reduced. This cannot be undone and is recorded in the audit log.'}
+          confirmLabel={mode === 'REJECT'
+            ? 'Reject dispute'
+            : mode === 'REFUND_PARTIAL'
+              ? `Refund GHS ${Number(partialAmountGhs || 0).toFixed(2)}`
+              : `Refund ${maxRefundPesewas != null ? formatGhs(maxRefundPesewas) : 'in full'}`}
+          destructive={mode === 'REJECT'}
+          loading={submitting}
+          error={submitError || null}
+          onConfirm={() => { void handleSubmit() }}
+        >
+          <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+            <span className="font-semibold text-gray-800">Your note:</span> {notes.trim() || '-'}
+          </div>
+        </ConfirmDialog>
+      )}
     </PageGuard>
   )
 }
