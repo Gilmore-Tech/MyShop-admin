@@ -288,7 +288,7 @@ export default function DashboardPage() {
 
   const exploreAll: { title: string; href: string; icon: React.ElementType; permission: Permission }[] = [
     { title: 'Revenue', href: '/insights/revenue', icon: CalendarRange, permission: 'view_revenue_report' },
-    { title: 'Trip Outcomes', href: '/insights/trips', icon: Route, permission: 'view_reports' },
+    { title: 'Booking outcomes', href: '/insights/trips', icon: Route, permission: 'view_reports' },
     { title: 'Leaderboards', href: '/insights/leaderboards', icon: Trophy, permission: 'view_reports' },
     { title: 'Online Providers', href: '/online-providers', icon: Radio, permission: 'view_live_map' },
     { title: 'Commission charges', href: '/payments/commission-ledger', icon: Receipt, permission: 'view_payments' },
@@ -380,7 +380,7 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 bg-white rounded-xl shadow-sm overflow-hidden flex flex-col">
           <div className="flex items-center justify-between px-5 py-3.5">
             <div>
-              <h2 className="text-sm font-semibold text-gray-800">Trips by outcome</h2>
+              <h2 className="text-sm font-semibold text-gray-800">Booking outcomes</h2>
               <p className="text-xs text-gray-400">Bookings requested - {rangeLabel}</p>
             </div>
             {can('view_reports') && (

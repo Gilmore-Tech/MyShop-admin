@@ -16,7 +16,7 @@ import { AUTO_REFRESH_DISABLED } from '@/hooks/use-auto-refresh'
 import { type Permission, type CategoryScope, roleLabel } from '@/lib/roles'
 import { userLandingPath } from '@/lib/user-scope'
 
-type ChildItem = { title: string; href: string; permission?: Permission; badge?: number; badgeVariant?: 'red' | 'amber'; category?: CategoryScope; superAdmin?: boolean }
+type ChildItem = { title: string; href: string; permission?: Permission | Permission[]; badge?: number; badgeVariant?: 'red' | 'amber'; category?: CategoryScope; superAdmin?: boolean }
 
 type NavItem = {
   title: string
@@ -48,7 +48,7 @@ function Badge({ count, variant = 'red' }: { count: number; variant?: 'red' | 'a
 // constrained to the *other* category than the user's scope.
 function childAllowed(c: ChildItem, can: (p: Permission) => boolean, userCategory: CategoryScope | null, isSuperAdmin: boolean): boolean {
   if (c.superAdmin && !isSuperAdmin) return false
-  if (c.permission && !can(c.permission)) return false
+  if (c.permission && !(Array.isArray(c.permission) ? c.permission.some(can) : can(c.permission))) return false
   if (c.category && userCategory && c.category !== userCategory) return false
   return true
 }
@@ -229,13 +229,12 @@ export default function AppSidebar() {
           ],
         },
         {
-          title: 'Insights', href: '/analytics', icon: BarChart3,
+          title: 'Reports', href: '/insights/revenue', icon: BarChart3,
           children: [
-            { title: 'Analytics', href: '/analytics', permission: 'view_analytics' },
-            { title: 'Reports',   href: '/reports',   permission: 'view_reports' },
-            { title: 'Revenue', href: '/insights/revenue', permission: 'view_revenue_report' },
-            { title: 'Trip Outcomes', href: '/insights/trips', permission: 'view_reports' },
+            { title: 'Revenue', href: '/insights/revenue', permission: ['view_revenue_report', 'view_payments'] },
+            { title: 'Booking outcomes', href: '/insights/trips', permission: 'view_reports' },
             { title: 'Leaderboards', href: '/insights/leaderboards', permission: 'view_reports' },
+            { title: 'Pilot targets', href: '/insights/pilot', permission: 'view_pilot_report' },
           ],
         },
       ],
