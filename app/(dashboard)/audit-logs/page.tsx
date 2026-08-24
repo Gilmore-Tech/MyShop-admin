@@ -4,11 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Download, RefreshCw, Search, ShieldCheck } from 'lucide-react'
 import { SuperAdminPageGuard } from '@/components/common/super-admin-page-guard'
 import { PageHeader } from '@/components/common/page-header'
+import { FilterBar } from '@/components/common/filter-bar'
+import { DataTable, type DataTableColumn } from '@/components/common/data-table'
+import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   acknowledgeSystemAuditAlert,
@@ -25,6 +28,7 @@ import {
   verifySystemAuditIntegrity,
 } from '@/lib/api'
 import { API_BASE, getToken } from '@/lib/api-client'
+import { dateBasisCaption } from '@/lib/date-range'
 
 const EMPTY_SUMMARY: SystemAuditSummary = {
   total: 0, telemetryTotal: 0, failures: 0, critical: 0, openAlerts: 0, categories: [], timeZone: 'GMT',
@@ -40,7 +44,18 @@ function gmtTimestamp(value: string): string {
 }
 
 function title(value: string | null | undefined): string {
-  return value ? value.replace(/[._-]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase()) : '—'
+  return value ? value.replace(/[._-]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase()) : '-'
+}
+
+// Source-system labels: overrides the generic humanizer for values whose raw
+// name reads badly once title-cased (e.g. a deployment automation pipeline).
+const SOURCE_LABEL_OVERRIDES: Record<string, string> = {
+  deployment_webhook: 'Deployment automation',
+}
+
+function sourceLabel(value: string | null | undefined): string {
+  if (!value) return '-'
+  return SOURCE_LABEL_OVERRIDES[value] ?? title(value)
 }
 
 function Outcome({ event }: { event: SystemAuditEvent }) {
@@ -81,7 +96,7 @@ export default function SystemAuditPage() {
   const telemetrySummaryLabel = telemetrySummaryComparable
     ? hasSummaryFilters ? 'Mobile event rows (filtered)' : 'Mobile event rows (24h)'
     : 'Mobile event rows (not comparable)'
-  const telemetrySummaryValue = summary.telemetryTotal?.toLocaleString() ?? '—'
+  const telemetrySummaryValue = summary.telemetryTotal?.toLocaleString() ?? '-'
 
   const load = useCallback(async (cursor?: string) => {
     setLoading(true)
@@ -173,7 +188,7 @@ export default function SystemAuditPage() {
   }
 
   async function checkIntegrity() {
-    setIntegrity('Checking…')
+    setIntegrity('Checking...')
     try {
       const result = await verifySystemAuditIntegrity()
       setIntegrity(result.valid ? `${result.checked.toLocaleString()} events verified` : `${result.invalid} invalid events detected`)
@@ -198,12 +213,143 @@ export default function SystemAuditPage() {
     }
   }
 
+  const timelineColumns: DataTableColumn<SystemAuditEvent>[] = [
+    {
+      key: 'timestamp', header: 'Timestamp (GMT)', className: 'align-top',
+      render: event => <span className="text-xs text-gray-500">{gmtTimestamp(event.occurredAt)}</span>,
+    },
+    {
+      key: 'actor', header: 'Actor', className: 'align-top whitespace-normal',
+      render: event => (
+        <>
+          <p className="text-sm font-medium">{event.actorDisplayLabel ?? event.actorLabel ?? title(event.actorType)}</p>
+          <p className="text-xs text-gray-400">
+            {event.actorAttribution === 'unauthenticated_request'
+              ? 'Public endpoint - no authenticated account'
+              : `${title(event.actorRole)} - ${event.actorId?.slice(0, 12) ?? title(event.actorAttribution ?? 'system')}`}
+          </p>
+        </>
+      ),
+    },
+    {
+      key: 'category', header: 'Category / action', className: 'align-top whitespace-normal',
+      render: event => (
+        <>
+          <p className="text-xs font-semibold uppercase text-gray-400">{title(event.category)}</p>
+          <p className="text-sm text-gray-800">{title(event.action)}</p>
+          <p className="mt-1 max-w-80 truncate font-mono text-[10px] text-gray-500" title={`${event.origin?.method ?? ''} ${event.origin?.route ?? ''}`}>
+            {event.origin?.route ? `${event.origin.method ?? 'HTTP'} ${event.origin.route}` : sourceLabel(event.source)}
+          </p>
+          <p className="max-w-80 truncate text-[10px] text-gray-400" title={event.requestReference ?? ''}>
+            {sourceLabel(event.source)} - {event.environment} - ref {event.requestReference ?? '-'}
+          </p>
+        </>
+      ),
+    },
+    {
+      key: 'outcome', header: 'Outcome', className: 'align-top',
+      render: event => (
+        <>
+          <Outcome event={event} />
+          <p className="mt-1 text-[11px] text-gray-400">{title(event.severity)}</p>
+        </>
+      ),
+    },
+    {
+      key: 'target', header: 'Target', className: 'align-top whitespace-normal',
+      render: event => (
+        <>
+          <p className="text-sm">{title(event.targetType)}</p>
+          <p className="max-w-36 truncate font-mono text-[10px] text-gray-400" title={event.targetId ?? ''}>{event.targetId ?? '-'}</p>
+        </>
+      ),
+    },
+    {
+      key: 'evidence', header: 'Evidence', className: 'align-top whitespace-normal',
+      render: event => (
+        <details className="max-w-72 text-xs">
+          <summary className="cursor-pointer font-medium text-orange-600">View evidence</summary>
+          <div className="mt-2 space-y-1 break-all text-gray-500">
+            <p>Source: {sourceLabel(event.source)} - {event.environment}</p>
+            <p>Route: {event.origin?.method ?? '-'} {event.origin?.route ?? '-'}</p>
+            <p>Reference: {event.requestReference ?? '-'}</p><p>Correlation: {event.correlationId ?? '-'}</p>
+            <p>Error: {event.diagnostic?.errorCode ?? '-'} - HTTP: {event.diagnostic?.status ?? '-'} - Duration: {event.diagnostic?.durationMs ?? '-'} ms</p>
+            <p>Reported client: {event.reportedClient?.app ?? 'unavailable'} - {event.reportedClient?.platform ?? 'platform unavailable'} - build {event.reportedClient?.build ?? 'unavailable'}</p>
+            <p>IP: {event.ipAddressMasked ?? '-'} - Version: {event.reportedClient?.version ?? event.appVersion ?? 'unavailable'}</p>
+            <p>Hash: {event.eventHash}</p><p>Retained to: {gmtTimestamp(event.retentionUntil)}{event.legalHold ? ' - LEGAL HOLD' : ''}</p>
+            <Button variant="outline" size="sm" onClick={() => void toggleLegalHold(event)}>{event.legalHold ? 'Release legal hold' : 'Apply legal hold'}</Button>
+            {event.metadata && <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2">{JSON.stringify(event.metadata, null, 2)}</pre>}
+          </div>
+        </details>
+      ),
+    },
+  ]
+
+  const telemetryColumns: DataTableColumn<SystemTelemetryEvent>[] = [
+    {
+      key: 'timestamp', header: 'Server timestamp (GMT)', className: 'align-top whitespace-normal',
+      render: event => (
+        <>
+          <span className="text-xs text-gray-500">{gmtTimestamp(event.occurredAt)}</span>
+          <p className="mt-1 text-[10px] text-gray-400">Device: {event.deviceOccurredAt ? gmtTimestamp(event.deviceOccurredAt) : 'not supplied'}</p>
+        </>
+      ),
+    },
+    {
+      key: 'actor', header: 'Actor', className: 'align-top whitespace-normal',
+      render: event => (
+        <>
+          <p className="text-sm font-medium">{title(event.actorType)}</p>
+          <p className="text-xs text-gray-400">{title(event.actorRole)} - {event.actorId?.slice(0, 12) ?? 'system'}</p>
+        </>
+      ),
+    },
+    {
+      key: 'activity', header: 'Activity', className: 'align-top whitespace-normal',
+      render: event => (
+        <>
+          <p className="text-xs font-semibold uppercase text-gray-400">{title(event.category)}</p>
+          <p className="text-sm text-gray-800">{title(event.action)}</p>
+        </>
+      ),
+    },
+    {
+      key: 'outcome', header: 'Outcome', className: 'align-top',
+      render: event => (
+        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${event.outcome === 'failure' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{title(event.outcome)}</span>
+      ),
+    },
+    {
+      key: 'app', header: 'App', className: 'align-top whitespace-normal',
+      render: event => (
+        <>
+          <p className="text-sm">{event.reportedClient?.app ?? sourceLabel(event.source)}</p>
+          <p className="text-xs text-gray-400">{event.reportedClient?.platform ?? 'platform unavailable'} - build {event.reportedClient?.build ?? 'unavailable'}</p>
+          <p className="text-xs text-gray-400">Version {event.reportedClient?.version ?? event.appVersion ?? 'unavailable'}</p>
+        </>
+      ),
+    },
+    {
+      key: 'details', header: 'Details', className: 'align-top whitespace-normal',
+      render: event => (
+        <details className="max-w-72 text-xs">
+          <summary className="cursor-pointer font-medium text-orange-600">View details</summary>
+          <div className="mt-2 space-y-1 break-all text-gray-500">
+            <p>Correlation: {event.correlationId ?? '-'}</p>
+            <p>Expires: {gmtTimestamp(event.expiresAt)}</p>
+            {event.metadata && <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2">{JSON.stringify(event.metadata, null, 2)}</pre>}
+          </div>
+        </details>
+      ),
+    },
+  ]
+
   return (
     <SuperAdminPageGuard>
       <div className="space-y-5">
         <PageHeader
-          title="System Audit Vault"
-          subtitle="Immutable production evidence · server-authoritative GMT timestamps · exact Super Administrator access only"
+          title="Audit log"
+          subtitle="Every admin action, oldest evidence kept"
           actions={
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => void checkIntegrity()} className="gap-2">
@@ -243,7 +389,7 @@ export default function SystemAuditPage() {
           </div>
         )}
 
-        {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+        {error && <ErrorState compact title="Something went wrong" detail={error} />}
 
         <Tabs defaultValue="timeline">
           <TabsList>
@@ -253,7 +399,9 @@ export default function SystemAuditPage() {
           </TabsList>
 
           <TabsContent value="timeline" className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white p-3">
+            <FilterBar
+              meta={<span className="text-xs text-gray-500">{dateBasisCaption('Actions', 'recorded')}</span>}
+            >
               <div className="relative min-w-60 flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <Input
@@ -261,11 +409,11 @@ export default function SystemAuditPage() {
                   onChange={event => setSearchDraft(event.target.value)}
                   onKeyDown={event => event.key === 'Enter' && updateFilter('search', searchDraft)}
                   placeholder="Actor, action, target, correlation or support reference"
-                  className="pl-9"
+                  className="h-9 pl-9 bg-white"
                 />
               </div>
               <Select value={filters.category ?? 'all'} onValueChange={value => updateFilter('category', value === 'all' ? undefined : value)}>
-                <SelectTrigger className="w-44"><SelectValue placeholder="All categories" /></SelectTrigger>
+                <SelectTrigger className="h-9 w-44 bg-white"><SelectValue placeholder="All categories" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All categories</SelectItem>
                   {['authentication', 'security', 'admin_operation', 'verification', 'ride', 'artisan_job', 'financial', 'configuration', 'deployment', 'audit_access'].map(value => (
@@ -274,93 +422,47 @@ export default function SystemAuditPage() {
                 </SelectContent>
               </Select>
               <Select value={filters.actorType ?? 'all'} onValueChange={value => updateFilter('actorType', value === 'all' ? undefined : value)}>
-                <SelectTrigger className="w-40"><SelectValue placeholder="All actors" /></SelectTrigger>
+                <SelectTrigger className="h-9 w-40 bg-white"><SelectValue placeholder="All actors" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All actors</SelectItem>
                   {['admin', 'client', 'driver', 'artisan', 'system', 'deployment'].map(value => <SelectItem key={value} value={value}>{title(value)}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={filters.source ?? 'all'} onValueChange={value => updateFilter('source', value === 'all' ? undefined : value)}>
-                <SelectTrigger className="w-48"><SelectValue placeholder="All sources" /></SelectTrigger>
+                <SelectTrigger className="h-9 w-48 bg-white"><SelectValue placeholder="All sources" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All sources</SelectItem>
                   {['http_api', 'auth_service', 'otp_delivery_service', 'legacy_admin_audit', 'database_trigger', 'application_bootstrap', 'deployment_webhook', 'super_admin_dashboard', 'mobile:client', 'mobile:provider'].map(value => (
-                    <SelectItem key={value} value={value}>{title(value)}</SelectItem>
+                    <SelectItem key={value} value={value}>{sourceLabel(value)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <Select value={filters.environment ?? 'all'} onValueChange={value => updateFilter('environment', value === 'all' ? undefined : value)}>
-                <SelectTrigger className="w-40"><SelectValue placeholder="All environments" /></SelectTrigger>
+                <SelectTrigger className="h-9 w-40 bg-white"><SelectValue placeholder="All environments" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All environments</SelectItem>
                   {['production', 'staging', 'historical', 'unknown'].map(value => <SelectItem key={value} value={value}>{title(value)}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={filters.outcome ?? 'all'} onValueChange={value => updateFilter('outcome', value === 'all' ? undefined : value)}>
-                <SelectTrigger className="w-36"><SelectValue placeholder="All outcomes" /></SelectTrigger>
+                <SelectTrigger className="h-9 w-36 bg-white"><SelectValue placeholder="All outcomes" /></SelectTrigger>
                 <SelectContent><SelectItem value="all">All outcomes</SelectItem><SelectItem value="success">Success</SelectItem><SelectItem value="failure">Failure</SelectItem></SelectContent>
               </Select>
-              <Input type="datetime-local" className="w-48" value={filters.from?.slice(0, 16) ?? ''} onChange={event => updateFilter('from', event.target.value ? new Date(event.target.value).toISOString() : undefined)} title="From" />
-              <Input type="datetime-local" className="w-48" value={filters.to?.slice(0, 16) ?? ''} onChange={event => updateFilter('to', event.target.value ? new Date(event.target.value).toISOString() : undefined)} title="To" />
+              <Input type="datetime-local" className="h-9 w-48 bg-white" value={filters.from?.slice(0, 16) ?? ''} onChange={event => updateFilter('from', event.target.value ? new Date(event.target.value).toISOString() : undefined)} title="From" />
+              <Input type="datetime-local" className="h-9 w-48 bg-white" value={filters.to?.slice(0, 16) ?? ''} onChange={event => updateFilter('to', event.target.value ? new Date(event.target.value).toISOString() : undefined)} title="To" />
               <Button variant="outline" size="sm" onClick={() => void exportEvents('csv')} className="gap-1"><Download className="h-4 w-4" /> CSV</Button>
               <Button variant="outline" size="sm" onClick={() => void exportEvents('json')}>JSON</Button>
-            </div>
+            </FilterBar>
 
-            <div className="overflow-hidden rounded-xl border bg-white">
-              <Table>
-                <TableHeader><TableRow className="bg-gray-50">
-                  <TableHead>Timestamp (GMT)</TableHead><TableHead>Actor</TableHead><TableHead>Category / action</TableHead>
-                  <TableHead>Outcome</TableHead><TableHead>Target</TableHead><TableHead>Evidence</TableHead>
-                </TableRow></TableHeader>
-                <TableBody>
-                  {loading ? Array.from({ length: 8 }).map((_, index) => (
-                    <TableRow key={index}>{Array.from({ length: 6 }).map((__, cell) => <TableCell key={cell}><div className="h-4 animate-pulse rounded bg-gray-100" /></TableCell>)}</TableRow>
-                  )) : events.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="py-12 text-center text-gray-400">No evidence matches these filters.</TableCell></TableRow>
-                  ) : events.map(event => (
-                    <TableRow key={event.id} className="align-top">
-                      <TableCell className="whitespace-nowrap text-xs text-gray-500">{gmtTimestamp(event.occurredAt)}</TableCell>
-                      <TableCell>
-                        <p className="text-sm font-medium">{event.actorDisplayLabel ?? event.actorLabel ?? title(event.actorType)}</p>
-                        <p className="text-xs text-gray-400">
-                          {event.actorAttribution === 'unauthenticated_request'
-                            ? 'Public endpoint · no authenticated account'
-                            : `${title(event.actorRole)} · ${event.actorId?.slice(0, 12) ?? title(event.actorAttribution ?? 'system')}`}
-                        </p>
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-xs font-semibold uppercase text-gray-400">{title(event.category)}</p>
-                        <p className="text-sm text-gray-800">{title(event.action)}</p>
-                        <p className="mt-1 max-w-80 truncate font-mono text-[10px] text-gray-500" title={`${event.origin?.method ?? ''} ${event.origin?.route ?? ''}`}>
-                          {event.origin?.route ? `${event.origin.method ?? 'HTTP'} ${event.origin.route}` : title(event.source)}
-                        </p>
-                        <p className="max-w-80 truncate text-[10px] text-gray-400" title={event.requestReference ?? ''}>
-                          {event.source} · {event.environment} · ref {event.requestReference ?? '—'}
-                        </p>
-                      </TableCell>
-                      <TableCell><Outcome event={event} /><p className="mt-1 text-[11px] text-gray-400">{title(event.severity)}</p></TableCell>
-                      <TableCell><p className="text-sm">{title(event.targetType)}</p><p className="max-w-36 truncate font-mono text-[10px] text-gray-400" title={event.targetId ?? ''}>{event.targetId ?? '—'}</p></TableCell>
-                      <TableCell>
-                        <details className="max-w-72 text-xs">
-                          <summary className="cursor-pointer font-medium text-orange-600">View evidence</summary>
-                          <div className="mt-2 space-y-1 break-all text-gray-500">
-                            <p>Source: {event.source} · {event.environment}</p>
-                            <p>Route: {event.origin?.method ?? '—'} {event.origin?.route ?? '—'}</p>
-                            <p>Reference: {event.requestReference ?? '—'}</p><p>Correlation: {event.correlationId ?? '—'}</p>
-                            <p>Error: {event.diagnostic?.errorCode ?? '—'} · HTTP: {event.diagnostic?.status ?? '—'} · Duration: {event.diagnostic?.durationMs ?? '—'} ms</p>
-                            <p>Reported client: {event.reportedClient?.app ?? 'unavailable'} · {event.reportedClient?.platform ?? 'platform unavailable'} · build {event.reportedClient?.build ?? 'unavailable'}</p>
-                            <p>IP: {event.ipAddressMasked ?? '—'} · Version: {event.reportedClient?.version ?? event.appVersion ?? 'unavailable'}</p>
-                            <p>Hash: {event.eventHash}</p><p>Retained to: {gmtTimestamp(event.retentionUntil)}{event.legalHold ? ' · LEGAL HOLD' : ''}</p>
-                            <Button variant="outline" size="sm" onClick={() => void toggleLegalHold(event)}>{event.legalHold ? 'Release legal hold' : 'Apply legal hold'}</Button>
-                            {event.metadata && <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2">{JSON.stringify(event.metadata, null, 2)}</pre>}
-                          </div>
-                        </details>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable
+              columns={timelineColumns}
+              rows={events}
+              rowKey={event => event.id}
+              loading={loading}
+              skeletonRows={8}
+              empty={<EmptyState title="No evidence matches these filters" />}
+              minWidth={960}
+            />
 
             <div className="flex justify-between">
               <Button variant="outline" disabled={!cursorHistory.length || loading} onClick={() => {
@@ -379,7 +481,7 @@ export default function SystemAuditPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-white p-3">
               <div>
                 <p className="font-medium text-gray-900">Privacy-minimal mobile activity</p>
-                <p className="text-xs text-gray-500">Named screens, app lifecycle and meaningful actions only · retained for 90 days</p>
+                <p className="text-xs text-gray-500">Named screens, app lifecycle and meaningful actions only - retained for 90 days</p>
                 <p className="mt-1 text-xs text-amber-700">Best-effort, at-least-once event rows: ambiguous transport loss can duplicate a row. This is not a financial ledger.</p>
               </div>
               <div className="flex gap-2">
@@ -388,34 +490,15 @@ export default function SystemAuditPage() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-xl border bg-white">
-              <Table>
-                <TableHeader><TableRow className="bg-gray-50">
-                  <TableHead>Server timestamp (GMT)</TableHead><TableHead>Actor</TableHead><TableHead>Activity</TableHead>
-                  <TableHead>Outcome</TableHead><TableHead>App</TableHead><TableHead>Details</TableHead>
-                </TableRow></TableHeader>
-                <TableBody>
-                  {telemetryLoading ? Array.from({ length: 8 }).map((_, index) => (
-                    <TableRow key={index}>{Array.from({ length: 6 }).map((__, cell) => <TableCell key={cell}><div className="h-4 animate-pulse rounded bg-gray-100" /></TableCell>)}</TableRow>
-                  )) : telemetry.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="py-12 text-center text-gray-400">No mobile activity matches these filters.</TableCell></TableRow>
-                  ) : telemetry.map(event => (
-                    <TableRow key={event.id} className="align-top">
-                      <TableCell className="whitespace-nowrap text-xs text-gray-500">{gmtTimestamp(event.occurredAt)}<p className="mt-1 text-[10px] text-gray-400">Device: {event.deviceOccurredAt ? gmtTimestamp(event.deviceOccurredAt) : 'not supplied'}</p></TableCell>
-                      <TableCell><p className="text-sm font-medium">{title(event.actorType)}</p><p className="text-xs text-gray-400">{title(event.actorRole)} · {event.actorId?.slice(0, 12) ?? 'system'}</p></TableCell>
-                      <TableCell><p className="text-xs font-semibold uppercase text-gray-400">{title(event.category)}</p><p className="text-sm text-gray-800">{title(event.action)}</p></TableCell>
-                      <TableCell><span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${event.outcome === 'failure' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{title(event.outcome)}</span></TableCell>
-                      <TableCell>
-                        <p className="text-sm">{event.reportedClient?.app ?? event.source}</p>
-                        <p className="text-xs text-gray-400">{event.reportedClient?.platform ?? 'platform unavailable'} · build {event.reportedClient?.build ?? 'unavailable'}</p>
-                        <p className="text-xs text-gray-400">Version {event.reportedClient?.version ?? event.appVersion ?? 'unavailable'}</p>
-                      </TableCell>
-                      <TableCell><details className="max-w-72 text-xs"><summary className="cursor-pointer font-medium text-orange-600">View details</summary><div className="mt-2 space-y-1 break-all text-gray-500"><p>Correlation: {event.correlationId ?? '—'}</p><p>Expires: {gmtTimestamp(event.expiresAt)}</p>{event.metadata && <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2">{JSON.stringify(event.metadata, null, 2)}</pre>}</div></details></TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable
+              columns={telemetryColumns}
+              rows={telemetry}
+              rowKey={event => event.id}
+              loading={telemetryLoading}
+              skeletonRows={8}
+              empty={<EmptyState title="No mobile activity matches these filters" />}
+              minWidth={900}
+            />
 
             <div className="flex justify-between">
               <Button variant="outline" disabled={!telemetryCursorHistory.length || telemetryLoading} onClick={() => {
@@ -432,10 +515,12 @@ export default function SystemAuditPage() {
 
           <TabsContent value="alerts">
             <div className="space-y-3">
-              {alerts.length === 0 ? <div className="rounded-xl border bg-white p-10 text-center text-gray-400"><CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-emerald-500" />No open audit alerts.</div> : alerts.map(alert => (
+              {alerts.length === 0 ? (
+                <EmptyState icon={CheckCircle2} title="No open audit alerts" className="rounded-xl border bg-white" />
+              ) : alerts.map(alert => (
                 <div key={alert.id} className="flex items-start gap-3 rounded-xl border bg-white p-4">
                   <AlertTriangle className={`mt-0.5 h-5 w-5 ${alert.severity === 'critical' ? 'text-red-600' : 'text-amber-500'}`} />
-                  <div className="flex-1"><p className="font-semibold text-gray-900">{alert.title}</p><p className="text-sm text-gray-500">{alert.summary}</p><p className="mt-1 text-xs text-gray-400">{gmtTimestamp(alert.createdAt)} · {title(alert.type)} · {title(alert.severity)}</p></div>
+                  <div className="flex-1"><p className="font-semibold text-gray-900">{alert.title}</p><p className="text-sm text-gray-500">{alert.summary}</p><p className="mt-1 text-xs text-gray-400">{gmtTimestamp(alert.createdAt)} - {title(alert.type)} - {title(alert.severity)}</p></div>
                   <Button variant="outline" size="sm" onClick={() => void acknowledge(alert)}>Acknowledge</Button>
                 </div>
               ))}

@@ -3,17 +3,20 @@
 import { AccessDenied } from '@/components/common/access-denied'
 import { useRole } from '@/hooks/use-role'
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, MoreHorizontal, Shield, Clock, RefreshCw, KeyRound, Trash2, UserCheck, UserX, Eye, Pencil } from 'lucide-react'
+import { Plus, Shield, Clock, KeyRound, Trash2, UserCheck, UserX, Eye, Pencil } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/common/page-header'
+import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
+import { DataTable, AvatarCell, type DataTableColumn } from '@/components/common/data-table'
+import { EmptyState } from '@/components/common/empty-state'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { FormDialog } from '@/components/common/form-dialog'
 import { StatusBadge } from '@/components/common/status-badge'
 import { PermissionPicker, GrantedPermissions } from '@/components/admin/permission-picker'
 import {
@@ -26,15 +29,7 @@ import {
  PERMISSION_LABELS, ROLE_DEFINITIONS, ROLE_ORDER, roleLabel, permissionsForRole,
  type Permission, type Role,
 } from '@/lib/roles'
-
-function initials(name: string) {
- return name.split('').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-}
-
-function formatDate(iso: string | null) {
- if (!iso) return'-'
- return new Date(iso).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
-}
+import { formatDateTime } from '@/lib/format-date'
 
 // Compact summary of a permission set for the table cell: first couple of
 // labels plus an overflow count.
@@ -51,12 +46,14 @@ type DialogMode =
  | { type:'view'; admin: AdminAccount }
  | { type:'permissions'; admin: AdminAccount }
  | { type:'reset-password'; admin: AdminAccount }
+ | { type:'deactivate'; admin: AdminAccount }
  | { type:'delete'; admin: AdminAccount }
 
 export default function AdminAccountsPage() {
  const [admins, setAdmins] = useState<AdminAccount[]>([])
  const [loading, setLoading] = useState(true)
  const [error, setError] = useState('')
+ const [actionError, setActionError] = useState('')
  const [search, setSearch] = useState('')
  const [dialog, setDialog] = useState<DialogMode | null>(null)
  const [deleteConfirm, setDeleteConfirm] = useState('')
@@ -162,6 +159,8 @@ export default function AdminAccountsPage() {
  if (newPw.length < 8) { setSubmitError('Password must be at least 8 characters.'); setSubmitting(false); return }
  if (newPw !== confirmPw) { setSubmitError('Passwords do not match.'); setSubmitting(false); return }
  await resetAdminPassword(dialog.admin.id, newPw)
+ } else if (dialog.type ==='deactivate') {
+ await deactivateAdmin(dialog.admin.id)
  } else if (dialog.type ==='delete') {
  await deleteAdmin(dialog.admin.id)
  }
@@ -186,12 +185,13 @@ export default function AdminAccountsPage() {
  }
 
  async function toggleActive(admin: AdminAccount) {
+ setActionError('')
  try {
  if (admin.isActive) await deactivateAdmin(admin.id)
  else await reactivateAdmin(admin.id)
  await load()
  } catch (err) {
- setError(err instanceof ApiError ? err.message :'Action failed.')
+ setActionError(err instanceof ApiError ? err.message :'Action failed.')
  }
  }
 
@@ -205,90 +205,24 @@ export default function AdminAccountsPage() {
  if (permissions === null) return null
  if (!isSuperAdmin) return <AccessDenied />
 
- return (
- <div>
- <PageHeader
- title="Admin Accounts"
- subtitle="Only the root admin can create accounts and assign permissions"
- actions={
- <Button onClick={() => openDialog({ type:'create' })} className="gap-2 text-white" style={{ backgroundColor:'#F5A623' }}>
- <Plus className="h-4 w-4" /> Create Admin
- </Button>
- }
- />
-
- <Tabs defaultValue="accounts">
- <TabsList className="bg-white mb-6">
- <TabsTrigger value="accounts">Admin Accounts</TabsTrigger>
- </TabsList>
-
- <TabsContent value="accounts">
- <div className="flex items-center gap-3 mb-4">
- <div className="relative flex-1 max-w-sm">
- <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
- <Input placeholder="Search by name or email…" className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
- </div>
- <Button variant="outline" size="sm" onClick={load} className="gap-2">
- <RefreshCw className="h-3.5 w-3.5" /> Refresh
- </Button>
- <div className="ml-auto text-sm text-gray-400">{filtered.length} admins</div>
- </div>
-
- {error && (
- <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
- )}
-
- <div className="bg-white rounded-xl shadow-sm overflow-hidden">
- <Table>
- <TableHeader>
- <TableRow className="bg-gray-50">
- <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Admin</TableHead>
- <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Role</TableHead>
- <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scope</TableHead>
- <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Permissions</TableHead>
- <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</TableHead>
- <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Login</TableHead>
- <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Created</TableHead>
- <TableHead className="w-10" />
- </TableRow>
- </TableHeader>
- <TableBody>
- {loading ? (
- Array.from({ length: 5 }).map((_, i) => (
- <TableRow key={i}>
- {Array.from({ length: 8 }).map((_, j) => (
- <TableCell key={j}><div className="h-4 bg-gray-100 rounded animate-pulse" /></TableCell>
- ))}
- </TableRow>
- ))
- ) : filtered.length === 0 ? (
- <TableRow>
- <TableCell colSpan={8} className="text-center py-12 text-gray-400">
- {search ?'No admins match your search.' :'No admin accounts found.'}
- </TableCell>
- </TableRow>
- ) : (
- filtered.map(admin => (
- <TableRow key={admin.id} className="hover:bg-gray-50">
- <TableCell>
- <div className="flex items-center gap-3">
- <Avatar className="h-8 w-8">
- <AvatarFallback className="bg-slate-700 text-white text-xs font-bold">
- {initials(admin.fullName)}
- </AvatarFallback>
- </Avatar>
- <div>
- <p className="font-medium text-sm text-gray-900">{admin.fullName}</p>
- <p className="text-xs text-gray-400">{admin.email}</p>
- </div>
- </div>
- </TableCell>
- <TableCell className="text-sm text-gray-700">{roleLabel(admin.role)}</TableCell>
- <TableCell className="text-sm text-gray-500">
+ const columns: DataTableColumn<AdminAccount>[] = [
+ {
+ key: 'admin', header: 'Admin',
+ render: admin => <AvatarCell name={admin.fullName} sub={admin.email} />,
+ },
+ { key: 'role', header: 'Role', render: admin => <span className="text-sm text-gray-700">{roleLabel(admin.role)}</span> },
+ {
+ key: 'scope', header: 'Scope', className: 'whitespace-normal',
+ render: admin => (
+ <span className="text-sm text-gray-500">
  {admin.region?.name ?? admin.regionScope ?? 'All regions'}
- {admin.categoryScope ? ` · ${admin.categoryScope === 'rides' ? 'Rides' : 'Artisan'}` : ''}
- </TableCell>
- <TableCell>
+ {admin.categoryScope ? ` - ${admin.categoryScope === 'rides' ? 'Rides' : 'Artisan'}` : ''}
+ </span>
+ ),
+ },
+ {
+ key: 'permissions', header: 'Permissions', className: 'whitespace-normal',
+ render: admin => (
  <button
  type="button"
  onClick={() => openDialog({ type:'view', admin })}
@@ -300,37 +234,72 @@ export default function AdminAccountsPage() {
  {permissionSummary(admin.permissions)}
  </span>
  </button>
- </TableCell>
- <TableCell>
- <StatusBadge status={admin.isActive ?'active' :'suspended'} />
- </TableCell>
- <TableCell className="text-sm text-gray-500">
- <div className="flex items-center gap-1">
+ ),
+ },
+ { key: 'status', header: 'Status', render: admin => <StatusBadge status={admin.isActive ? 'active' : 'suspended'} /> },
+ {
+ key: 'lastLogin', header: 'Last login',
+ render: admin => (
+ <span className="inline-flex items-center gap-1 text-sm text-gray-500">
  <Clock className="h-3.5 w-3.5 text-gray-300" />
- {formatDate(admin.lastLoginAt)}
- </div>
- </TableCell>
- <TableCell className="text-sm text-gray-500">{formatDate(admin.createdAt)}</TableCell>
- <TableCell>
- <DropdownMenu>
- <DropdownMenuTrigger asChild>
- <Button variant="ghost" size="icon" className="h-8 w-8">
- <MoreHorizontal className="h-4 w-4" />
+ {formatDateTime(admin.lastLoginAt)}
+ </span>
+ ),
+ },
+ { key: 'created', header: 'Created', render: admin => <span className="text-sm text-gray-500">{formatDateTime(admin.createdAt)}</span> },
+ ]
+
+ return (
+ <div>
+ <PageHeader
+ title="Admin accounts"
+ subtitle="Only the root admin can create accounts and assign permissions"
+ actions={
+ <Button onClick={() => openDialog({ type:'create' })} variant="brand" className="gap-2">
+ <Plus className="h-4 w-4" /> Create admin
  </Button>
- </DropdownMenuTrigger>
- <DropdownMenuContent align="end">
+ }
+ />
+
+ <Tabs defaultValue="accounts">
+ <TabsList className="bg-white mb-6">
+ <TabsTrigger value="accounts">Admin accounts</TabsTrigger>
+ </TabsList>
+
+ <TabsContent value="accounts">
+ {actionError && (
+ <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>
+ )}
+ <FilterBar
+ onRefresh={load}
+ refreshing={loading}
+ meta={<span className="text-sm text-gray-400">{filtered.length} admin{filtered.length !== 1 ? 's' : ''}</span>}
+ >
+ <FilterSearch value={search} onChange={setSearch} placeholder="Search by name or email" />
+ </FilterBar>
+
+ <DataTable
+ columns={columns}
+ rows={filtered}
+ rowKey={admin => admin.id}
+ loading={loading}
+ error={error || null}
+ onRetry={load}
+ empty={<EmptyState title={search ? 'No admins match your search' : 'No admin accounts found'} />}
+ rowMenu={admin => (
+ <>
  <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'view', admin })}>
- <Eye className="h-4 w-4" /> View Permissions
+ <Eye className="h-4 w-4" /> View permissions
  </DropdownMenuItem>
  <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'permissions', admin })}>
- <Shield className="h-4 w-4" /> Edit Permissions
+ <Shield className="h-4 w-4" /> Edit permissions
  </DropdownMenuItem>
  <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'reset-password', admin })}>
- <KeyRound className="h-4 w-4" /> Reset Password
+ <KeyRound className="h-4 w-4" /> Reset password
  </DropdownMenuItem>
  <DropdownMenuSeparator />
  {admin.isActive ? (
- <DropdownMenuItem className="gap-2 text-orange-600" onClick={() => toggleActive(admin)}>
+ <DropdownMenuItem className="gap-2 text-orange-600" onClick={() => openDialog({ type:'deactivate', admin })}>
  <UserX className="h-4 w-4" /> Deactivate
  </DropdownMenuItem>
  ) : (
@@ -341,25 +310,25 @@ export default function AdminAccountsPage() {
  <DropdownMenuItem className="gap-2 text-red-600" onClick={() => openDialog({ type:'delete', admin })}>
  <Trash2 className="h-4 w-4" /> Delete
  </DropdownMenuItem>
- </DropdownMenuContent>
- </DropdownMenu>
- </TableCell>
- </TableRow>
- ))
+ </>
  )}
- </TableBody>
- </Table>
- </div>
+ minWidth={900}
+ />
  </TabsContent>
  </Tabs>
 
  {/* ── Create Admin Dialog ──────────────────────────────────────────────── */}
- <Dialog open={dialog?.type ==='create'} onOpenChange={open => { if (!open) setDialog(null) }}>
- <DialogContent className="max-w-md">
- <DialogHeader><DialogTitle>Create Admin Account</DialogTitle></DialogHeader>
- <div className="space-y-4 py-2">
+ <FormDialog
+ open={dialog?.type === 'create'}
+ onClose={() => setDialog(null)}
+ title="Create admin account"
+ submitLabel="Create admin"
+ onSubmit={handleSubmit}
+ loading={submitting}
+ error={submitError || null}
+ >
  <div className="space-y-1.5">
- <Label>Full Name</Label>
+ <Label>Full name</Label>
  <Input placeholder="Kwame Mensah" value={newFullName} onChange={e => setNewFullName(e.target.value)} />
  </div>
  <div className="space-y-1.5">
@@ -404,16 +373,7 @@ export default function AdminAccountsPage() {
  <PermissionPicker value={newPermissions} onChange={setNewPermissions} excludeKeys={['manage_admins']} />
  )}
  </div>
- {submitError && <p className="text-xs text-red-600">{submitError}</p>}
- </div>
- <DialogFooter>
- <Button variant="outline" onClick={() => setDialog(null)}>Cancel</Button>
- <Button disabled={submitting} onClick={handleSubmit} className="text-white" style={{ backgroundColor:'#F5A623' }}>
- {submitting ?'Creating…' :'Create Admin'}
- </Button>
- </DialogFooter>
- </DialogContent>
- </Dialog>
+ </FormDialog>
 
  {/* ── View Permissions Dialog ──────────────────────────────────────────── */}
  <Dialog open={dialog?.type ==='view'} onOpenChange={open => { if (!open) setDialog(null) }}>
@@ -438,22 +398,25 @@ export default function AdminAccountsPage() {
  <Button variant="outline" onClick={() => setDialog(null)}>Close</Button>
  <Button
  onClick={() => { if (dialog?.type ==='view') openDialog({ type:'permissions', admin: dialog.admin }) }}
- className="gap-2 text-white"
- style={{ backgroundColor:'#F5A623' }}
+ variant="brand"
+ className="gap-2"
  >
- <Pencil className="h-4 w-4" /> Edit Permissions
+ <Pencil className="h-4 w-4" /> Edit permissions
  </Button>
  </DialogFooter>
  </DialogContent>
  </Dialog>
 
  {/* ── Edit Permissions Dialog ──────────────────────────────────────────── */}
- <Dialog open={dialog?.type ==='permissions'} onOpenChange={open => { if (!open) setDialog(null) }}>
- <DialogContent className="max-w-md">
- <DialogHeader>
- <DialogTitle>Edit Permissions - {dialog?.type ==='permissions' ? dialog.admin.fullName :''}</DialogTitle>
- </DialogHeader>
- <div className="space-y-3 py-2">
+ <FormDialog
+ open={dialog?.type === 'permissions'}
+ onClose={() => setDialog(null)}
+ title={`Edit permissions - ${dialog?.type === 'permissions' ? dialog.admin.fullName : ''}`}
+ submitLabel="Save changes"
+ onSubmit={handleSubmit}
+ loading={submitting}
+ error={submitError || null}
+ >
  {dialog?.type ==='permissions' && dialog.admin.id === currentAdminId && (
  <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
  You can&apos;t remove your own <strong>Manage admins</strong> permission.
@@ -498,47 +461,46 @@ export default function AdminAccountsPage() {
  />
  )}
  </div>
- {submitError && <p className="text-xs text-red-600">{submitError}</p>}
- </div>
- <DialogFooter>
- <Button variant="outline" onClick={() => setDialog(null)}>Cancel</Button>
- <Button disabled={submitting} onClick={handleSubmit} className="text-white" style={{ backgroundColor:'#F5A623' }}>
- {submitting ?'Saving…' :'Save Changes'}
- </Button>
- </DialogFooter>
- </DialogContent>
- </Dialog>
+ </FormDialog>
 
  {/* ── Reset Password Dialog ────────────────────────────────────────────── */}
- <Dialog open={dialog?.type ==='reset-password'} onOpenChange={open => { if (!open) setDialog(null) }}>
- <DialogContent className="max-w-sm">
- <DialogHeader>
- <DialogTitle>Reset Password - {dialog?.type ==='reset-password' ? dialog.admin.fullName :''}</DialogTitle>
- </DialogHeader>
- <div className="space-y-4 py-2">
+ <ConfirmDialog
+ open={dialog?.type === 'reset-password'}
+ onClose={() => setDialog(null)}
+ title={`Reset password for ${dialog?.type === 'reset-password' ? dialog.admin.fullName : 'this admin'}?`}
+ description="They will need to sign in with the new password next time."
+ confirmLabel="Reset password"
+ onConfirm={() => handleSubmit()}
+ loading={submitting}
+ error={submitError || null}
+ >
  <div className="space-y-1.5">
- <Label>New Password</Label>
+ <Label>New password</Label>
  <Input type="password" placeholder="Min 8 characters" value={newPw} onChange={e => setNewPw(e.target.value)} />
  </div>
  <div className="space-y-1.5">
- <Label>Confirm Password</Label>
+ <Label>Confirm password</Label>
  <Input type="password" placeholder="Repeat password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} />
  </div>
- {submitError && <p className="text-xs text-red-600">{submitError}</p>}
- </div>
- <DialogFooter>
- <Button variant="outline" onClick={() => setDialog(null)}>Cancel</Button>
- <Button disabled={submitting} onClick={handleSubmit} className="text-white" style={{ backgroundColor:'#F5A623' }}>
- {submitting ?'Resetting…' :'Reset Password'}
- </Button>
- </DialogFooter>
- </DialogContent>
- </Dialog>
+ </ConfirmDialog>
+
+ {/* ── Deactivate Confirm Dialog ────────────────────────────────────────── */}
+ <ConfirmDialog
+ open={dialog?.type === 'deactivate'}
+ onClose={() => setDialog(null)}
+ title={`Deactivate ${dialog?.type === 'deactivate' ? dialog.admin.fullName : 'this admin'}?`}
+ description="They will immediately lose access to the admin console. You can reactivate this account later."
+ confirmLabel={`Deactivate ${dialog?.type === 'deactivate' ? dialog.admin.fullName : 'admin'}`}
+ onConfirm={() => handleSubmit()}
+ destructive
+ loading={submitting}
+ error={submitError || null}
+ />
 
  {/* ── Delete Confirm Dialog ────────────────────────────────────────────── */}
  <Dialog open={dialog?.type ==='delete'} onOpenChange={open => { if (!open) setDialog(null) }}>
  <DialogContent className="max-w-sm">
- <DialogHeader><DialogTitle>Delete Admin Account</DialogTitle></DialogHeader>
+ <DialogHeader><DialogTitle>Delete admin account</DialogTitle></DialogHeader>
  <div className="py-2 space-y-3">
  <div className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700">
  <strong>Warning:</strong> This will permanently remove{' '}
@@ -566,9 +528,9 @@ export default function AdminAccountsPage() {
  <Button
  disabled={submitting || (dialog?.type ==='delete' && deleteConfirm.trim() !== dialog.admin.fullName)}
  onClick={handleSubmit}
- className="bg-red-600 hover:bg-red-700 text-white"
+ variant="destructive"
  >
- {submitting ?'Deleting…' :'Confirm Delete'}
+ {submitting ? 'Deleting...' : 'Delete this admin'}
  </Button>
  </DialogFooter>
  </DialogContent>
