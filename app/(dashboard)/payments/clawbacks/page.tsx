@@ -171,9 +171,11 @@ export default function ClawbacksPage() {
   return (
     <PageGuard permission="view_payments">
       <div>
-        <PageHeader title="Payments" subtitle="See money received, money paid out, refunds, and debts" />
-
-        <PaymentsTabs active="clawbacks" />
+        <PageHeader
+          title="Money owed"
+          subtitle="Cash commission and refunds providers still owe MyShop"
+          tabs={<PaymentsTabs />}
+        />
 
         <div className="mb-5 flex items-start gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -350,13 +352,13 @@ function DebtDetailsSheet({
     setSmsResult('')
   }, [group, hasCollectibleDebt])
 
-  async function sendReminder() {
+  async function sendDebtSms() {
     if (!group?.providerPhone || !hasCollectibleDebt) return
     setSending(true)
     setSmsResult('')
     try {
       const result = await sendDirectSms(group.providerPhone, message.trim())
-      setSmsResult(result.sent > 0 ? 'Reminder sent successfully.' : result.reason ?? 'The reminder could not be delivered.')
+      setSmsResult(result.sent > 0 ? 'Message sent successfully.' : result.reason ?? 'The reminder could not be delivered.')
     } catch (err) {
       setSmsResult(err instanceof ApiError ? err.message : 'The reminder could not be sent. Try again.')
     } finally {
@@ -388,7 +390,7 @@ function DebtDetailsSheet({
                     href={`/payments/commission-ledger?providerId=${encodeURIComponent(group.providerId)}${group.providerType ? `&providerType=${encodeURIComponent(group.providerType.toLowerCase())}` : ''}`}
                     className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
                   >
-                    Open in Commission Ledger <ArrowUpRight className="h-3 w-3" />
+                    Open in Commission charges <ArrowUpRight className="h-3 w-3" />
                   </Link>
                 )}
               </section>
@@ -462,7 +464,7 @@ function DebtDetailsSheet({
                   <Textarea className="mt-3 min-h-28 bg-white" value={message} onChange={event => setMessage(event.target.value)} maxLength={480} />
                   <div className="mt-3 flex items-center justify-between gap-3">
                     <p className={`text-xs ${smsResult.includes('successfully') ? 'text-emerald-700' : 'text-red-600'}`}>{smsResult}</p>
-                    <Button onClick={sendReminder} disabled={sending || !group.providerPhone || !message.trim()}>
+                    <Button onClick={sendDebtSms} disabled={sending || !group.providerPhone || !message.trim()}>
                       {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageSquareText className="mr-2 h-4 w-4" />}
                       Send SMS reminder
                     </Button>

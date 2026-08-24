@@ -287,11 +287,11 @@ export default function DashboardPage() {
   }, [outcomes])
 
   const exploreAll: { title: string; href: string; icon: React.ElementType; permission: Permission }[] = [
-    { title: 'Revenue by Date', href: '/insights/revenue', icon: CalendarRange, permission: 'view_revenue_report' },
+    { title: 'Revenue', href: '/insights/revenue', icon: CalendarRange, permission: 'view_revenue_report' },
     { title: 'Trip Outcomes', href: '/insights/trips', icon: Route, permission: 'view_reports' },
     { title: 'Leaderboards', href: '/insights/leaderboards', icon: Trophy, permission: 'view_reports' },
     { title: 'Online Providers', href: '/online-providers', icon: Radio, permission: 'view_live_map' },
-    { title: 'Commission Ledger', href: '/payments/commission-ledger', icon: Receipt, permission: 'view_payments' },
+    { title: 'Commission charges', href: '/payments/commission-ledger', icon: Receipt, permission: 'view_payments' },
   ]
   const explore = exploreAll.filter(item => can(item.permission))
 
@@ -442,7 +442,7 @@ export default function DashboardPage() {
               <p className="text-xs text-gray-400">Collections, commission and payouts - {rangeLabel}</p>
             </div>
             {can('view_payments') && (
-              <Link href="/payments/revenue" className="text-xs font-medium" style={{ color: '#F5A623' }}>Money summary</Link>
+              <Link href="/insights/revenue" className="text-xs font-medium" style={{ color: '#F5A623' }}>Revenue</Link>
             )}
           </div>
           {growthData.length === 0 && !loadingKpis ? (

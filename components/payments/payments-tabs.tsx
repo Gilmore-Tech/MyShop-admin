@@ -16,12 +16,11 @@ export type PaymentsTab =
   | 'webhook-failures'
 
 const TABS = [
-  { href: '/payments/transactions', label: 'Payment Activity' },
-  { href: '/payments/revenue', label: 'Money Summary' },
-  { href: '/payments/commission-ledger', label: 'Commission Ledger' },
-  { href: '/payments/batch-payouts', label: 'Provider Payments' },
-  { href: '/payments/clawbacks', label: 'Money Owed' },
-  { href: '/payments/webhook-failures', label: 'Payment Errors' },
+  { href: '/payments/transactions', label: 'Transactions' },
+  { href: '/payments/commission-ledger', label: 'Commission charges' },
+  { href: '/payments/batch-payouts', label: 'Provider payments' },
+  { href: '/payments/clawbacks', label: 'Money owed' },
+  { href: '/payments/webhook-failures', label: 'Payment errors' },
 ]
 
 export function PaymentsTabs(props: { active?: PaymentsTab } = {}) {
