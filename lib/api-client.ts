@@ -286,6 +286,8 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   ANNOUNCEMENT_PREVIEW_CONSUMED: 'That announcement preview was already used. Generate a new preview before publishing again.',
   ANNOUNCEMENT_PREVIEW_EXPIRED: 'That announcement preview expired. Generate and review a new preview.',
   ANNOUNCEMENT_RECIPIENT_SNAPSHOT_MISMATCH: 'The reviewed audience snapshot is no longer complete. Generate and review a new preview.',
+  IDEMPOTENCY_KEY_REQUIRED: 'The reviewed announcement could not be published safely. Generate a new server preview and try again.',
+  INVALID_IDEMPOTENCY_KEY: 'The reviewed announcement reference is invalid. Generate a new server preview and try again.',
   SMS_CHANNEL_UNAVAILABLE: 'SMS announcements are unavailable. Check the production SMS switch and credentials before trying again.',
   SMS_BODY_TOO_LONG: 'Shorten the announcement to one SMS. The encoding-dependent limit, including the MyShop prefix, is 160 GSM-7 septets or 70 UCS-2 code units.',
   CRITICAL_ANNOUNCEMENT_REQUIRES_SUPER_ADMIN: 'Only the Super Administrator can publish a critical announcement.',
