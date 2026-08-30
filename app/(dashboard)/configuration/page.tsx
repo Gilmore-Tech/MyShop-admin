@@ -7,6 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { PageHeader } from '@/components/common/page-header'
 import { PageSkeleton } from '@/components/common/load-state'
 import { ErrorState } from '@/components/common/error-state'
@@ -38,8 +45,21 @@ const DEFAULTS = {
   rideInitialMatchRadiusKm:        3,
   rideRadiusExpansionKm:           2,
   rideMaxMatchRadiusKm:            10,
+  providerCancellationBlockWarnCount: 2,
+  providerCancellationBlockThreshold: 3,
+  providerCancellationBlockRollingWindowMins: 60,
+  providerCancellationBlockMins: 15,
+  providerCancellationBlockShadowEnabled: 'true',
+  providerCancellationBlockEnabled: 'false',
   jobBidWindowSecs:                300,
   jobMaxBids:                      3,
+  jobAdminAssignmentSlaSecs:       600,
+  jobAdminAssignmentLockSecs:      120,
+  jobDirectedQuoteWindowSecs:      900,
+  jobDirectedAcceptReminderSecs:   300,
+  jobDirectedAcceptWindowSecs:     600,
+  jobManualAssignmentTotalWindowSecs: 2700,
+  jobManualAssignmentMaxAttempts:  3,
   jobCancellationFreeWindowSecs:   1800,
   jobCancellationFeePercent:       20,
   jobHighBidFlagPesewas:           500000,
@@ -60,6 +80,7 @@ const DEFAULTS = {
   emergencyAutoDialNumber:         '191',
   shareTokenExpiryBufferMins:      30,
   welfareCheckTimeoutHours:        3,
+  announcementPreviewTtlSecs:      1800,
 } as const
 
 type ConfigKey = keyof typeof DEFAULTS
@@ -78,8 +99,21 @@ const FIELD_LABELS: Record<ConfigKey, string> = {
   rideMaxMatchRadiusKm: 'Max Match Radius (km)',
   rideDriverAcceptanceWindowSecs: 'Driver Acceptance Window',
   rideCancellationWindowSecs: 'Free Cancellation Window',
+  providerCancellationBlockWarnCount: 'Provider warning count',
+  providerCancellationBlockThreshold: 'Provider block threshold',
+  providerCancellationBlockRollingWindowMins: 'Provider rolling window',
+  providerCancellationBlockMins: 'Provider block duration',
+  providerCancellationBlockShadowEnabled: 'Provider shadow monitoring',
+  providerCancellationBlockEnabled: 'Provider enforcement',
   jobBidWindowSecs: 'Bid Collection Window',
   jobMaxBids: 'Max Bids Per Job',
+  jobAdminAssignmentSlaSecs: 'Admin Assignment SLA',
+  jobAdminAssignmentLockSecs: 'Assignment Edit Lock',
+  jobDirectedQuoteWindowSecs: 'Artisan Quote Deadline',
+  jobDirectedAcceptReminderSecs: 'Client Reminder',
+  jobDirectedAcceptWindowSecs: 'Client Acceptance Deadline',
+  jobManualAssignmentTotalWindowSecs: 'Total Assignment Window',
+  jobManualAssignmentMaxAttempts: 'Maximum Assignment Attempts',
   jobCancellationFreeWindowSecs: 'Free Cancellation Window',
   jobCancellationFeePercent: 'Cancellation Fee (%)',
   jobHighBidFlagPesewas: 'High Bid Review Threshold',
@@ -100,6 +134,7 @@ const FIELD_LABELS: Record<ConfigKey, string> = {
   emergencyAutoDialNumber: 'Emergency Auto-Dial Number',
   shareTokenExpiryBufferMins: 'Share Link Expiry Buffer',
   welfareCheckTimeoutHours: 'Welfare Check Timeout',
+  announcementPreviewTtlSecs: 'Announcement Preview Expiry',
 }
 
 function serverToState(items: { key: string; value: string }[]): Partial<ConfigState> {
@@ -133,8 +168,31 @@ const RULES: Partial<Record<ConfigKey, ValidationRule>> = {
   rideInitialMatchRadiusKm:        { min: 0.1, max: 50, message: 'Must be 0.1-50 km' },
   rideRadiusExpansionKm:           { min: 0.1, max: 20, message: 'Must be 0.1-20 km' },
   rideMaxMatchRadiusKm:            { min: 1, max: 100, message: 'Must be 1-100 km' },
+  providerCancellationBlockWarnCount: { min: 1, max: 20, message: 'Must be 1-20' },
+  providerCancellationBlockThreshold: { min: 2, max: 50, message: 'Must be 2-50' },
+  providerCancellationBlockRollingWindowMins: {
+    min: 5,
+    max: 43200,
+    message: 'Must be 5-43200 minutes',
+  },
+  providerCancellationBlockMins: {
+    min: 1,
+    max: 10080,
+    message: 'Must be 1-10080 minutes',
+  },
   jobBidWindowSecs:                { min: 30, message: 'Must be at least 30 seconds' },
   jobMaxBids:                      { min: 1, max: 20, message: 'Must be 1-20' },
+  jobAdminAssignmentSlaSecs:       { min: 60, max: 86400, message: 'Must be 60-86400 seconds' },
+  jobAdminAssignmentLockSecs:      { min: 30, max: 1800, message: 'Must be 30-1800 seconds' },
+  jobDirectedQuoteWindowSecs:      { min: 60, max: 86400, message: 'Must be 60-86400 seconds' },
+  jobDirectedAcceptReminderSecs:   { min: 30, max: 86400, message: 'Must be 30-86400 seconds' },
+  jobDirectedAcceptWindowSecs:     { min: 60, max: 172800, message: 'Must be 60-172800 seconds' },
+  jobManualAssignmentTotalWindowSecs: {
+    min: 300,
+    max: 604800,
+    message: 'Must be 300-604800 seconds',
+  },
+  jobManualAssignmentMaxAttempts:  { min: 1, max: 20, message: 'Must be 1-20' },
   jobCancellationFreeWindowSecs:   { min: 0, message: 'Must be 0 or more' },
   jobCancellationFeePercent:       { min: 0, max: 100, message: 'Must be 0-100%' },
   jobHighBidFlagPesewas:           { min: 0, message: 'Must be 0 or more' },
@@ -155,6 +213,7 @@ const RULES: Partial<Record<ConfigKey, ValidationRule>> = {
   emergencyAutoDialNumber:         { required: true, message: 'Cannot be empty' },
   shareTokenExpiryBufferMins:      { min: 1, message: 'Must be at least 1 minute' },
   welfareCheckTimeoutHours:        { min: 1, message: 'Must be at least 1 hour' },
+  announcementPreviewTtlSecs:      { min: 60, max: 86400, message: 'Must be 60-86400 seconds' },
 }
 
 function validate(key: ConfigKey, value: string | number): string | null {
@@ -176,7 +235,13 @@ function validate(key: ConfigKey, value: string | number): string | null {
 }
 
 function hasErrors(state: ConfigState): boolean {
-  return (Object.keys(state) as ConfigKey[]).some(k => validate(k, state[k]) !== null)
+  return (
+    (Object.keys(state) as ConfigKey[]).some(k => validate(k, state[k]) !== null) ||
+    Number(state.providerCancellationBlockWarnCount) >=
+      Number(state.providerCancellationBlockThreshold) ||
+    Number(state.jobDirectedAcceptReminderSecs) >=
+      Number(state.jobDirectedAcceptWindowSecs)
+  )
 }
 
 // ─── Unit hints ───────────────────────────────────────────────────────────────
@@ -267,20 +332,38 @@ function ConfigField({
       {description && <p className="text-[11px] text-gray-400 leading-snug">{description}</p>}
 
       <div className="flex items-center gap-2">
-        <Input
-          type={type}
-          value={value}
-          step={type === 'number' ? (configKey === 'commissionRatePercent' ? '0.01' : 'any') : undefined}
-          onChange={e => onChange(configKey, e.target.value)}
-          disabled={disabled}
-          className={`w-44 text-sm h-8 ${
-            error
-              ? 'border-red-300 ring-2 ring-red-100 focus-visible:ring-red-300'
-              : isDirty
-              ? 'ring-2 ring-amber-200 border-amber-300'
-              : ''
-          }`}
-        />
+        {type === 'boolean' ? (
+          <Select
+            value={String(value)}
+            onValueChange={next => onChange(configKey, next)}
+            disabled={disabled}
+          >
+            <SelectTrigger
+              className={`w-44 h-8 ${isDirty ? 'ring-2 ring-amber-200 border-amber-300' : ''}`}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="true">On</SelectItem>
+              <SelectItem value="false">Off</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            type={type}
+            value={value}
+            step={type === 'number' ? (configKey === 'commissionRatePercent' ? '0.01' : 'any') : undefined}
+            onChange={e => onChange(configKey, e.target.value)}
+            disabled={disabled}
+            className={`w-44 text-sm h-8 ${
+              error
+                ? 'border-red-300 ring-2 ring-red-100 focus-visible:ring-red-300'
+                : isDirty
+                ? 'ring-2 ring-amber-200 border-amber-300'
+                : ''
+            }`}
+          />
+        )}
         {hint && !error && (
           <span className="text-[11px] text-emerald-700 font-medium whitespace-nowrap">{hint}</span>
         )}
@@ -528,12 +611,86 @@ export default function ConfigurationPage() {
             {field('Free Cancellation Window', 'rideCancellationWindowSecs', { description: 'Stored for later policy activation; currently not applied', disabled: true })}
           </Section>
 
+          <Section
+            title="Provider cancellation blocks"
+            description="Temporarily pauses new ride or job offers after repeated provider cancellations"
+          >
+            {field('Warning count', 'providerCancellationBlockWarnCount', {
+              description: 'Warn before the enforcement threshold is reached',
+            })}
+            {field('Block threshold', 'providerCancellationBlockThreshold', {
+              description: 'Provider cancellations inside the rolling window that trigger a block',
+            })}
+            {field('Rolling window', 'providerCancellationBlockRollingWindowMins', {
+              description: 'Minutes of recent cancellation history considered',
+            })}
+            {field('Block duration', 'providerCancellationBlockMins', {
+              description: 'Minutes before the driver or artisan can receive new requests',
+            })}
+            {field('Shadow monitoring', 'providerCancellationBlockShadowEnabled', {
+              type: 'boolean',
+              description: 'Record would-block decisions without restricting providers',
+            })}
+            {field('Enforcement', 'providerCancellationBlockEnabled', {
+              type: 'boolean',
+              description: 'Block new provider requests when the threshold is reached',
+            })}
+            {Number(config.providerCancellationBlockWarnCount) >=
+              Number(config.providerCancellationBlockThreshold) && (
+              <p className="text-xs font-medium text-red-600 sm:col-span-2 lg:col-span-3">
+                Warning count must be lower than the block threshold.
+              </p>
+            )}
+          </Section>
+
           <Section title="Artisan Job Settings" description="Bidding window, job limits, and cancellation policy">
             {field('Bid Collection Window', 'jobBidWindowSecs', { description: 'How long the job stays open for bids' })}
             {field('Max Bids Per Job', 'jobMaxBids', { description: 'Client sees top N bids to choose from' })}
             {field('Free Cancellation Window', 'jobCancellationFreeWindowSecs', { description: 'Stored for later policy activation; currently not applied', disabled: true })}
             {field('Cancellation Fee (%)', 'jobCancellationFeePercent', { description: 'Automatic fees and transfers are currently paused', disabled: true })}
             {field('High Bid Review Threshold', 'jobHighBidFlagPesewas', { description: 'Bids above this are flagged for admin review' })}
+          </Section>
+
+          <Section
+            title="Manual Assignment Timing"
+            description="Server-owned deadlines; mobile and Admin receive absolute timestamps, so changing these requires no app release"
+          >
+            {field('Admin Assignment SLA', 'jobAdminAssignmentSlaSecs', {
+              description: 'Time before an unassigned job is highlighted as overdue',
+            })}
+            {field('Assignment Edit Lock', 'jobAdminAssignmentLockSecs', {
+              description: 'How long one admin holds the assignment editor lease',
+            })}
+            {field('Artisan Quote Deadline', 'jobDirectedQuoteWindowSecs', {
+              description: 'Time a directed artisan has to submit a quote',
+            })}
+            {field('Client Reminder', 'jobDirectedAcceptReminderSecs', {
+              description: 'Time after quote approval before reminding the client',
+            })}
+            {field('Client Acceptance Deadline', 'jobDirectedAcceptWindowSecs', {
+              description: 'Time the client has to accept the directed quote',
+            })}
+            {field('Total Assignment Window', 'jobManualAssignmentTotalWindowSecs', {
+              description: 'Maximum elapsed time across directed attempts before escalation',
+            })}
+            {field('Maximum Assignment Attempts', 'jobManualAssignmentMaxAttempts', {
+              description: 'Directed artisans tried before the job requires escalation',
+            })}
+            {Number(config.jobDirectedAcceptReminderSecs) >=
+              Number(config.jobDirectedAcceptWindowSecs) && (
+              <p className="text-xs font-medium text-red-600 sm:col-span-2 lg:col-span-3">
+                Client reminder must happen before the acceptance deadline.
+              </p>
+            )}
+          </Section>
+
+          <Section
+            title="Announcement Safety"
+            description="Review-token timing for admin-authored push campaigns"
+          >
+            {field('Announcement Preview Expiry', 'announcementPreviewTtlSecs', {
+              description: 'How long a reviewed, single-use preview token remains valid',
+            })}
           </Section>
 
           <Section title="Job Staleness Escalation" description="Thresholds that trigger notifications and freezes for inactive jobs">

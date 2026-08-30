@@ -26,13 +26,18 @@ import {
 } from '@/lib/api'
 import { ApiError, FEATURES, safeAdminErrorDiagnostic } from '@/lib/api-client'
 import { annotateDistancesFromLiveMap } from '@/lib/distance'
+import {
+  formatManualAssignmentWindow,
+  isManualAssignmentLockActive,
+  manualAssignmentBidWindowSeconds,
+} from '@/lib/manual-assignment-contract'
 
 // Manual assignment only kicks in once the artisan bid window has elapsed without
 // any bids. Spec: PRD "If zero bids received after 5 minutes, job escalates to
 // admin queue" + EDD `job_bid_window_secs`. The window is sourced from the
-// platform config key `bid_window_minutes`; this is the fallback if config is
-// unavailable or malformed.
-const DEFAULT_BID_WINDOW_MINUTES = 5
+// canonical platform config key `job_bid_window_secs`; this is the fallback if
+// config is unavailable or malformed.
+const DEFAULT_BID_WINDOW_SECONDS = 5 * 60
 
 // Pre-set radii for the proximity filter. `null` means no cap.
 const RADIUS_PRESETS: Array<{ label: string; km: number | null }> = [
@@ -172,12 +177,13 @@ export default function ManualAssignmentPage() {
   const [, setTick] = useState(0)
   const [loadingJobs, setLoadingJobs] = useState(true)
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
-  const [bidWindowMinutes, setBidWindowMinutes] = useState(DEFAULT_BID_WINDOW_MINUTES)
+  const [bidWindowSeconds, setBidWindowSeconds] = useState(DEFAULT_BID_WINDOW_SECONDS)
   const [radiusKm, setRadiusKm] = useState<number | null>(DEFAULT_RADIUS_KM)
 
   const [artisans, setArtisans] = useState<ArtisanSearchResult[]>([])
   const [loadingArtisans, setLoadingArtisans] = useState(false)
   const [artisanSearch, setArtisanSearch] = useState('')
+  const [artisanSearchError, setArtisanSearchError] = useState<string | null>(null)
 
   const [assigning, setAssigning] = useState<string | null>(null) // artisanId being assigned
   const [assignedJobId, setAssignedJobId] = useState<string | null>(null)
@@ -191,9 +197,10 @@ export default function ManualAssignmentPage() {
   const [deletedJobId, setDeletedJobId] = useState<string | null>(null)
 
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchRequestSequence = useRef(0)
 
   const now = Date.now()
-  const bidWindowMs = bidWindowMinutes * 60 * 1000
+  const bidWindowMs = bidWindowSeconds * 1000
   const jobs = allJobs.filter(j => now - new Date(j.createdAt).getTime() >= bidWindowMs)
   const pendingWindowCount = allJobs.length - jobs.length
   const selectedJob = jobs.find(j => j.id === selectedJobId) ?? null
@@ -213,7 +220,9 @@ export default function ManualAssignmentPage() {
       // automatically once their window expires.
       const ELIGIBLE_STATUSES = new Set(['queued', 'pending_admin'])
       const isAdminAssignable = (j: UnassignedJob) =>
-        ELIGIBLE_STATUSES.has(j.status) && (j.bidCount ?? 0) === 0 && !j.adminLock
+        ELIGIBLE_STATUSES.has(j.status) &&
+        (j.bidCount ?? 0) === 0 &&
+        !isManualAssignmentLockActive(j.adminLock)
 
       const dropped = res.jobs.filter(j => !isAdminAssignable(j))
       if (dropped.length > 0) {
@@ -243,11 +252,9 @@ export default function ManualAssignmentPage() {
     getAllConfig()
       .then(rows => {
         if (cancelled) return
-        const window = rows.find(r => r.key === 'bid_window_minutes')?.value
-        const windowParsed = window != null ? Number(window) : NaN
-        if (Number.isFinite(windowParsed) && windowParsed > 0) {
-          setBidWindowMinutes(windowParsed)
-        }
+        setBidWindowSeconds(
+          manualAssignmentBidWindowSeconds(rows, DEFAULT_BID_WINDOW_SECONDS),
+        )
         const radius = rows.find(r => r.key === 'manual_assign_default_radius_km')?.value
         const radiusParsed = radius != null ? Number(radius) : NaN
         if (Number.isFinite(radiusParsed) && radiusParsed > 0) {
@@ -282,9 +289,19 @@ export default function ManualAssignmentPage() {
 
   // Load artisans when job, search, or radius changes
   useEffect(() => {
-    if (!selectedJob) return
-    if (searchTimeout.current) clearTimeout(searchTimeout.current)
+    const requestSequence = ++searchRequestSequence.current
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current)
+      searchTimeout.current = null
+    }
+    if (!selectedJob) {
+      setArtisans([])
+      setArtisanSearchError(null)
+      setLoadingArtisans(false)
+      return
+    }
     setLoadingArtisans(true)
+    setArtisanSearchError(null)
     searchTimeout.current = setTimeout(async () => {
       try {
         const useCoords = selectedJob.lat != null && selectedJob.lng != null
@@ -332,13 +349,32 @@ export default function ManualAssignmentPage() {
           })
         }
 
+        if (searchRequestSequence.current !== requestSequence) return
         setArtisans(results)
-      } catch {
+      } catch (err) {
+        if (searchRequestSequence.current !== requestSequence) return
+        console.error(
+          '[manual-assignment] artisan search failed',
+          safeAdminErrorDiagnostic(err),
+        )
         setArtisans([])
+        setArtisanSearchError('Could not load eligible artisans. Retry or adjust the search.')
       } finally {
-        setLoadingArtisans(false)
+        if (searchRequestSequence.current === requestSequence) {
+          setLoadingArtisans(false)
+        }
       }
     }, artisanSearch ? 400 : 0)
+
+    return () => {
+      if (searchRequestSequence.current === requestSequence) {
+        searchRequestSequence.current += 1
+      }
+      if (searchTimeout.current) {
+        clearTimeout(searchTimeout.current)
+        searchTimeout.current = null
+      }
+    }
   }, [selectedJob, artisanSearch, radiusKm])
 
   // Reset state when job changes
@@ -346,6 +382,8 @@ export default function ManualAssignmentPage() {
     if (selectedJobId) {
       setError(null)
       setAssignedJobId(null)
+      setArtisanSearch('')
+      setArtisanSearchError(null)
     }
   }, [selectedJobId])
 
@@ -422,7 +460,7 @@ export default function ManualAssignmentPage() {
       <div className="space-y-4">
         <PageHeader
           title="Manual assignment"
-          subtitle="Assign an artisan to a job - they will bid and the client confirms the price"
+          subtitle="Direct a job to one artisan for a quote; work starts only after the client accepts it"
           actions={
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={loadJobs} disabled={loadingJobs} className="gap-1.5">
@@ -442,7 +480,9 @@ export default function ManualAssignmentPage() {
         {assignedJobId && (
           <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3">
             <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-            <p className="text-sm text-emerald-700 font-medium">Artisan assigned. They will submit a bid for the client to review and confirm.</p>
+            <p className="text-sm text-emerald-700 font-medium">
+              Assignment sent - awaiting artisan quote. A submitted quote then waits for client acceptance before the job is confirmed.
+            </p>
           </div>
         )}
 
@@ -466,7 +506,7 @@ export default function ManualAssignmentPage() {
             title="Queue is clear"
             description={
               pendingWindowCount > 0
-                ? `${pendingWindowCount} job${pendingWindowCount === 1 ? '' : 's'} still in the ${bidWindowMinutes}-minute bidding window. Anything not bid on will appear here automatically.`
+                ? `${pendingWindowCount} job${pendingWindowCount === 1 ? '' : 's'} still in the ${formatManualAssignmentWindow(bidWindowSeconds)} bidding window. Anything not bid on will appear here automatically.`
                 : 'No jobs are waiting for manual assignment.'
             }
             className="bg-white rounded-2xl shadow-sm"
@@ -577,6 +617,12 @@ export default function ManualAssignmentPage() {
                             )}
                           </p>
                         </div>
+                        <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
+                          <p className="text-[11px] font-semibold text-blue-800">Request-quote phases</p>
+                          <p className="mt-0.5 text-[11px] leading-snug text-blue-700">
+                            Assigned -&gt; awaiting artisan quote -&gt; admin review only if flagged -&gt; awaiting client acceptance -&gt; confirmed.
+                          </p>
+                        </div>
                       </div>
 
                       {/* Assign error (kept inside the pane so it's visible) */}
@@ -642,7 +688,12 @@ export default function ManualAssignmentPage() {
                           </div>
                         )}
 
-                        {artisans.length === 0 && !loadingArtisans ? (
+                        {artisanSearchError && !loadingArtisans ? (
+                          <div className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-3">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                            <p className="text-sm text-red-700">{artisanSearchError}</p>
+                          </div>
+                        ) : artisans.length === 0 && !loadingArtisans ? (
                           <div className="text-center py-10">
                             <p className="text-sm text-gray-400">
                               {hasJobCoords && radiusKm != null

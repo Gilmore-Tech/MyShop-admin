@@ -16,6 +16,19 @@ import {
 } from './api-client'
 import type { Permission, Role, CategoryScope } from './roles'
 import type { ReportGroupBy } from './format-date'
+import {
+  normaliseProviderCancellationRestriction,
+  type ProviderCancellationRestrictionListItem,
+  type ProviderCancellationRestrictionListResponse,
+  type ProviderCancellationRestrictionType,
+} from './provider-cancellation-restriction-contract'
+export {
+  normaliseProviderCancellationRestriction,
+  type ProviderCancellationRestrictionListItem,
+  type ProviderCancellationRestrictionListResponse,
+  type ProviderCancellationRestrictionStatus,
+  type ProviderCancellationRestrictionType,
+} from './provider-cancellation-restriction-contract'
 import { normaliseRevenueReport, type RevenueReport, type RevenueGroupBy } from './revenue-report-contract'
 import { normaliseBookingOutcomesReport, type BookingOutcomesReport, type OutcomeVertical } from './booking-outcomes-contract'
 import { normaliseCommissionLedger, type CommissionLedgerReport, type LedgerGroupBy } from './commission-ledger-contract'
@@ -861,6 +874,62 @@ export function liftProviderSuspension(providerId: string, suspensionId: string,
   return api.patch(
     `/admin/providers/${providerId}/suspensions/${suspensionId}/lift`,
     note && note.trim() ? { note: note.trim() } : {}
+  )
+}
+
+// ── Provider cancellation restrictions ────────────────────────────────────────
+
+export async function listProviderCancellationRestrictions(params?: {
+  activeOnly?: boolean
+  providerType?: ProviderCancellationRestrictionType
+  page?: number
+  limit?: number
+}): Promise<ProviderCancellationRestrictionListResponse> {
+  const query = new URLSearchParams()
+  if (params?.activeOnly != null) query.set('activeOnly', String(params.activeOnly))
+  if (params?.providerType) query.set('providerType', params.providerType)
+  if (params?.page != null) query.set('page', String(params.page))
+  if (params?.limit != null) query.set('limit', String(params.limit))
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+  const raw = await api.get<unknown>(`/admin/providers/cancellation-restrictions${suffix}`)
+  const envelope = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? raw as Record<string, unknown>
+    : {}
+  const list = Array.isArray(raw)
+    ? raw
+    : Array.isArray(envelope.data)
+      ? envelope.data
+      : Array.isArray(envelope.items)
+        ? envelope.items
+        : Array.isArray(envelope.restrictions)
+          ? envelope.restrictions
+          : []
+  const items = list
+    .map(normaliseProviderCancellationRestriction)
+    .filter((item): item is ProviderCancellationRestrictionListItem => item !== null)
+  const meta = envelope.meta && typeof envelope.meta === 'object' && !Array.isArray(envelope.meta)
+    ? envelope.meta as Record<string, unknown>
+    : envelope
+  return {
+    items,
+    total: Number(meta.total ?? list.length),
+    page: Number(meta.page ?? params?.page ?? 1),
+    limit: Number(meta.limit ?? params?.limit ?? 50),
+    totalPages: Number(meta.totalPages ?? meta.total_pages ?? 1),
+  }
+}
+
+export function liftProviderCancellationRestriction(
+  providerType: ProviderCancellationRestrictionType,
+  providerId: string,
+  restrictionId: string,
+  reason: string
+) {
+  const trimmedReason = reason.trim()
+  if (!trimmedReason) throw new Error('A lift reason is required.')
+  return api.patch(
+    `/admin/providers/${providerType}/${providerId}/cancellation-restrictions/${restrictionId}/lift`,
+    { reason: trimmedReason }
   )
 }
 
@@ -2100,12 +2169,68 @@ export function deleteAdmin(adminId: string) {
 
 // ── Announcements ─────────────────────────────────────────────────────────────
 
-export type AnnouncementTopic = 'all_users' | 'clients' | 'drivers' | 'artisans'
+export type AnnouncementAudience = 'all' | 'clients' | 'drivers' | 'artisans'
+export type AnnouncementClassification = 'service' | 'critical'
+export type AnnouncementDestination =
+  | 'notifications'
+  | 'activity'
+  | 'support'
+  | 'promotions'
+  | 'app_store'
 
-export function sendAnnouncement(title: string, body: string, topic: AnnouncementTopic) {
-  // Backend expects `targetAudience` with `all` (not `all_users`) for everyone.
-  const targetAudience = topic === 'all_users' ? 'all' : topic
-  return api.post('/admin/announcements', { title, body, targetAudience })
+export interface AnnouncementDraft {
+  title: string
+  body: string
+  targetAudience: AnnouncementAudience
+  classification: AnnouncementClassification
+  destination: AnnouncementDestination
+  reason: string
+}
+
+export interface AnnouncementPreviewCounts {
+  eligibleRecipients: number
+  activePushRecipients: number
+  noActiveToken: number
+  byRole: Record<string, number>
+  byPlatform: Record<string, number>
+}
+
+export interface AnnouncementPreview {
+  campaignId: string
+  previewToken: string
+  previewExpiresAt: string
+  revision: number
+  counts: AnnouncementPreviewCounts
+  rendered: {
+    title: string
+    body: string
+    classification: AnnouncementClassification
+    targetAudience: AnnouncementAudience
+    destination: AnnouncementDestination
+  }
+}
+
+export interface AnnouncementPublishResult {
+  id: string
+  status: string
+  recipientCount: number
+  queuedAt: string
+}
+
+export function previewAnnouncement(draft: AnnouncementDraft) {
+  return api.post<AnnouncementPreview>('/admin/announcements/preview', draft)
+}
+
+export function publishAnnouncement(
+  draft: AnnouncementDraft,
+  previewToken: string,
+  idempotencyKey: string,
+) {
+  return api.post<AnnouncementPublishResult>(
+    '/admin/announcements/publish',
+    { ...draft, previewToken },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  )
 }
 
 // ── Analytics chart endpoints ─────────────────────────────────────────────────
@@ -3167,6 +3292,13 @@ export function assignJob(
     artisanId: string
     agreedPricePesewas: number | null
     assignedAt: string
+    assignment?: {
+      attemptId: string
+      revision: number
+      phase: 'awaiting_quote' | 'awaiting_admin_review' | 'awaiting_client_accept'
+      quoteDeadlineAt: string | null
+      acceptDeadlineAt: string | null
+    }
   }>(`/admin/jobs/${jobId}/assign`, data)
 }
 
@@ -3664,16 +3796,21 @@ export interface AnnouncementHistoryItem {
   id: string
   title: string
   body: string
-  audience: string
-  channel: string
-  sentAt: string
-  sentBy: string | null
-  delivered: number
-  opened: number
+  targetAudience: AnnouncementAudience
+  classification: AnnouncementClassification
+  destination: AnnouncementDestination
+  status: string
+  recipientCount: number
+  queuedAt: string
+  reason?: string | null
 }
 
-export function getAnnouncementHistory() {
-  return api.get<AnnouncementHistoryItem[]>('/admin/announcements/history')
+export async function getAnnouncementHistory() {
+  const response = await api.get<
+    AnnouncementHistoryItem[] | { data: AnnouncementHistoryItem[] }
+  >('/admin/announcements/history')
+  if (Array.isArray(response)) return response
+  return Array.isArray(response.data) ? response.data : []
 }
 
 // ── Help Center (CMS) ─────────────────────────────────────────────────────────
