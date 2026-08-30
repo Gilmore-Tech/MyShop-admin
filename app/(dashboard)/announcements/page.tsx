@@ -17,13 +17,24 @@ import {
   previewAnnouncement,
   publishAnnouncement,
   type AnnouncementAudience,
+  type AnnouncementChannel,
   type AnnouncementClassification,
   type AnnouncementDestination,
   type AnnouncementDraft,
   type AnnouncementHistoryItem,
   type AnnouncementPreview,
 } from '@/lib/api'
-import { userSafeAdminError } from '@/lib/api-client'
+import {
+  ANNOUNCEMENT_REASON_MIN_CHARS,
+  ANNOUNCEMENT_SMS_PREFIX,
+  announcementIncludesPush,
+  announcementIncludesSms,
+  announcementSmsLength,
+  announcementSmsUnitsLabel,
+  announcementStatusPresentation,
+  shouldClearAnnouncementPreview,
+} from '@/lib/announcement-campaign-contract'
+import { ApiError, userSafeAdminError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { formatDateTime } from '@/lib/format-date'
 
@@ -49,12 +60,10 @@ const DESTINATION_LABELS: Record<AnnouncementDestination, string> = {
   app_store: 'App store',
 }
 
-function statusClass(status: string) {
-  const normalized = status.toLowerCase()
-  if (normalized === 'completed' || normalized === 'sent') return 'bg-emerald-50 text-emerald-700'
-  if (normalized === 'failed') return 'bg-red-50 text-red-700'
-  if (normalized === 'partial') return 'bg-amber-50 text-amber-700'
-  return 'bg-blue-50 text-blue-700'
+const CHANNEL_LABELS: Record<AnnouncementChannel, string> = {
+  push: 'Push notification',
+  sms: 'SMS only (Arkesel)',
+  sms_push: 'SMS + Push',
 }
 
 export default function AnnouncementsPage() {
@@ -91,16 +100,58 @@ export default function AnnouncementsPage() {
       render: campaign => <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full whitespace-nowrap">{campaign.targetAudience}</span>,
     },
     {
-      key: 'destination', header: 'Opens',
-      render: campaign => <span className="text-xs text-gray-500 whitespace-nowrap">{DESTINATION_LABELS[campaign.destination]}</span>,
+      key: 'channel', header: 'Channel',
+      render: campaign => (
+        <div className="whitespace-nowrap">
+          <p className="text-xs text-gray-600">{CHANNEL_LABELS[campaign.channel]}</p>
+          {announcementIncludesPush(campaign.channel) && (
+            <p className="text-[10px] text-gray-400">Opens {DESTINATION_LABELS[campaign.destination]}</p>
+          )}
+        </div>
+      ),
     },
     {
       key: 'status', header: 'Status',
-      render: campaign => <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap capitalize ${statusClass(campaign.status)}`}>{campaign.status}</span>,
+      render: campaign => {
+        const presentation = announcementStatusPresentation(campaign.status)
+        return (
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${presentation.className}`}>
+            {presentation.label}
+          </span>
+        )
+      },
     },
     {
-      key: 'recipients', header: 'Recipients', align: 'right',
+      key: 'recipients', header: 'Audience profiles', align: 'right',
       render: campaign => <span className="text-sm font-medium text-gray-800">{campaign.recipientCount.toLocaleString()}</span>,
+    },
+    {
+      key: 'transport', header: 'Transport',
+      render: campaign => (
+        <div className="space-y-0.5 text-[11px] text-gray-500 whitespace-nowrap">
+          {announcementIncludesPush(campaign.channel) && (
+            <p>
+              Push: {campaign.activePushCount.toLocaleString()} eligible, {campaign.acceptedCount.toLocaleString()} accepted
+              {campaign.failedCount > 0 ? `, ${campaign.failedCount.toLocaleString()} failed` : ''}
+              {campaign.noActiveTokenCount > 0 ? `, ${campaign.noActiveTokenCount.toLocaleString()} no active token` : ''}
+            </p>
+          )}
+          {announcementIncludesSms(campaign.channel) && (
+            <>
+              <p>
+                SMS: {campaign.smsEligibleCount.toLocaleString()} eligible, {campaign.smsAcceptedCount.toLocaleString()} accepted
+                {campaign.smsFailedCount > 0 ? `, ${campaign.smsFailedCount.toLocaleString()} failed` : ''}
+                {campaign.smsNoValidPhoneCount > 0 ? `, ${campaign.smsNoValidPhoneCount.toLocaleString()} no valid phone` : ''}
+              </p>
+              {campaign.smsUnknownCount > 0 && (
+                <p className="font-medium text-amber-700">
+                  {campaign.smsUnknownCount.toLocaleString()} SMS outcomes unknown - attention required
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      ),
     },
     {
       key: 'queued', header: 'Queued',
@@ -113,7 +164,7 @@ export default function AnnouncementsPage() {
       <div>
         <PageHeader
           title="Announcements"
-          subtitle="Preview and publish audited push campaigns"
+          subtitle="Preview and publish audited push and SMS campaigns"
           actions={
             <Button variant="brand" className="gap-2" onClick={() => setComposeOpen(true)}>
               <Send className="h-4 w-4" /> Compose announcement
@@ -128,7 +179,7 @@ export default function AnnouncementsPage() {
           loading={historyLoading}
           error={historyError}
           onRetry={loadHistory}
-          empty={<EmptyState title="No campaigns yet" description="Preview and publish your first push announcement to see it here." />}
+          empty={<EmptyState title="No campaigns yet" description="Preview and publish your first announcement to see it here." />}
           caption={`${history.length} campaigns`}
         />
 
@@ -158,6 +209,7 @@ function ComposeDialog({
 }) {
   const [targetAudience, setTargetAudience] = useState<AnnouncementAudience>(lockedAudience ?? 'all')
   const [classification, setClassification] = useState<AnnouncementClassification>('service')
+  const [channel, setChannel] = useState<AnnouncementChannel>('push')
   const [destination, setDestination] = useState<AnnouncementDestination>('notifications')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -170,6 +222,7 @@ function ComposeDialog({
     if (!open) return
     setTargetAudience(lockedAudience ?? 'all')
     setClassification('service')
+    setChannel('push')
     setDestination('notifications')
     setTitle('')
     setBody('')
@@ -189,6 +242,7 @@ function ComposeDialog({
       body: body.trim(),
       targetAudience,
       classification,
+      channel,
       destination,
       reason: reason.trim(),
     }
@@ -196,7 +250,20 @@ function ComposeDialog({
 
   async function handleSubmit() {
     const request = draft()
-    if (!request.title || !request.body || !request.reason) return
+    if (
+      !request.title ||
+      !request.body ||
+      request.reason.length < ANNOUNCEMENT_REASON_MIN_CHARS
+    ) return
+    if (
+      preview != null &&
+      preview.rendered.channel !== 'push' &&
+      preview.rendered.smsBody.trim().length === 0
+    ) {
+      setPreview(null)
+      setError('The reviewed SMS text is missing. Generate a new server preview before publishing.')
+      return
+    }
     setSubmitting(true)
     setError('')
     try {
@@ -207,6 +274,9 @@ function ComposeDialog({
         onPublished()
       }
     } catch (err) {
+      if (err instanceof ApiError && shouldClearAnnouncementPreview(err.code)) {
+        setPreview(null)
+      }
       setError(userSafeAdminError(
         err,
         preview == null ? 'Failed to generate the server preview.' : 'Failed to publish the campaign.',
@@ -218,17 +288,31 @@ function ComposeDialog({
 
   const selectedAudience = AUDIENCE.find(a => a.value === targetAudience) ?? AUDIENCE[0]
   const SelectedAudienceIcon = selectedAudience.icon
-  const invalid = !title.trim() || !body.trim() || !reason.trim()
+  const isSmsChannel = announcementIncludesSms(channel)
+  const smsLength = announcementSmsLength(body)
+  const smsUnitsLabel = announcementSmsUnitsLabel(smsLength.encoding)
+  const reasonLength = reason.trim().length
+  const reasonTooShort = reasonLength > 0 && reasonLength < ANNOUNCEMENT_REASON_MIN_CHARS
+  const invalid =
+    !title.trim() ||
+    !body.trim() ||
+    reasonLength < ANNOUNCEMENT_REASON_MIN_CHARS ||
+    (isSmsChannel && smsLength.tooLong)
+  const publishLabel = preview == null
+    ? 'Generate server preview'
+    : preview.rendered.channel === 'push'
+      ? `Publish to ${preview.counts.activePushRecipients.toLocaleString()} devices`
+      : preview.rendered.channel === 'sms'
+        ? `Publish to ${preview.counts.smsRecipients.toLocaleString()} SMS recipients`
+        : `Publish to ${preview.counts.activePushRecipients.toLocaleString()} devices + ${preview.counts.smsRecipients.toLocaleString()} SMS recipients`
 
   return (
     <FormDialog
       open={open}
       onClose={onClose}
       title="Compose announcement"
-      description="Push only. Generate the server preview and verify the audience before publishing."
-      submitLabel={preview == null
-        ? 'Generate server preview'
-        : `Publish to ${preview.counts.activePushRecipients.toLocaleString()} devices`}
+      description="Choose a channel, then verify the exact server preview and audience before publishing."
+      submitLabel={publishLabel}
       onSubmit={handleSubmit}
       size="lg"
       loading={submitting}
@@ -266,6 +350,17 @@ function ComposeDialog({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Channel</Label>
+          <Select value={channel} onValueChange={(value: AnnouncementChannel) => { setChannel(value); invalidatePreview() }}>
+            <SelectTrigger className="bg-gray-50"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="push">Push notification</SelectItem>
+              <SelectItem value="sms">SMS only (Arkesel)</SelectItem>
+              <SelectItem value="sms_push">SMS + Push</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
           <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Classification</Label>
           <Select value={classification} onValueChange={(value: AnnouncementClassification) => { setClassification(value); invalidatePreview() }}>
             <SelectTrigger className="bg-gray-50"><SelectValue /></SelectTrigger>
@@ -275,6 +370,9 @@ function ComposeDialog({
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      {announcementIncludesPush(channel) && (
         <div className="space-y-1.5">
           <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Opens in app</Label>
           <Select value={destination} onValueChange={(value: AnnouncementDestination) => { setDestination(value); invalidatePreview() }}>
@@ -286,7 +384,7 @@ function ComposeDialog({
             </SelectContent>
           </Select>
         </div>
-      </div>
+      )}
 
       <div className="space-y-1.5">
         <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Title</Label>
@@ -300,16 +398,32 @@ function ComposeDialog({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Message body</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Message body</Label>
+          {isSmsChannel && (
+            <span className={`text-[11px] font-medium tabular-nums ${smsLength.tooLong ? 'text-red-600' : smsLength.unitsLeft <= 20 ? 'text-amber-600' : 'text-gray-400'}`}>
+              {smsLength.tooLong
+                ? `${Math.abs(smsLength.unitsLeft)} units over the one-SMS limit`
+                : `${smsLength.unitsLeft} units left with ${ANNOUNCEMENT_SMS_PREFIX.trim()} prefix`}
+            </span>
+          )}
+        </div>
         <Textarea
           placeholder="Write your announcement..."
           rows={4}
           value={body}
           onChange={event => { setBody(event.target.value); invalidatePreview() }}
-          className="resize-none"
+          className={`resize-none ${isSmsChannel && smsLength.tooLong ? 'border-red-300 focus-visible:ring-red-200' : ''}`}
           maxLength={500}
         />
-        <p className="text-[11px] text-gray-400 text-right">{body.length}/500</p>
+        <p className="text-[11px] text-gray-400 text-right">
+          {isSmsChannel ? `${smsLength.units}/${smsLength.unitLimit} ${smsUnitsLabel}` : `${body.length}/500`}
+        </p>
+        {isSmsChannel && smsLength.tooLong && (
+          <p className="text-[11px] text-red-600">
+            Shorten the text to one SMS. The limit depends on whether the text uses GSM-7 or UCS-2.
+          </p>
+        )}
       </div>
 
       <div className="space-y-1.5">
@@ -319,9 +433,12 @@ function ComposeDialog({
           rows={2}
           value={reason}
           onChange={event => { setReason(event.target.value); invalidatePreview() }}
-          className="resize-none"
+          className={`resize-none ${reasonTooShort ? 'border-red-300 focus-visible:ring-red-200' : ''}`}
           maxLength={500}
         />
+        <p className={`text-[11px] ${reasonTooShort ? 'text-red-600' : 'text-gray-400'}`}>
+          Enter at least {ANNOUNCEMENT_REASON_MIN_CHARS} characters. {reasonLength}/500
+        </p>
       </div>
 
       {preview && (
@@ -334,16 +451,44 @@ function ComposeDialog({
             </div>
             <BellRing className="h-5 w-5 text-blue-600 shrink-0" />
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <PreviewCount label="Eligible" value={preview.counts.eligibleRecipients} />
-            <PreviewCount label="Push devices" value={preview.counts.activePushRecipients} />
-            <PreviewCount label="No token" value={preview.counts.noActiveToken} />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <PreviewCount label="Audience profiles" value={preview.counts.eligibleRecipients} />
+            {announcementIncludesPush(preview.rendered.channel) && (
+              <>
+                <PreviewCount label="Push devices" value={preview.counts.activePushRecipients} />
+                <PreviewCount label="No push token" value={preview.counts.noActiveToken} />
+              </>
+            )}
+            {announcementIncludesSms(preview.rendered.channel) && (
+              <>
+                <PreviewCount label="SMS recipients" value={preview.counts.smsRecipients} />
+                <PreviewCount label="No valid phone" value={preview.counts.smsNoValidPhone} />
+              </>
+            )}
           </div>
+          {preview.rendered.channel !== 'push' && (
+            <div className="rounded-md border border-blue-100 bg-white/80 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Exact SMS text</p>
+                <p className="text-[10px] text-slate-500">
+                  {preview.rendered.smsUnits}/{preview.rendered.smsUnitLimit}{' '}
+                  {announcementSmsUnitsLabel(preview.rendered.smsEncoding)}
+                </p>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-700">{preview.rendered.smsBody}</p>
+            </div>
+          )}
           <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
             <SelectedAudienceIcon className="h-3 w-3" />
             <span>{selectedAudience.label}</span>
             <span>-</span>
-            <span>{DESTINATION_LABELS[preview.rendered.destination]}</span>
+            <span>{CHANNEL_LABELS[preview.rendered.channel]}</span>
+            {announcementIncludesPush(preview.rendered.channel) && (
+              <>
+                <span>-</span>
+                <span>{DESTINATION_LABELS[preview.rendered.destination]}</span>
+              </>
+            )}
             <span>- revision {preview.revision}</span>
           </div>
           <div className="flex items-center justify-between gap-3">
