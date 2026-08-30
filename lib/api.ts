@@ -22,6 +22,23 @@ import {
   type ProviderCancellationRestrictionListResponse,
   type ProviderCancellationRestrictionType,
 } from './provider-cancellation-restriction-contract'
+import {
+  normaliseAnnouncementHistory,
+  normaliseAnnouncementPreview,
+  type AnnouncementDraft,
+  type AnnouncementPublishResult,
+} from './announcement-campaign-contract'
+export {
+  type AnnouncementAudience,
+  type AnnouncementChannel,
+  type AnnouncementClassification,
+  type AnnouncementDestination,
+  type AnnouncementDraft,
+  type AnnouncementHistoryItem,
+  type AnnouncementPreview,
+  type AnnouncementPreviewCounts,
+  type AnnouncementPublishResult,
+} from './announcement-campaign-contract'
 export {
   normaliseProviderCancellationRestriction,
   type ProviderCancellationRestrictionListItem,
@@ -2169,56 +2186,9 @@ export function deleteAdmin(adminId: string) {
 
 // ── Announcements ─────────────────────────────────────────────────────────────
 
-export type AnnouncementAudience = 'all' | 'clients' | 'drivers' | 'artisans'
-export type AnnouncementClassification = 'service' | 'critical'
-export type AnnouncementDestination =
-  | 'notifications'
-  | 'activity'
-  | 'support'
-  | 'promotions'
-  | 'app_store'
-
-export interface AnnouncementDraft {
-  title: string
-  body: string
-  targetAudience: AnnouncementAudience
-  classification: AnnouncementClassification
-  destination: AnnouncementDestination
-  reason: string
-}
-
-export interface AnnouncementPreviewCounts {
-  eligibleRecipients: number
-  activePushRecipients: number
-  noActiveToken: number
-  byRole: Record<string, number>
-  byPlatform: Record<string, number>
-}
-
-export interface AnnouncementPreview {
-  campaignId: string
-  previewToken: string
-  previewExpiresAt: string
-  revision: number
-  counts: AnnouncementPreviewCounts
-  rendered: {
-    title: string
-    body: string
-    classification: AnnouncementClassification
-    targetAudience: AnnouncementAudience
-    destination: AnnouncementDestination
-  }
-}
-
-export interface AnnouncementPublishResult {
-  id: string
-  status: string
-  recipientCount: number
-  queuedAt: string
-}
-
-export function previewAnnouncement(draft: AnnouncementDraft) {
-  return api.post<AnnouncementPreview>('/admin/announcements/preview', draft)
+export async function previewAnnouncement(draft: AnnouncementDraft) {
+  const raw = await api.post<unknown>('/admin/announcements/preview', draft)
+  return normaliseAnnouncementPreview(raw, draft)
 }
 
 export function publishAnnouncement(
@@ -3792,25 +3762,9 @@ export function sendDirectSms(recipient: string, message: string) {
 
 // ── Announcement History ──────────────────────────────────────────────────────
 
-export interface AnnouncementHistoryItem {
-  id: string
-  title: string
-  body: string
-  targetAudience: AnnouncementAudience
-  classification: AnnouncementClassification
-  destination: AnnouncementDestination
-  status: string
-  recipientCount: number
-  queuedAt: string
-  reason?: string | null
-}
-
 export async function getAnnouncementHistory() {
-  const response = await api.get<
-    AnnouncementHistoryItem[] | { data: AnnouncementHistoryItem[] }
-  >('/admin/announcements/history')
-  if (Array.isArray(response)) return response
-  return Array.isArray(response.data) ? response.data : []
+  const raw = await api.get<unknown>('/admin/announcements/history')
+  return normaliseAnnouncementHistory(raw)
 }
 
 // ── Help Center (CMS) ─────────────────────────────────────────────────────────

@@ -280,6 +280,16 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   RIDE_FARE_POLICY_CATEGORY_FLOORS_INVALID: 'Review every active tier and correct its safeguard floor.',
   RIDE_FARE_POLICY_DRAFT_REQUIRED: 'Save a fare-policy draft before generating a preview.',
   RIDE_FARE_POLICY_PREVIEW_INVALID: 'Generate a fresh server preview before activation.',
+  ANNOUNCEMENT_PREVIEW_NOT_FOUND: 'Generate a new server preview before publishing this announcement.',
+  ANNOUNCEMENT_PREVIEW_ACTOR_MISMATCH: 'This preview belongs to another administrator. Generate your own preview before publishing.',
+  ANNOUNCEMENT_PREVIEW_MISMATCH: 'The announcement changed after preview. Generate and review a new preview.',
+  ANNOUNCEMENT_PREVIEW_CONSUMED: 'That announcement preview was already used. Generate a new preview before publishing again.',
+  ANNOUNCEMENT_PREVIEW_EXPIRED: 'That announcement preview expired. Generate and review a new preview.',
+  ANNOUNCEMENT_RECIPIENT_SNAPSHOT_MISMATCH: 'The reviewed audience snapshot is no longer complete. Generate and review a new preview.',
+  SMS_CHANNEL_UNAVAILABLE: 'SMS announcements are unavailable. Check the production SMS switch and credentials before trying again.',
+  SMS_BODY_TOO_LONG: 'Shorten the announcement to one SMS. The encoding-dependent limit, including the MyShop prefix, is 160 GSM-7 septets or 70 UCS-2 code units.',
+  CRITICAL_ANNOUNCEMENT_REQUIRES_SUPER_ADMIN: 'Only the Super Administrator can publish a critical announcement.',
+  AUDIENCE_OUT_OF_SCOPE: 'You cannot send an announcement to that audience with this account scope.',
 }
 
 function fallbackForStatus(status: number): string {
