@@ -15,6 +15,11 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
   const authHeader = req.headers.get('authorization')
   if (authHeader) headers.set('authorization', authHeader)
   headers.set('content-type', req.headers.get('content-type') ?? 'application/json')
+  // Publish endpoints use this header to make one reviewed action safe to
+  // retry. Keep the proxy allow-list narrow, but do not drop the browser's
+  // server-issued idempotency key on the way to the API.
+  const idempotencyKey = req.headers.get('idempotency-key')
+  if (idempotencyKey) headers.set('idempotency-key', idempotencyKey)
 
   // Forward the body as raw bytes, not text — reading multipart/form-data via
   // req.text() decodes as UTF-8 and corrupts binary uploads (e.g. profile photos).

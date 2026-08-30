@@ -12,6 +12,10 @@ const page = readFileSync(
   new URL('../app/(dashboard)/announcements/page.tsx', import.meta.url),
   'utf8',
 )
+const proxy = readFileSync(
+  new URL('../app/api/proxy/[...path]/route.ts', import.meta.url),
+  'utf8',
+)
 
 test('announcements use normalised server preview, publish, and history contracts', () => {
   assert.match(api, /api\.post<unknown>\('\/admin\/announcements\/preview', draft\)/)
@@ -25,6 +29,13 @@ test('announcements use normalised server preview, publish, and history contract
   assert.match(page, /previewAnnouncement\(request\)/)
   assert.match(page, /publishAnnouncement\(request, preview\.previewToken, preview\.campaignId\)/)
   assert.match(page, /Nothing is sent while generating a preview\./)
+})
+
+test('announcement publish idempotency key survives the same-origin proxy', () => {
+  assert.match(proxy, /req\.headers\.get\('idempotency-key'\)/)
+  assert.match(proxy, /headers\.set\('idempotency-key', idempotencyKey\)/)
+  assert.match(apiClient, /IDEMPOTENCY_KEY_REQUIRED:/)
+  assert.match(apiClient, /INVALID_IDEMPOTENCY_KEY:/)
 })
 
 test('announcement composer restores audited push, SMS, and combined channels', () => {
