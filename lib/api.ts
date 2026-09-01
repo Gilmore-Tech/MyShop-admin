@@ -125,7 +125,30 @@ import {
   normaliseAdminRideListResponse,
   type AdminRideListResponse as NormalisedAdminRideListResponse,
 } from './admin-ride-contract'
+import {
+  normaliseDriverPriorityDriverList,
+  normaliseDriverPriorityHistory,
+  normaliseDriverPriorityMetrics,
+  normaliseDriverPriorityPolicy,
+  type DriverPriorityDriverList,
+  type DriverPriorityHistory,
+  type DriverPriorityMetrics,
+  type DriverPriorityPolicyResponse,
+  type DriverPriorityPolicyUpdate,
+  type DriverPriorityTier,
+} from './driver-priority-contract'
 export type { AdminRide, AdminRideListResponse } from './admin-ride-contract'
+export type {
+  DriverPriorityDriverList,
+  DriverPriorityDriverRow,
+  DriverPriorityHistory,
+  DriverPriorityHistoryItem,
+  DriverPriorityMetrics,
+  DriverPriorityPolicyResponse,
+  DriverPriorityPolicyUpdate,
+  DriverPriorityTier,
+  EffectiveDriverPriorityTier,
+} from './driver-priority-contract'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -965,6 +988,98 @@ export async function liftProviderRequestRestriction(
 // cancellation-only naming.
 export const listProviderCancellationRestrictions = listProviderRequestRestrictions
 export const liftProviderCancellationRestriction = liftProviderRequestRestriction
+
+// ── Driver priority policy ───────────────────────────────────────────────────
+
+const DRIVER_PRIORITY_PATH = '/admin/driver-priority'
+
+export async function getDriverPriorityPolicy(): Promise<DriverPriorityPolicyResponse> {
+  const raw = await api.get<unknown>(`${DRIVER_PRIORITY_PATH}/policy`)
+  return normaliseDriverPriorityPolicy(raw)
+}
+
+export async function updateDriverPriorityPolicy(
+  input: DriverPriorityPolicyUpdate,
+): Promise<DriverPriorityPolicyResponse> {
+  const reason = input.reason.trim()
+  if (reason.length < 5) throw new Error('A policy-change reason of at least 5 characters is required.')
+  const raw = await api.put<unknown>(`${DRIVER_PRIORITY_PATH}/policy`, {
+    ...input,
+    reason,
+  })
+  return normaliseDriverPriorityPolicy(raw)
+}
+
+export async function listDriverPriorityDrivers(params: {
+  page?: number
+  limit?: number
+  search?: string
+  tier?: DriverPriorityTier | 'none'
+  manualOnly?: boolean
+} = {}): Promise<DriverPriorityDriverList> {
+  const page = params.page ?? 1
+  const limit = params.limit ?? 25
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) })
+  if (params.search?.trim()) query.set('search', params.search.trim())
+  if (params.tier) query.set('tier', params.tier)
+  if (params.manualOnly != null) query.set('manualOnly', String(params.manualOnly))
+  const raw = await api.get<unknown>(`${DRIVER_PRIORITY_PATH}/drivers?${query.toString()}`)
+  return normaliseDriverPriorityDriverList(raw, { page, limit })
+}
+
+export async function enrollDriverPriority(
+  driverId: string,
+  input: {
+    floorTier: DriverPriorityTier
+    reason: string
+    reviewAt: string
+    expiresAt: string
+  },
+): Promise<unknown> {
+  const reason = input.reason.trim()
+  if (reason.length < 5) throw new Error('An enrollment reason of at least 5 characters is required.')
+  if (!input.reviewAt) throw new Error('A review date is required.')
+  if (!input.expiresAt) throw new Error('An expiry date is required.')
+  return api.post(`${DRIVER_PRIORITY_PATH}/drivers/${driverId}/enroll`, {
+    floorTier: input.floorTier,
+    reason,
+    reviewAt: input.reviewAt,
+    expiresAt: input.expiresAt,
+  })
+}
+
+export async function revokeDriverPriority(driverId: string, reason: string): Promise<unknown> {
+  const trimmedReason = reason.trim()
+  if (trimmedReason.length < 5) throw new Error('A revocation reason of at least 5 characters is required.')
+  return api.post(`${DRIVER_PRIORITY_PATH}/drivers/${driverId}/revoke`, {
+    reason: trimmedReason,
+  })
+}
+
+export async function getDriverPriorityHistory(
+  driverId: string,
+  params: { page?: number; limit?: number } = {},
+): Promise<DriverPriorityHistory> {
+  const page = params.page ?? 1
+  const limit = params.limit ?? 25
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) })
+  const raw = await api.get<unknown>(
+    `${DRIVER_PRIORITY_PATH}/drivers/${driverId}/history?${query.toString()}`,
+  )
+  return normaliseDriverPriorityHistory(raw, { page, limit })
+}
+
+export async function getDriverPriorityMetrics(params: {
+  from?: string
+  to?: string
+} = {}): Promise<DriverPriorityMetrics> {
+  const query = new URLSearchParams()
+  if (params.from) query.set('from', params.from)
+  if (params.to) query.set('to', params.to)
+  const suffix = query.size ? `?${query.toString()}` : ''
+  const raw = await api.get<unknown>(`${DRIVER_PRIORITY_PATH}/metrics${suffix}`)
+  return normaliseDriverPriorityMetrics(raw)
+}
 
 // ReviewClientKycDto: { action: 'approve'|'reject', reason (min 5 on reject) }
 export function reviewClientKyc(clientId: string, action: 'approve' | 'reject', reason?: string) {
