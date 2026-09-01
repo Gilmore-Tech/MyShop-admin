@@ -82,8 +82,8 @@ function formatDate(iso: string) {
   })
 }
 
-function DocsProgress({ pending, approved, rejected, total }: {
-  pending: number; approved: number; rejected: number; total: number
+function DocsProgress({ pending, incomplete, approved, rejected, total }: {
+  pending: number; incomplete: number; approved: number; rejected: number; total: number
 }) {
   if (total === 0) return <span className="text-xs text-gray-400">No docs</span>
   return (
@@ -91,6 +91,7 @@ function DocsProgress({ pending, approved, rejected, total }: {
       <div className="flex gap-0.5">
         {approved > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-emerald-700 bg-emerald-50 px-1.5 rounded">{approved} <Check className="h-3 w-3" /></span>}
         {pending > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-gray-600 bg-gray-100 px-1.5 rounded">{pending}</span>}
+        {incomplete > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-amber-700 bg-amber-50 px-1.5 rounded">{incomplete} incomplete <AlertCircle className="h-3 w-3" /></span>}
         {rejected > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-red-700 bg-red-50 px-1.5 rounded">{rejected} <X className="h-3 w-3" /></span>}
       </div>
       <span className="text-xs text-gray-400">/ {total}</span>
@@ -370,7 +371,7 @@ function DocumentStep({
             {doc.version > 1 && (
               <span className="text-[11px] bg-gray-100 text-gray-600 px-1.5 rounded font-medium">v{doc.version}</span>
             )}
-            {documentTypeTracksExpiry(doc.type) ? (
+            {doc.status !== 'uploaded' && documentTypeTracksExpiry(doc.type) ? (
               <DocumentExpiryControl
                 documentId={doc.id}
                 documentType={doc.type}
@@ -398,8 +399,20 @@ function DocumentStep({
         </div>
       )}
 
-      {/* Document viewer */}
-      <DocViewer doc={doc} />
+      {/* An `uploaded` row has not passed server-side storage confirmation. Do
+          not request or render it as evidence; only pending_review and later
+          states are eligible for secure reviewer access. */}
+      {doc.status === 'uploaded' ? (
+        <div className="flex flex-col items-center justify-center gap-2 h-56 bg-amber-50 rounded-xl border border-amber-100 px-5 text-center">
+          <AlertCircle className="h-8 w-8 text-amber-500" />
+          <p className="text-sm font-semibold text-amber-900">Upload not completed</p>
+          <p className="text-xs text-amber-800 max-w-sm">
+            The provider started this upload but the server never confirmed the file. It is not reviewable evidence. Ask the provider to retry the document.
+          </p>
+        </div>
+      ) : (
+        <DocViewer doc={doc} />
+      )}
 
       {/* Review controls */}
       {nonReviewMessage && (
@@ -1306,6 +1319,7 @@ export default function VerificationsPage() {
             render: v => (
               <DocsProgress
                 pending={Number(v.docs_pending)}
+                incomplete={Number(v.docs_incomplete)}
                 approved={Number(v.docs_approved)}
                 rejected={Number(v.docs_rejected)}
                 total={Number(v.total_docs)}

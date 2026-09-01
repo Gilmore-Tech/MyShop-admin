@@ -640,6 +640,7 @@ export interface VerificationItem {
   region_id: string | null
   region_name: string | null
   docs_pending: number
+  docs_incomplete: number
   docs_approved: number
   docs_rejected: number
   total_docs: number
@@ -699,6 +700,7 @@ function normaliseItem(v: any): VerificationItem {
     region_name: v.region_name ?? v.regionName ?? null,
     provider_name: v.provider_name ?? v.providerName ?? null,
     docs_pending: Number(v.docs_pending ?? v.docsPending ?? 0),
+    docs_incomplete: Number(v.docs_incomplete ?? v.docsIncomplete ?? 0),
     docs_approved: Number(v.docs_approved ?? v.docsApproved ?? 0),
     docs_rejected: Number(v.docs_rejected ?? v.docsRejected ?? 0),
     total_docs: Number(v.total_docs ?? v.totalDocs ?? rawDocs.length),

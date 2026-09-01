@@ -204,6 +204,8 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   REGIONAL_MANAGER_APPROVAL_REQUIRED: 'Regional Manager approval is required before this action.',
   DOCUMENTS_REQUIRED: 'The required documents have not been uploaded.',
   DOCUMENTS_NOT_REVIEWED: 'Review every required document before continuing.',
+  DOCUMENT_UPLOAD_INCOMPLETE:
+    'A provider upload was not completed. Ask the provider to retry it; unconfirmed files cannot be reviewed.',
   DOCUMENTS_NOT_APPROVED: 'Every required document must be independently approved.',
   INVALID_STAGE: 'This provider has moved to another verification stage. Reload and try again.',
   DRIVER_DOCUMENT_REQUIREMENTS_NOT_MET: 'Ghana Card, driver licence and profile photo must each be reviewed before continuing.',
