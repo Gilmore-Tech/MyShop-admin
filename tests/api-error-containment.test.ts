@@ -93,6 +93,10 @@ test('verification submission failures show actionable app-owned copy', () => {
     new ApiError(400, 'INVALID_STAGE').message,
     'This provider has moved to another verification stage. Reload and try again.'
   )
+  assert.equal(
+    new ApiError(400, 'DOCUMENT_UPLOAD_INCOMPLETE').message,
+    'A provider upload was not completed. Ask the provider to retry it; unconfirmed files cannot be reviewed.'
+  )
 })
 
 test('malformed error codes cannot become user-facing copy', () => {

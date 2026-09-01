@@ -249,6 +249,7 @@ export default function AppSidebar() {
           children: [
             { title: 'Rides',              href: '/rides',         permission: 'view_rides', category: 'rides' },
             { title: 'Ride tiers',         href: '/ride-categories', permission: 'view_ride_categories', category: 'rides' },
+            { title: 'Priority drivers',   href: '/driver-priority', permission: 'view_config', category: 'rides' },
             { title: 'Toll zones',          href: '/ride-toll-zones', category: 'rides', superAdmin: true },
             { title: 'Artisan jobs',       href: '/artisan-jobs',  permission: 'view_jobs', category: 'artisan' },
             { title: 'Manual assignment',  href: '/artisan-jobs/manual-assignment', permission: 'view_jobs', category: 'artisan', badge: unassignedJobsCount ?? undefined, badgeVariant: 'amber' },
