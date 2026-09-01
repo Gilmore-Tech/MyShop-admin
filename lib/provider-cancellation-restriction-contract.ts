@@ -1,14 +1,18 @@
-export type ProviderCancellationRestrictionStatus = 'active' | 'expired' | 'lifted'
-export type ProviderCancellationRestrictionType = 'driver' | 'artisan'
+export type ProviderRequestRestrictionStatus = 'active' | 'expired' | 'lifted'
+export type ProviderRequestRestrictionType = 'driver' | 'artisan'
+export type ProviderRequestRestrictionPolicyKind = 'accepted_cancellation' | 'offer_response'
 
-export interface ProviderCancellationRestrictionListItem {
+export interface ProviderRequestRestrictionListItem {
   restrictionId: string
   providerId: string
-  providerType: ProviderCancellationRestrictionType
+  providerType: ProviderRequestRestrictionType
   fullName: string | null
   phone: string | null
-  status: ProviderCancellationRestrictionStatus
+  status: ProviderRequestRestrictionStatus
+  policyKind: ProviderRequestRestrictionPolicyKind
+  triggerOutcome: string | null
   triggerCount: number
+  points: number
   threshold: number
   blockedUntil: string
   createdAt: string
@@ -18,8 +22,8 @@ export interface ProviderCancellationRestrictionListItem {
   liftReason: string | null
 }
 
-export interface ProviderCancellationRestrictionListResponse {
-  items: ProviderCancellationRestrictionListItem[]
+export interface ProviderRequestRestrictionListResponse {
+  items: ProviderRequestRestrictionListItem[]
   total: number
   page: number
   limit: number
@@ -51,22 +55,39 @@ function nonNegativeInteger(value: unknown): number {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : 0
 }
 
-function providerType(value: unknown): ProviderCancellationRestrictionType | null {
+function providerType(value: unknown): ProviderRequestRestrictionType | null {
   const normalized = text(value).trim().toLowerCase()
   return normalized === 'driver' || normalized === 'artisan'
     ? normalized
     : null
 }
 
-export function normaliseProviderCancellationRestriction(
+function policyKind(value: unknown): ProviderRequestRestrictionPolicyKind {
+  const normalized = text(value).trim().toLowerCase()
+  return normalized === 'offer_response' || normalized === 'offer-response'
+    ? 'offer_response'
+    : 'accepted_cancellation'
+}
+
+export function normaliseProviderRequestRestriction(
   value: unknown,
   nowMs: number = Date.now(),
-): ProviderCancellationRestrictionListItem | null {
+): ProviderRequestRestrictionListItem | null {
   const raw = record(value)
   const provider = record(raw.provider)
   const user = record(first(raw.user, provider.user))
+  const triggerOfferResponseEvent = record(first(
+    raw.triggerOfferResponseEvent,
+    raw.trigger_offer_response_event,
+  ))
   const type = providerType(first(raw.providerType, raw.provider_type, provider.providerType, provider.type))
-  const restrictionId = text(first(raw.restrictionId, raw.restriction_id, raw.id)).trim()
+  const restrictionId = text(first(
+    raw.requestRestrictionId,
+    raw.request_restriction_id,
+    raw.restrictionId,
+    raw.restriction_id,
+    raw.id,
+  )).trim()
   const providerId = text(first(
     raw.providerId,
     raw.provider_id,
@@ -96,13 +117,29 @@ export function normaliseProviderCancellationRestriction(
       Boolean(blockedUntil) &&
       new Date(blockedUntil).getTime() > nowMs
     )
-  const status: ProviderCancellationRestrictionStatus =
+  const status: ProviderRequestRestrictionStatus =
     liftedAt || rawStatus === 'lifted'
       ? 'lifted'
       : active
         ? 'active'
         : 'expired'
   const liftedByRecord = record(first(raw.liftedBy, raw.lifted_by))
+  const triggerCount = nonNegativeInteger(first(
+    raw.triggerCount,
+    raw.trigger_count,
+    raw.cancellationCount,
+    raw.cancellation_count,
+    raw.eventCount,
+    raw.event_count,
+    raw.count,
+  ))
+  const kind = policyKind(first(
+    raw.policyKind,
+    raw.policy_kind,
+    raw.restrictionKind,
+    raw.restriction_kind,
+    raw.kind,
+  ))
 
   return {
     restrictionId,
@@ -119,12 +156,25 @@ export function normaliseProviderCancellationRestriction(
     )),
     phone: nullableText(first(raw.phone, provider.phone, user.phone)),
     status,
-    triggerCount: nonNegativeInteger(first(
-      raw.triggerCount,
-      raw.trigger_count,
-      raw.cancellationCount,
-      raw.cancellation_count,
-      raw.count,
+    policyKind: kind,
+    triggerOutcome: nullableText(first(
+      raw.triggerOutcome,
+      raw.trigger_outcome,
+      raw.latestOutcome,
+      raw.latest_outcome,
+      raw.outcome,
+      triggerOfferResponseEvent.outcome,
+    )),
+    triggerCount,
+    points: nonNegativeInteger(first(
+      raw.points,
+      raw.pointTotal,
+      raw.point_total,
+      raw.triggerPoints,
+      raw.trigger_points,
+      raw.score,
+      // Legacy cancellation blocks did not distinguish event count from score.
+      triggerCount,
     )),
     threshold: nonNegativeInteger(first(
       raw.threshold,
@@ -157,3 +207,11 @@ export function normaliseProviderCancellationRestriction(
     )),
   }
 }
+
+// Transitional aliases keep older Admin imports and deployed cancellation-only
+// API payloads working while the backend rolls out the broader request policy.
+export type ProviderCancellationRestrictionStatus = ProviderRequestRestrictionStatus
+export type ProviderCancellationRestrictionType = ProviderRequestRestrictionType
+export type ProviderCancellationRestrictionListItem = ProviderRequestRestrictionListItem
+export type ProviderCancellationRestrictionListResponse = ProviderRequestRestrictionListResponse
+export const normaliseProviderCancellationRestriction = normaliseProviderRequestRestriction

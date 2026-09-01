@@ -17,10 +17,10 @@ import {
 import type { Permission, Role, CategoryScope } from './roles'
 import type { ReportGroupBy } from './format-date'
 import {
-  normaliseProviderCancellationRestriction,
-  type ProviderCancellationRestrictionListItem,
-  type ProviderCancellationRestrictionListResponse,
-  type ProviderCancellationRestrictionType,
+  normaliseProviderRequestRestriction,
+  type ProviderRequestRestrictionListItem,
+  type ProviderRequestRestrictionListResponse,
+  type ProviderRequestRestrictionType,
 } from './provider-cancellation-restriction-contract'
 import {
   normaliseAnnouncementHistory,
@@ -40,6 +40,12 @@ export {
   type AnnouncementPublishResult,
 } from './announcement-campaign-contract'
 export {
+  normaliseProviderRequestRestriction,
+  type ProviderRequestRestrictionListItem,
+  type ProviderRequestRestrictionListResponse,
+  type ProviderRequestRestrictionPolicyKind,
+  type ProviderRequestRestrictionStatus,
+  type ProviderRequestRestrictionType,
   normaliseProviderCancellationRestriction,
   type ProviderCancellationRestrictionListItem,
   type ProviderCancellationRestrictionListResponse,
@@ -894,20 +900,22 @@ export function liftProviderSuspension(providerId: string, suspensionId: string,
   )
 }
 
-// ── Provider cancellation restrictions ────────────────────────────────────────
+// ── Provider request restrictions ─────────────────────────────────────────────
 
-export async function listProviderCancellationRestrictions(params?: {
+export async function listProviderRequestRestrictions(params?: {
   activeOnly?: boolean
-  providerType?: ProviderCancellationRestrictionType
+  providerType?: ProviderRequestRestrictionType
   page?: number
   limit?: number
-}): Promise<ProviderCancellationRestrictionListResponse> {
+}): Promise<ProviderRequestRestrictionListResponse> {
   const query = new URLSearchParams()
   if (params?.activeOnly != null) query.set('activeOnly', String(params.activeOnly))
   if (params?.providerType) query.set('providerType', params.providerType)
   if (params?.page != null) query.set('page', String(params.page))
   if (params?.limit != null) query.set('limit', String(params.limit))
   const suffix = query.size > 0 ? `?${query.toString()}` : ''
+  // The backend deliberately retains this route while widening its rows from
+  // accepted cancellations to all provider request-block policy kinds.
   const raw = await api.get<unknown>(`/admin/providers/cancellation-restrictions${suffix}`)
   const envelope = raw && typeof raw === 'object' && !Array.isArray(raw)
     ? raw as Record<string, unknown>
@@ -918,12 +926,14 @@ export async function listProviderCancellationRestrictions(params?: {
       ? envelope.data
       : Array.isArray(envelope.items)
         ? envelope.items
-        : Array.isArray(envelope.restrictions)
+      : Array.isArray(envelope.restrictions)
           ? envelope.restrictions
+          : Array.isArray(envelope.blocks)
+            ? envelope.blocks
           : []
   const items = list
-    .map(normaliseProviderCancellationRestriction)
-    .filter((item): item is ProviderCancellationRestrictionListItem => item !== null)
+    .map(normaliseProviderRequestRestriction)
+    .filter((item): item is ProviderRequestRestrictionListItem => item !== null)
   const meta = envelope.meta && typeof envelope.meta === 'object' && !Array.isArray(envelope.meta)
     ? envelope.meta as Record<string, unknown>
     : envelope
@@ -936,19 +946,25 @@ export async function listProviderCancellationRestrictions(params?: {
   }
 }
 
-export function liftProviderCancellationRestriction(
-  providerType: ProviderCancellationRestrictionType,
+export async function liftProviderRequestRestriction(
+  providerType: ProviderRequestRestrictionType,
   providerId: string,
   restrictionId: string,
   reason: string
 ) {
   const trimmedReason = reason.trim()
   if (!trimmedReason) throw new Error('A lift reason is required.')
+  const payload = { reason: trimmedReason }
   return api.patch(
     `/admin/providers/${providerType}/${providerId}/cancellation-restrictions/${restrictionId}/lift`,
-    { reason: trimmedReason }
+    payload,
   )
 }
+
+// Transitional aliases for pages or extensions compiled against the previous
+// cancellation-only naming.
+export const listProviderCancellationRestrictions = listProviderRequestRestrictions
+export const liftProviderCancellationRestriction = liftProviderRequestRestriction
 
 // ReviewClientKycDto: { action: 'approve'|'reject', reason (min 5 on reject) }
 export function reviewClientKyc(clientId: string, action: 'approve' | 'reject', reason?: string) {
