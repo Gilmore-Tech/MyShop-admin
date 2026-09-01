@@ -51,7 +51,17 @@ const DEFAULTS = {
   providerCancellationBlockMins: 15,
   providerCancellationBlockShadowEnabled: 'true',
   providerCancellationBlockEnabled: 'false',
+  providerOfferResponseEnabled:       'false',
+  providerOfferResponseShadowEnabled: 'true',
+  providerOfferResponseDeclinePoints:  1,
+  providerOfferResponseNoResponsePoints: 2,
+  providerOfferResponseWarnPoints:     4,
+  providerOfferResponseThresholdPoints: 6,
+  providerOfferResponseRollingWindowMins: 60,
+  providerOfferResponseBlockMins:      15,
   jobBidWindowSecs:                300,
+  jobOfferDeliveryWindowSecs:       30,
+  jobOfferResponseWindowSecs:       60,
   jobMaxBids:                      3,
   jobAdminAssignmentSlaSecs:       600,
   jobAdminAssignmentLockSecs:      120,
@@ -105,7 +115,17 @@ const FIELD_LABELS: Record<ConfigKey, string> = {
   providerCancellationBlockMins: 'Provider block duration',
   providerCancellationBlockShadowEnabled: 'Provider shadow monitoring',
   providerCancellationBlockEnabled: 'Provider enforcement',
+  providerOfferResponseEnabled: 'Offer-response enforcement',
+  providerOfferResponseShadowEnabled: 'Offer-response shadow monitoring',
+  providerOfferResponseDeclinePoints: 'Declined-offer points',
+  providerOfferResponseNoResponsePoints: 'No-response points',
+  providerOfferResponseWarnPoints: 'Offer-response warning points',
+  providerOfferResponseThresholdPoints: 'Offer-response block threshold',
+  providerOfferResponseRollingWindowMins: 'Offer-response rolling window',
+  providerOfferResponseBlockMins: 'Offer-response block duration',
   jobBidWindowSecs: 'Bid Collection Window',
+  jobOfferDeliveryWindowSecs: 'Job Offer Delivery Window',
+  jobOfferResponseWindowSecs: 'Job Offer Response Window',
   jobMaxBids: 'Max Bids Per Job',
   jobAdminAssignmentSlaSecs: 'Admin Assignment SLA',
   jobAdminAssignmentLockSecs: 'Assignment Edit Lock',
@@ -180,7 +200,23 @@ const RULES: Partial<Record<ConfigKey, ValidationRule>> = {
     max: 10080,
     message: 'Must be 1-10080 minutes',
   },
+  providerOfferResponseDeclinePoints: { min: 1, max: 20, message: 'Must be 1-20 points' },
+  providerOfferResponseNoResponsePoints: { min: 1, max: 20, message: 'Must be 1-20 points' },
+  providerOfferResponseWarnPoints: { min: 1, max: 100, message: 'Must be 1-100 points' },
+  providerOfferResponseThresholdPoints: { min: 2, max: 200, message: 'Must be 2-200 points' },
+  providerOfferResponseRollingWindowMins: {
+    min: 5,
+    max: 43200,
+    message: 'Must be 5-43200 minutes',
+  },
+  providerOfferResponseBlockMins: {
+    min: 1,
+    max: 10080,
+    message: 'Must be 1-10080 minutes',
+  },
   jobBidWindowSecs:                { min: 30, message: 'Must be at least 30 seconds' },
+  jobOfferDeliveryWindowSecs:      { min: 10, max: 120, message: 'Must be 10-120 seconds' },
+  jobOfferResponseWindowSecs:      { min: 15, max: 300, message: 'Must be 15-300 seconds' },
   jobMaxBids:                      { min: 1, max: 20, message: 'Must be 1-20' },
   jobAdminAssignmentSlaSecs:       { min: 60, max: 86400, message: 'Must be 60-86400 seconds' },
   jobAdminAssignmentLockSecs:      { min: 30, max: 1800, message: 'Must be 30-1800 seconds' },
@@ -239,6 +275,10 @@ function hasErrors(state: ConfigState): boolean {
     (Object.keys(state) as ConfigKey[]).some(k => validate(k, state[k]) !== null) ||
     Number(state.providerCancellationBlockWarnCount) >=
       Number(state.providerCancellationBlockThreshold) ||
+    Number(state.providerOfferResponseWarnPoints) >=
+      Number(state.providerOfferResponseThresholdPoints) ||
+    Number(state.jobOfferDeliveryWindowSecs) > Number(state.jobBidWindowSecs) ||
+    Number(state.jobOfferResponseWindowSecs) > Number(state.jobBidWindowSecs) ||
     Number(state.jobDirectedAcceptReminderSecs) >=
       Number(state.jobDirectedAcceptWindowSecs)
   )
@@ -490,7 +530,33 @@ export default function ConfigurationPage() {
     setSaving(true)
     setSaveError(null)
     try {
-      await Promise.all(changedKeys.map(k => updateConfig(toSnake(k), String(config[k]))))
+      // The API validates dependent values against what is already stored.
+      // Apply safe boundary expansions/decreases first so a valid multi-field
+      // edit cannot fail merely because concurrent PATCH requests race.
+      const upperBounds = new Set<ConfigKey>([
+        'jobBidWindowSecs',
+        'providerCancellationBlockThreshold',
+        'providerOfferResponseThresholdPoints',
+      ])
+      const lowerValues = new Set<ConfigKey>([
+        'jobOfferDeliveryWindowSecs',
+        'jobOfferResponseWindowSecs',
+        'providerCancellationBlockWarnCount',
+        'providerOfferResponseWarnPoints',
+      ])
+      const savePriority = (key: ConfigKey): number => {
+        const before = Number(saved[key])
+        const after = Number(config[key])
+        if (upperBounds.has(key)) return after > before ? 0 : 3
+        if (lowerValues.has(key)) return after < before ? 0 : 2
+        return 1
+      }
+      const orderedKeys = [...changedKeys].sort(
+        (left, right) => savePriority(left) - savePriority(right),
+      )
+      for (const key of orderedKeys) {
+        await updateConfig(toSnake(key), String(config[key]))
+      }
       setSaved({ ...config })
       setSaveSuccess(true)
     } catch {
@@ -643,12 +709,62 @@ export default function ConfigurationPage() {
             )}
           </Section>
 
+          <Section
+            title="Provider offer-response blocks"
+            description="Reliability points for declined or unanswered offers; this does not change a provider's public star rating"
+          >
+            {field('Declined-offer points', 'providerOfferResponseDeclinePoints', {
+              description: 'Points added when a provider explicitly declines a valid offer',
+            })}
+            {field('No-response points', 'providerOfferResponseNoResponsePoints', {
+              description: 'Points added only when a delivered offer reaches its response deadline without an answer',
+            })}
+            {field('Warning points', 'providerOfferResponseWarnPoints', {
+              description: 'Warn the provider before the block threshold is reached',
+            })}
+            {field('Block threshold', 'providerOfferResponseThresholdPoints', {
+              description: 'Offer-response points inside the rolling window that trigger a block',
+            })}
+            {field('Rolling window', 'providerOfferResponseRollingWindowMins', {
+              description: 'Minutes of recent declined and unanswered offers considered',
+            })}
+            {field('Block duration', 'providerOfferResponseBlockMins', {
+              description: 'Minutes before the provider can receive new requests again',
+            })}
+            {field('Shadow monitoring', 'providerOfferResponseShadowEnabled', {
+              type: 'boolean',
+              description: 'Record would-block decisions without restricting providers',
+            })}
+            {field('Enforcement', 'providerOfferResponseEnabled', {
+              type: 'boolean',
+              description: 'Temporarily stop new offers when the response-point threshold is reached',
+            })}
+            {Number(config.providerOfferResponseWarnPoints) >=
+              Number(config.providerOfferResponseThresholdPoints) && (
+              <p className="text-xs font-medium text-red-600 sm:col-span-2 lg:col-span-3">
+                Warning points must be lower than the block threshold.
+              </p>
+            )}
+          </Section>
+
           <Section title="Artisan Job Settings" description="Bidding window, job limits, and cancellation policy">
             {field('Bid Collection Window', 'jobBidWindowSecs', { description: 'How long the job stays open for bids' })}
+            {field('Offer Delivery Window', 'jobOfferDeliveryWindowSecs', {
+              description: 'Time an exact job offer has to reach the artisan; undelivered offers are excluded from response points',
+            })}
+            {field('Offer Response Window', 'jobOfferResponseWindowSecs', {
+              description: 'Fresh decision time after the artisan receipt is recorded',
+            })}
             {field('Max Bids Per Job', 'jobMaxBids', { description: 'Client sees top N bids to choose from' })}
             {field('Free Cancellation Window', 'jobCancellationFreeWindowSecs', { description: 'Stored for later policy activation; currently not applied', disabled: true })}
             {field('Cancellation Fee (%)', 'jobCancellationFeePercent', { description: 'Automatic fees and transfers are currently paused', disabled: true })}
             {field('High Bid Review Threshold', 'jobHighBidFlagPesewas', { description: 'Bids above this are flagged for admin review' })}
+            {(Number(config.jobOfferDeliveryWindowSecs) > Number(config.jobBidWindowSecs) ||
+              Number(config.jobOfferResponseWindowSecs) > Number(config.jobBidWindowSecs)) && (
+              <p className="text-xs font-medium text-red-600 sm:col-span-2 lg:col-span-3">
+                Job offer delivery and response windows cannot exceed the bid collection window.
+              </p>
+            )}
           </Section>
 
           <Section

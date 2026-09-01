@@ -30,13 +30,13 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { formatDateTime } from '@/lib/format-date'
 import {
   getAllConfig,
-  liftProviderCancellationRestriction,
+  liftProviderRequestRestriction,
   liftProviderSuspension,
-  listProviderCancellationRestrictions,
+  listProviderRequestRestrictions,
   listProviderSuspensions,
   updateConfig,
-  type ProviderCancellationRestrictionListItem,
-  type ProviderCancellationRestrictionType,
+  type ProviderRequestRestrictionListItem,
+  type ProviderRequestRestrictionType,
   type SuspensionListItem,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
@@ -379,16 +379,35 @@ function LegacySuspensionsView() {
   )
 }
 
-type ProviderFilter = 'all' | ProviderCancellationRestrictionType
+type ProviderFilter = 'all' | ProviderRequestRestrictionType
 
-function statusLabel(status: ProviderCancellationRestrictionListItem['status']) {
+function statusLabel(status: ProviderRequestRestrictionListItem['status']) {
   return status === 'active' ? 'Active' : status === 'lifted' ? 'Lifted' : 'Expired'
 }
 
-function statusClass(status: ProviderCancellationRestrictionListItem['status']) {
+function statusClass(status: ProviderRequestRestrictionListItem['status']) {
   if (status === 'active') return 'bg-amber-100 text-amber-700'
   if (status === 'lifted') return 'bg-emerald-100 text-emerald-700'
   return 'bg-gray-100 text-gray-600'
+}
+
+function policyLabel(item: ProviderRequestRestrictionListItem) {
+  return item.policyKind === 'offer_response' ? 'Offer response' : 'Accepted cancellation'
+}
+
+function outcomeLabel(item: ProviderRequestRestrictionListItem) {
+  const outcome = item.triggerOutcome?.trim().toLowerCase()
+  if (!outcome) return item.policyKind === 'accepted_cancellation' ? 'Cancelled accepted work' : '-'
+  if (['declined', 'decline', 'provider_declined', 'driver_declined', 'artisan_declined'].includes(outcome)) {
+    return 'Declined offer'
+  }
+  if (['ignored', 'no_response', 'no-response', 'timeout', 'timed_out', 'expired'].includes(outcome)) {
+    return 'No response'
+  }
+  if (['accepted_cancellation', 'provider_cancelled', 'provider_canceled', 'cancelled', 'canceled'].includes(outcome)) {
+    return 'Cancelled accepted work'
+  }
+  return outcome.replaceAll('_', ' ')
 }
 
 function ProviderRestrictionLiftDialog({
@@ -396,7 +415,7 @@ function ProviderRestrictionLiftDialog({
   onClose,
   onLifted,
 }: {
-  item: ProviderCancellationRestrictionListItem
+  item: ProviderRequestRestrictionListItem
   onClose: () => void
   onLifted: () => void
 }) {
@@ -407,7 +426,7 @@ function ProviderRestrictionLiftDialog({
     setLoading(true)
     setError(null)
     try {
-      await liftProviderCancellationRestriction(
+      await liftProviderRequestRestriction(
         item.providerType,
         item.providerId,
         item.restrictionId,
@@ -415,7 +434,7 @@ function ProviderRestrictionLiftDialog({
       )
       onLifted()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to lift the cancellation block.')
+      setError(err instanceof ApiError ? err.message : 'Failed to lift the provider request block.')
       setLoading(false)
     }
   }
@@ -425,36 +444,36 @@ function ProviderRestrictionLiftDialog({
     <ConfirmDialog
       open
       onClose={onClose}
-      title={`Lift the cancellation block for ${item.fullName ?? `this ${providerLabel}`}?`}
+      title={`Lift the request block for ${item.fullName ?? `this ${providerLabel}`}?`}
       description="This allows the provider to receive new requests again. It does not change verification, payout, or unrelated account restrictions."
-      confirmLabel="Lift cancellation block"
+      confirmLabel="Lift request block"
       onConfirm={reason => { void handleLift(reason) }}
       loading={loading}
       error={error}
       requireReason
       minReason={5}
-      reasonPlaceholder="Explain why this provider block should be lifted"
+      reasonPlaceholder="Explain why this provider request block should be lifted"
     />
   )
 }
 
-function ProviderCancellationBlocksView() {
+function ProviderRequestBlocksView() {
   const { can } = useRole()
   const canLift = can('suspend_user')
-  const [items, setItems] = useState<ProviderCancellationRestrictionListItem[]>([])
+  const [items, setItems] = useState<ProviderRequestRestrictionListItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [providerType, setProviderType] = useState<ProviderFilter>('all')
   const [view, setView] = useState<'active' | 'history'>('active')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [lifting, setLifting] = useState<ProviderCancellationRestrictionListItem | null>(null)
+  const [lifting, setLifting] = useState<ProviderRequestRestrictionListItem | null>(null)
   const limit = 50
 
   const load = useCallback(() => {
     setLoading(true)
     setError('')
-    listProviderCancellationRestrictions({
+    listProviderRequestRestrictions({
       activeOnly: view === 'active',
       providerType: providerType === 'all' ? undefined : providerType,
       page,
@@ -466,7 +485,7 @@ function ProviderCancellationBlocksView() {
       })
       .catch(err => {
         setItems([])
-        setError(err instanceof ApiError ? err.message : 'Failed to load provider cancellation blocks.')
+        setError(err instanceof ApiError ? err.message : 'Failed to load provider request blocks.')
       })
       .finally(() => setLoading(false))
   }, [page, providerType, view])
@@ -481,7 +500,7 @@ function ProviderCancellationBlocksView() {
           <CardContent className="flex items-start gap-2.5 py-3 text-xs text-blue-800">
             <Eye className="mt-0.5 h-4 w-4 shrink-0" />
             <p>
-              Shadow-only records show what enforcement would have blocked. They do not stop a provider from receiving requests.
+              Shadow-only records show what the accepted-cancellation or offer-response policy would have blocked. They do not stop a provider from receiving requests.
             </p>
           </CardContent>
         </Card>
@@ -505,7 +524,7 @@ function ProviderCancellationBlocksView() {
         </FilterBar>
 
         <DataTable
-          minWidth={1050}
+          minWidth={1250}
           columns={[
             {
               key: 'provider',
@@ -527,18 +546,33 @@ function ProviderCancellationBlocksView() {
               ),
             },
             {
-              key: 'triggerCount',
-              header: 'Trigger count',
-              align: 'right' as const,
+              key: 'policyKind',
+              header: 'Policy',
               render: item => (
-                <span className="font-medium text-red-600">
+                <span className="text-sm font-medium text-gray-700">{policyLabel(item)}</span>
+              ),
+            },
+            {
+              key: 'outcome',
+              header: 'Latest outcome',
+              render: item => <span className="text-sm capitalize text-gray-600">{outcomeLabel(item)}</span>,
+            },
+            {
+              key: 'triggerCount',
+              header: 'Count / threshold',
+              render: item => item.policyKind === 'offer_response' ? (
+                <span className="block text-right font-medium text-red-600">
+                  {item.points} points{item.threshold > 0 ? ` / ${item.threshold}` : ''}
+                </span>
+              ) : (
+                <span className="block text-right font-medium text-red-600">
                   {item.triggerCount}{item.threshold > 0 ? ` / ${item.threshold}` : ''}
                 </span>
               ),
             },
             {
               key: 'blockedUntil',
-              header: 'Blocked until',
+              header: 'Deadline',
               render: item => (
                 <span className="text-sm text-gray-500">
                   {item.blockedUntil ? formatDateTime(item.blockedUntil) : '-'}
@@ -599,7 +633,7 @@ function ProviderCancellationBlocksView() {
           empty={(
             <EmptyState
               icon={view === 'active' ? ShieldOff : Clock3}
-              title={view === 'active' ? 'No active provider cancellation blocks' : 'No provider cancellation block history'}
+              title={view === 'active' ? 'No active provider request blocks' : 'No provider request block history'}
             />
           )}
           pagination={{ page, pageSize: limit, total, onPage: setPage }}
@@ -622,19 +656,19 @@ export default function SuspensionsPage() {
       <div>
         <PageHeader
           title="Suspensions"
-          subtitle="Account suspensions and temporary provider cancellation blocks"
+          subtitle="Account suspensions and temporary provider request blocks"
         />
 
         <Tabs defaultValue="account-suspensions">
           <TabsList variant="line" aria-label="Suspension views" className="mb-4">
             <TabsTrigger value="account-suspensions">Account suspensions</TabsTrigger>
-            <TabsTrigger value="cancellation-blocks">Cancellation blocks</TabsTrigger>
+            <TabsTrigger value="request-blocks">Provider request blocks</TabsTrigger>
           </TabsList>
           <TabsContent value="account-suspensions">
             <LegacySuspensionsView />
           </TabsContent>
-          <TabsContent value="cancellation-blocks">
-            <ProviderCancellationBlocksView />
+          <TabsContent value="request-blocks">
+            <ProviderRequestBlocksView />
           </TabsContent>
         </Tabs>
       </div>
