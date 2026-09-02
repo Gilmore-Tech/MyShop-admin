@@ -126,12 +126,14 @@ import {
   type AdminRideListResponse as NormalisedAdminRideListResponse,
 } from './admin-ride-contract'
 import {
+  buildDriverPriorityDriverListQuery,
   buildDriverPriorityPolicyUpdatePayload,
   normaliseDriverPriorityDriverList,
   normaliseDriverPriorityHistory,
   normaliseDriverPriorityMetrics,
   normaliseDriverPriorityPolicy,
   type DriverPriorityDriverList,
+  type DriverPriorityDriverListParams,
   type DriverPriorityHistory,
   type DriverPriorityMetrics,
   type DriverPriorityPolicyResponse,
@@ -1011,20 +1013,13 @@ export async function updateDriverPriorityPolicy(
   return normaliseDriverPriorityPolicy(raw)
 }
 
-export async function listDriverPriorityDrivers(params: {
-  page?: number
-  limit?: number
-  search?: string
-  tier?: DriverPriorityTier | 'none'
-  manualOnly?: boolean
-} = {}): Promise<DriverPriorityDriverList> {
+export async function listDriverPriorityDrivers(
+  params: DriverPriorityDriverListParams = {},
+): Promise<DriverPriorityDriverList> {
   const page = params.page ?? 1
   const limit = params.limit ?? 25
-  const query = new URLSearchParams({ page: String(page), limit: String(limit) })
-  if (params.search?.trim()) query.set('search', params.search.trim())
-  if (params.tier) query.set('tier', params.tier)
-  if (params.manualOnly != null) query.set('manualOnly', String(params.manualOnly))
-  const raw = await api.get<unknown>(`${DRIVER_PRIORITY_PATH}/drivers?${query.toString()}`)
+  const query = buildDriverPriorityDriverListQuery(params)
+  const raw = await api.get<unknown>(`${DRIVER_PRIORITY_PATH}/drivers?${query}`)
   return normaliseDriverPriorityDriverList(raw, { page, limit })
 }
 
