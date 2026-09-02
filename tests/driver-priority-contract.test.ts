@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import {
+  buildDriverPriorityDriverListQuery,
   buildDriverPriorityPolicyUpdatePayload,
   DEFAULT_DRIVER_PRIORITY_POLICY,
   normaliseDriverPriorityDriverList,
@@ -9,6 +11,37 @@ import {
   normaliseDriverPriorityPolicy,
   validateDriverPriorityPolicy,
 } from '../lib/driver-priority-contract.ts'
+
+test('omits the false manual-only filter so older APIs return all drivers', () => {
+  const defaults = new URLSearchParams(buildDriverPriorityDriverListQuery({ manualOnly: false }))
+  assert.equal(defaults.get('page'), '1')
+  assert.equal(defaults.get('limit'), '25')
+  assert.equal(defaults.has('manualOnly'), false)
+
+  const filtered = new URLSearchParams(buildDriverPriorityDriverListQuery({
+    page: 2,
+    limit: 10,
+    search: '  Eric Debrah  ',
+    tier: 'gold',
+    manualOnly: true,
+  }))
+  assert.equal(filtered.get('page'), '2')
+  assert.equal(filtered.get('limit'), '10')
+  assert.equal(filtered.get('search'), 'Eric Debrah')
+  assert.equal(filtered.get('tier'), 'gold')
+  assert.equal(filtered.get('manualOnly'), 'true')
+})
+
+test('driver-list request failures render as errors instead of false empty results', () => {
+  const source = readFileSync(
+    new URL('../app/(dashboard)/driver-priority/page.tsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(source, /setListError\(userSafeAdminError\(caught, 'Could not load priority drivers\.'\)\)/)
+  assert.match(source, /error=\{listError\}/)
+  assert.match(source, /onRetry=\{\(\) => \{ void loadDrivers\(\) \}\}/)
+})
 
 test('builds the exact nested runtime payload required by the backend policy DTO', () => {
   const payload = buildDriverPriorityPolicyUpdatePayload({

@@ -80,6 +80,14 @@ export interface DriverPriorityDriverList {
   totalPages: number
 }
 
+export interface DriverPriorityDriverListParams {
+  page?: number
+  limit?: number
+  search?: string
+  tier?: DriverPriorityTier | 'none'
+  manualOnly?: boolean
+}
+
 export interface DriverPriorityHistoryItem {
   id: string
   kind: string
@@ -138,6 +146,22 @@ export const DEFAULT_DRIVER_PRIORITY_POLICY: DriverPriorityPolicyValues = {
   maxEtaAdvantageSeconds: 120,
   assumedPickupSpeedKmh: 25,
   candidateLimit: 50,
+}
+
+export function buildDriverPriorityDriverListQuery(
+  params: DriverPriorityDriverListParams = {},
+): string {
+  const query = new URLSearchParams({
+    page: String(params.page ?? 1),
+    limit: String(params.limit ?? 25),
+  })
+  if (params.search?.trim()) query.set('search', params.search.trim())
+  if (params.tier) query.set('tier', params.tier)
+  // Omit false. Older API releases implicitly converted the string "false"
+  // to Boolean true before their property transform ran, which accidentally
+  // enabled the manual-enrollments-only filter and hid every unseeded driver.
+  if (params.manualOnly === true) query.set('manualOnly', 'true')
+  return query.toString()
 }
 
 export function buildDriverPriorityPolicyUpdatePayload(

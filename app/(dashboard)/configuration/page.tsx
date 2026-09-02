@@ -45,6 +45,10 @@ const DEFAULTS = {
   rideInitialMatchRadiusKm:        3,
   rideRadiusExpansionKm:           2,
   rideMaxMatchRadiusKm:            10,
+  rideDestinationEditEnabled:     'false',
+  rideDestinationEditMaxAddedKm:  10,
+  rideDestinationEditMaxAddedMins: 30,
+  rideDestinationEditPreviewTtlSecs: 120,
   providerCancellationBlockWarnCount: 2,
   providerCancellationBlockThreshold: 3,
   providerCancellationBlockRollingWindowMins: 60,
@@ -108,6 +112,10 @@ const FIELD_LABELS: Record<ConfigKey, string> = {
   rideRadiusExpansionKm: 'Radius Expansion Step (km)',
   rideMaxMatchRadiusKm: 'Max Match Radius (km)',
   rideDriverAcceptanceWindowSecs: 'Driver Acceptance Window',
+  rideDestinationEditEnabled: 'Active Ride Drop-off Changes',
+  rideDestinationEditMaxAddedKm: 'Maximum Added Distance',
+  rideDestinationEditMaxAddedMins: 'Maximum Added Time',
+  rideDestinationEditPreviewTtlSecs: 'Preview Expiry',
   rideCancellationWindowSecs: 'Free Cancellation Window',
   providerCancellationBlockWarnCount: 'Provider warning count',
   providerCancellationBlockThreshold: 'Provider block threshold',
@@ -188,6 +196,9 @@ const RULES: Partial<Record<ConfigKey, ValidationRule>> = {
   rideInitialMatchRadiusKm:        { min: 0.1, max: 50, message: 'Must be 0.1-50 km' },
   rideRadiusExpansionKm:           { min: 0.1, max: 20, message: 'Must be 0.1-20 km' },
   rideMaxMatchRadiusKm:            { min: 1, max: 100, message: 'Must be 1-100 km' },
+  rideDestinationEditMaxAddedKm:  { min: 0.5, max: 100, message: 'Must be 0.5-100 km' },
+  rideDestinationEditMaxAddedMins: { min: 1, max: 240, message: 'Must be 1-240 minutes' },
+  rideDestinationEditPreviewTtlSecs: { min: 60, max: 300, message: 'Must be 60-300 seconds' },
   providerCancellationBlockWarnCount: { min: 1, max: 20, message: 'Must be 1-20' },
   providerCancellationBlockThreshold: { min: 2, max: 50, message: 'Must be 2-50' },
   providerCancellationBlockRollingWindowMins: {
@@ -673,6 +684,22 @@ export default function ConfigurationPage() {
             {field('Driver Acceptance Window', 'rideDriverAcceptanceWindowSecs', { description: 'Time driver has to accept a request' })}
           </Section>
 
+          <Section title="Active Ride Destination" description="Controls client-requested drop-off changes after a ride has started">
+            {field('Active Ride Drop-off Changes', 'rideDestinationEditEnabled', {
+              type: 'boolean',
+              description: 'Allow a client to preview and confirm a new final drop-off. The server recalculates the route and fare before the change is accepted.',
+            })}
+            {field('Maximum Added Distance', 'rideDestinationEditMaxAddedKm', {
+              description: 'Maximum extra remaining-route distance accepted for a destination change, in kilometres',
+            })}
+            {field('Maximum Added Time', 'rideDestinationEditMaxAddedMins', {
+              description: 'Maximum extra remaining-route duration accepted for a destination change, in minutes',
+            })}
+            {field('Preview Expiry', 'rideDestinationEditPreviewTtlSecs', {
+              description: 'Seconds before a reviewed destination and fare preview expires',
+            })}
+          </Section>
+
           <Section title="Ride Cancellation" description="Automatic cancellation consequences are paused for this release">
             {field('Free Cancellation Window', 'rideCancellationWindowSecs', { description: 'Stored for later policy activation; currently not applied', disabled: true })}
           </Section>
@@ -844,7 +871,7 @@ export default function ConfigurationPage() {
           open={confirmDialog}
           onClose={() => setConfirmDialog(false)}
           title={`Save ${changedKeys.length} configuration change${changedKeys.length !== 1 ? 's' : ''}?`}
-          description="These changes apply to all new bookings immediately. Existing bookings are unaffected. This action will be recorded in the audit trail."
+          description="These settings take effect according to each control. Runtime switches may affect eligible in-progress bookings. This action will be recorded in the audit trail."
           confirmLabel="Save changes"
           onConfirm={() => handleSave()}
         >

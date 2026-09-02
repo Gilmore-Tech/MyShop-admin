@@ -463,6 +463,7 @@ export default function DriverPriorityPage() {
   const [manualOnly, setManualOnly] = useState(false)
   const [loading, setLoading] = useState(true)
   const [listLoading, setListLoading] = useState(true)
+  const [listError, setListError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [unavailable, setUnavailable] = useState(false)
   const [enrolling, setEnrolling] = useState<DriverPriorityDriverRow | null>(null)
@@ -496,6 +497,7 @@ export default function DriverPriorityPage() {
 
   const loadDrivers = useCallback(async () => {
     setListLoading(true)
+    setListError(null)
     try {
       const response = await listDriverPriorityDrivers({
         page,
@@ -507,9 +509,7 @@ export default function DriverPriorityPage() {
       setDrivers(response.items)
       setTotal(response.total)
     } catch (caught) {
-      if (!(caught instanceof ApiError && caught.status === 404)) {
-        setError(userSafeAdminError(caught, 'Could not load priority drivers.'))
-      }
+      setListError(userSafeAdminError(caught, 'Could not load priority drivers.'))
     } finally {
       setListLoading(false)
     }
@@ -630,6 +630,8 @@ export default function DriverPriorityPage() {
                   rows={drivers}
                   rowKey={row => row.driverId}
                   loading={listLoading}
+                  error={listError}
+                  onRetry={() => { void loadDrivers() }}
                   minWidth={980}
                   empty={<EmptyState icon={Award} title="No drivers match this filter" description="Clear the filters or wait for the first server measurement." />}
                   caption="Priority never overrides verification, document, vehicle, GPS freshness, active-work or request-block checks."
