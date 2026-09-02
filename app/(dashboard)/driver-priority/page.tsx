@@ -60,6 +60,7 @@ import {
 import {
   DRIVER_PRIORITY_TIERS,
   driverPriorityTierLabel,
+  validateDriverPriorityPolicy,
   type EffectiveDriverPriorityTier,
 } from '@/lib/driver-priority-contract'
 import { ApiError, userSafeAdminError } from '@/lib/api-client'
@@ -170,8 +171,12 @@ function EnrollDialog({
       setError('Expiry must be later than the review date.')
       return
     }
-    if (reason.trim().length < 5) {
-      setError('Explain the manual enrollment in at least 5 characters.')
+    if (new Date(reviewIso) <= new Date()) {
+      setError('Review date must be in the future.')
+      return
+    }
+    if (reason.trim().length < 5 || reason.trim().length > 500) {
+      setError('Explain the manual enrollment in 5 to 500 characters.')
       return
     }
     setSaving(true)
@@ -195,9 +200,10 @@ function EnrollDialog({
     <Dialog open={open} onOpenChange={next => { if (!next && !saving) onClose() }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Set priority floor for {driver?.name ?? 'driver'}</DialogTitle>
+          <DialogTitle>{driver?.manualFloorTier ? 'Change' : 'Set'} priority floor for {driver?.name ?? 'driver'}</DialogTitle>
           <DialogDescription>
             The manual tier is a minimum. A higher automatically earned tier still wins. Verification and request blocks always override priority.
+            {driver?.manualFloorTier ? ' Saving this change atomically archives the current floor in the audit history and activates the replacement.' : ''}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -228,6 +234,7 @@ function EnrollDialog({
               id="priority-enroll-reason"
               value={reason}
               onChange={event => setReason(event.target.value)}
+              maxLength={500}
               placeholder="Why this driver is being enrolled or moved to this floor"
               rows={3}
               disabled={saving}
@@ -237,7 +244,7 @@ function EnrollDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button variant="brand" onClick={() => { void save() }} disabled={saving || reason.trim().length < 5} className="gap-2">
+          <Button variant="brand" onClick={() => { void save() }} disabled={saving || reason.trim().length < 5 || reason.trim().length > 500} className="gap-2">
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             Save priority floor
           </Button>
@@ -339,25 +346,7 @@ function PolicyEditor({
   }
 
   const validation = useMemo(() => {
-    let previousMinutes = 0
-    let previousBonus = 0
-    for (const tier of DRIVER_PRIORITY_TIERS) {
-      const threshold = draft.thresholds[tier]
-      const bonus = draft.bonusesMeters[tier]
-      if (threshold.weeklyMinutes < previousMinutes) return 'Weekly thresholds must increase from Bronze through Diamond.'
-      if (threshold.minSevenHourDays < 0 || threshold.minSevenHourDays > 7) return 'Qualifying days must be between 0 and 7.'
-      if (bonus < previousBonus) return 'Distance advantages must increase from Bronze through Diamond.'
-      if (bonus > draft.maxAdvantageMeters) return `${driverPriorityTierLabel(tier)} exceeds the global distance cap.`
-      previousMinutes = threshold.weeklyMinutes
-      previousBonus = bonus
-    }
-    if (draft.dailyCapMinutes < 420 || draft.dailyCapMinutes > 720) return 'Daily credited time must stay between 7 and 12 hours.'
-    if (draft.maxAdvantageMeters > 750) return 'The approved distance cap is 750 metres.'
-    if (draft.maxEtaAdvantageSeconds > 120) return 'The approved ETA cap is 120 seconds.'
-    if (draft.candidateLimit < 10 || draft.candidateLimit > 100) return 'Candidate limit must be between 10 and 100.'
-    if (draft.rolloutPercent < 0 || draft.rolloutPercent > 100) return 'Rollout must be between 0 and 100 percent.'
-    if (draft.enabled && !draft.shadowEnabled) return 'Keep shadow measurement enabled while enforcement is active.'
-    return null
+    return validateDriverPriorityPolicy(draft)
   }, [draft])
 
   async function save(reason: string) {
@@ -397,8 +386,8 @@ function PolicyEditor({
               {DRIVER_PRIORITY_TIERS.map(tier => (
                 <tr key={tier} className="border-t border-gray-100">
                   <td className="p-3"><TierBadge tier={tier} /></td>
-                  <td className="p-3"><Input type="number" min={0} step={1} value={draft.thresholds[tier].weeklyMinutes / 60} onChange={event => updateTier(tier, 'weeklyMinutes', Math.round(Number(event.target.value) * 60))} disabled={!canMutate} className="w-28" /></td>
-                  <td className="p-3"><Input type="number" min={0} max={7} value={draft.thresholds[tier].minSevenHourDays} onChange={event => updateTier(tier, 'minSevenHourDays', Number(event.target.value))} disabled={!canMutate} className="w-24" /></td>
+                  <td className="p-3"><Input type="number" min={1 / 60} max={84} step={1} value={draft.thresholds[tier].weeklyMinutes / 60} onChange={event => updateTier(tier, 'weeklyMinutes', Math.round(Number(event.target.value) * 60))} disabled={!canMutate} className="w-28" /></td>
+                  <td className="p-3"><Input type="number" min={1} max={7} step={1} value={draft.thresholds[tier].minSevenHourDays} onChange={event => updateTier(tier, 'minSevenHourDays', Number(event.target.value))} disabled={!canMutate} className="w-24" /></td>
                   <td className="p-3"><div className="flex items-center gap-2"><Input type="number" min={0} max={750} value={draft.bonusesMeters[tier]} onChange={event => updateTier(tier, 'bonus', Number(event.target.value))} disabled={!canMutate} className="w-28" /><span className="text-xs text-gray-400">metres</span></div></td>
                 </tr>
               ))}
@@ -407,10 +396,10 @@ function PolicyEditor({
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <PolicyNumber label="Daily credit cap" value={draft.dailyCapMinutes} suffix="min" min={420} max={720} disabled={!canMutate} onChange={value => setDraft(current => ({ ...current, dailyCapMinutes: value }))} />
+          <PolicyNumber label="Daily credit cap" value={draft.dailyCapMinutes} suffix="min" min={60} max={720} disabled={!canMutate} onChange={value => setDraft(current => ({ ...current, dailyCapMinutes: value }))} />
           <PolicyNumber label="Distance hard cap" value={draft.maxAdvantageMeters} suffix="m" min={0} max={750} disabled={!canMutate} onChange={value => setDraft(current => ({ ...current, maxAdvantageMeters: value }))} />
           <PolicyNumber label="ETA hard cap" value={draft.maxEtaAdvantageSeconds} suffix="sec" min={0} max={120} disabled={!canMutate} onChange={value => setDraft(current => ({ ...current, maxEtaAdvantageSeconds: value }))} />
-          <PolicyNumber label="Assumed speed" value={draft.assumedPickupSpeedKmh} suffix="km/h" min={1} max={80} disabled={!canMutate} onChange={value => setDraft(current => ({ ...current, assumedPickupSpeedKmh: value }))} />
+          <PolicyNumber label="Assumed speed" value={draft.assumedPickupSpeedKmh} suffix="km/h" min={5} max={80} disabled={!canMutate} onChange={value => setDraft(current => ({ ...current, assumedPickupSpeedKmh: value }))} />
           <PolicyNumber label="Candidate limit" value={draft.candidateLimit} suffix="drivers" min={10} max={100} disabled={!canMutate} onChange={value => setDraft(current => ({ ...current, candidateLimit: value }))} />
         </div>
 
@@ -440,6 +429,7 @@ function PolicyEditor({
         description="The complete policy is saved atomically. Enforcement still follows the runtime switch and rollout percentage shown above."
         confirmLabel="Publish priority policy"
         requireReason
+        maxReason={500}
         loading={saving}
         error={error}
         reasonPlaceholder="Explain why the policy or rollout is changing"
@@ -549,6 +539,20 @@ export default function DriverPriorityPage() {
 
   const columns: ReportColumn<DriverPriorityDriverRow>[] = [
     { key: 'driver', header: 'Driver', render: row => <div><p className="font-semibold text-gray-900">{row.name}</p><p className="text-xs text-gray-500">{row.phone || row.driverId}</p></div> },
+    {
+      key: 'enrollment',
+      header: 'Manual enrollment',
+      render: row => isSuperAdmin ? (
+        row.manualFloorTier ? (
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="outline" onClick={event => { event.stopPropagation(); setEnrolling(row) }} className="gap-1"><UserPlus className="h-3.5 w-3.5" /> Change floor</Button>
+            <Button size="sm" variant="ghost" onClick={event => { event.stopPropagation(); setRevokeError(null); setRevoking(row) }} className="gap-1 text-red-600 hover:text-red-700"><XCircle className="h-3.5 w-3.5" /> Revoke</Button>
+          </div>
+        ) : (
+          <Button size="sm" variant="brand" onClick={event => { event.stopPropagation(); setEnrolling(row) }} className="gap-1"><UserPlus className="h-3.5 w-3.5" /> Enroll driver</Button>
+        )
+      ) : <span className="text-xs text-gray-400">Super Admin only</span>,
+    },
     { key: 'effective', header: 'Effective tier', render: row => <TierBadge tier={row.effectiveTier} /> },
     { key: 'automatic', header: 'Automatic', render: row => <TierBadge tier={row.automaticTier} /> },
     { key: 'floor', header: 'Manual floor', render: row => row.manualFloorTier ? <TierBadge tier={row.manualFloorTier} /> : <span className="text-gray-300">-</span> },
@@ -560,8 +564,6 @@ export default function DriverPriorityPage() {
       render: row => (
         <div className="flex justify-end gap-1">
           <Button size="sm" variant="ghost" onClick={event => { event.stopPropagation(); setHistoryDriver(row) }} className="gap-1"><History className="h-3.5 w-3.5" /> History</Button>
-          {isSuperAdmin && <Button size="sm" variant="outline" onClick={event => { event.stopPropagation(); setEnrolling(row) }} className="gap-1"><UserPlus className="h-3.5 w-3.5" /> {row.manualFloorTier ? 'Change' : 'Enroll'}</Button>}
-          {isSuperAdmin && row.manualFloorTier && <Button size="sm" variant="ghost" onClick={event => { event.stopPropagation(); setRevokeError(null); setRevoking(row) }} className="gap-1 text-red-600 hover:text-red-700"><XCircle className="h-3.5 w-3.5" /> Revoke</Button>}
         </div>
       ),
     },
@@ -601,6 +603,12 @@ export default function DriverPriorityPage() {
                 <CardDescription>Search every driver, inspect verified time and apply a reviewed manual floor for the initial seed list.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {isSuperAdmin && (
+                  <div className="flex items-start gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                    <UserPlus className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p><span className="font-semibold">Add a priority driver manually:</span> search below, then select <span className="font-semibold">Enroll driver</span> beside their name. Use <span className="font-semibold">Change floor</span> to atomically replace an active manual floor while keeping its audit history.</p>
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
@@ -642,6 +650,7 @@ export default function DriverPriorityPage() {
           confirmLabel="Revoke manual floor"
           destructive
           requireReason
+          maxReason={500}
           loading={revokeBusy}
           error={revokeError}
           reasonPlaceholder="Explain why the manual priority floor is being removed"

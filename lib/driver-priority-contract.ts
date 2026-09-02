@@ -50,6 +50,13 @@ export interface DriverPriorityPolicyUpdate
   reason: string
 }
 
+export interface DriverPriorityPolicyUpdatePayload
+  extends DriverPriorityPolicyValues {
+  expectedRevision: number
+  runtime: DriverPriorityRuntime
+  reason: string
+}
+
 export interface DriverPriorityDriverRow {
   driverId: string
   name: string
@@ -131,6 +138,82 @@ export const DEFAULT_DRIVER_PRIORITY_POLICY: DriverPriorityPolicyValues = {
   maxEtaAdvantageSeconds: 120,
   assumedPickupSpeedKmh: 25,
   candidateLimit: 50,
+}
+
+export function buildDriverPriorityPolicyUpdatePayload(
+  input: DriverPriorityPolicyUpdate,
+): DriverPriorityPolicyUpdatePayload {
+  const {
+    shadowEnabled,
+    enabled,
+    rolloutPercent,
+    reason: rawReason,
+    ...policy
+  } = input
+  const reason = rawReason.trim()
+  if (reason.length < 5 || reason.length > 500) {
+    throw new Error('A policy-change reason between 5 and 500 characters is required.')
+  }
+  return {
+    ...policy,
+    runtime: { shadowEnabled, enabled, rolloutPercent },
+    reason,
+  }
+}
+
+export function validateDriverPriorityPolicy(
+  policy: DriverPriorityPolicyValues & DriverPriorityRuntime,
+): string | null {
+  let previousMinutes = 0
+  let previousDays = 0
+  let previousBonus = 0
+  for (const tier of DRIVER_PRIORITY_TIERS) {
+    const threshold = policy.thresholds[tier]
+    const bonus = policy.bonusesMeters[tier]
+    if (!Number.isInteger(threshold.weeklyMinutes) || threshold.weeklyMinutes < 1 || threshold.weeklyMinutes > 5_040) {
+      return 'Weekly thresholds must be whole minutes between 1 and 5,040.'
+    }
+    if (threshold.weeklyMinutes <= previousMinutes) {
+      return 'Weekly thresholds must strictly increase from Bronze through Diamond.'
+    }
+    if (!Number.isInteger(threshold.minSevenHourDays) || threshold.minSevenHourDays < 1 || threshold.minSevenHourDays > 7) {
+      return 'Qualifying days must be whole numbers between 1 and 7.'
+    }
+    if (threshold.minSevenHourDays < previousDays) {
+      return 'Qualifying days cannot decrease from Bronze through Diamond.'
+    }
+    if (!Number.isInteger(bonus) || bonus < previousBonus) {
+      return 'Distance advantages must be whole metres that do not decrease from Bronze through Diamond.'
+    }
+    if (bonus > policy.maxAdvantageMeters) {
+      return `${driverPriorityTierLabel(tier)} exceeds the global distance cap.`
+    }
+    previousMinutes = threshold.weeklyMinutes
+    previousDays = threshold.minSevenHourDays
+    previousBonus = bonus
+  }
+  if (!Number.isInteger(policy.dailyCapMinutes) || policy.dailyCapMinutes < 60 || policy.dailyCapMinutes > 720) {
+    return 'Daily credited time must stay between 1 and 12 hours.'
+  }
+  if (!Number.isInteger(policy.maxAdvantageMeters) || policy.maxAdvantageMeters < 0 || policy.maxAdvantageMeters > 750) {
+    return 'The approved distance cap must be between 0 and 750 metres.'
+  }
+  if (!Number.isInteger(policy.maxEtaAdvantageSeconds) || policy.maxEtaAdvantageSeconds < 0 || policy.maxEtaAdvantageSeconds > 120) {
+    return 'The approved ETA cap must be between 0 and 120 seconds.'
+  }
+  if (!Number.isInteger(policy.assumedPickupSpeedKmh) || policy.assumedPickupSpeedKmh < 5 || policy.assumedPickupSpeedKmh > 80) {
+    return 'Assumed pickup speed must be a whole number between 5 and 80 km/h.'
+  }
+  if (!Number.isInteger(policy.candidateLimit) || policy.candidateLimit < 10 || policy.candidateLimit > 100) {
+    return 'Candidate limit must be a whole number between 10 and 100.'
+  }
+  if (!Number.isFinite(policy.rolloutPercent) || policy.rolloutPercent < 0 || policy.rolloutPercent > 100) {
+    return 'Rollout must be between 0 and 100 percent.'
+  }
+  if (policy.enabled && !policy.shadowEnabled) {
+    return 'Keep shadow measurement enabled while enforcement is active.'
+  }
+  return null
 }
 
 function record(value: unknown): Record<string, unknown> {

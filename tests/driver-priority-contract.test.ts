@@ -2,10 +2,74 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  buildDriverPriorityPolicyUpdatePayload,
+  DEFAULT_DRIVER_PRIORITY_POLICY,
   normaliseDriverPriorityDriverList,
   normaliseDriverPriorityMetrics,
   normaliseDriverPriorityPolicy,
+  validateDriverPriorityPolicy,
 } from '../lib/driver-priority-contract.ts'
+
+test('builds the exact nested runtime payload required by the backend policy DTO', () => {
+  const payload = buildDriverPriorityPolicyUpdatePayload({
+    ...DEFAULT_DRIVER_PRIORITY_POLICY,
+    expectedRevision: 4,
+    shadowEnabled: true,
+    enabled: false,
+    rolloutPercent: 25,
+    reason: '  Start the reviewed shadow rollout  ',
+  })
+
+  assert.deepEqual(payload, {
+    ...DEFAULT_DRIVER_PRIORITY_POLICY,
+    expectedRevision: 4,
+    runtime: {
+      shadowEnabled: true,
+      enabled: false,
+      rolloutPercent: 25,
+    },
+    reason: 'Start the reviewed shadow rollout',
+  })
+  assert.equal('shadowEnabled' in payload, false)
+  assert.equal('enabled' in payload, false)
+  assert.equal('rolloutPercent' in payload, false)
+})
+
+test('validates the backend priority-policy constraints before publish', () => {
+  const valid = {
+    ...DEFAULT_DRIVER_PRIORITY_POLICY,
+    shadowEnabled: true,
+    enabled: false,
+    rolloutPercent: 0,
+  }
+  assert.equal(validateDriverPriorityPolicy(valid), null)
+  assert.match(validateDriverPriorityPolicy({
+    ...valid,
+    thresholds: {
+      ...valid.thresholds,
+      silver: { ...valid.thresholds.silver, weeklyMinutes: valid.thresholds.bronze.weeklyMinutes },
+    },
+  }) ?? '', /strictly increase/)
+  assert.match(validateDriverPriorityPolicy({
+    ...valid,
+    thresholds: {
+      ...valid.thresholds,
+      bronze: { ...valid.thresholds.bronze, minSevenHourDays: 0 },
+    },
+  }) ?? '', /between 1 and 7/)
+  assert.match(validateDriverPriorityPolicy({
+    ...valid,
+    assumedPickupSpeedKmh: 4,
+  }) ?? '', /between 5 and 80/)
+  assert.match(validateDriverPriorityPolicy({
+    ...valid,
+    dailyCapMinutes: 59,
+  }) ?? '', /between 1 and 12 hours/)
+  assert.equal(validateDriverPriorityPolicy({
+    ...valid,
+    dailyCapMinutes: 60,
+  }), null)
+})
 
 test('normalises the approved priority policy and safe runtime defaults', () => {
   const policy = normaliseDriverPriorityPolicy({

@@ -126,6 +126,7 @@ import {
   type AdminRideListResponse as NormalisedAdminRideListResponse,
 } from './admin-ride-contract'
 import {
+  buildDriverPriorityPolicyUpdatePayload,
   normaliseDriverPriorityDriverList,
   normaliseDriverPriorityHistory,
   normaliseDriverPriorityMetrics,
@@ -1003,12 +1004,10 @@ export async function getDriverPriorityPolicy(): Promise<DriverPriorityPolicyRes
 export async function updateDriverPriorityPolicy(
   input: DriverPriorityPolicyUpdate,
 ): Promise<DriverPriorityPolicyResponse> {
-  const reason = input.reason.trim()
-  if (reason.length < 5) throw new Error('A policy-change reason of at least 5 characters is required.')
-  const raw = await api.put<unknown>(`${DRIVER_PRIORITY_PATH}/policy`, {
-    ...input,
-    reason,
-  })
+  const raw = await api.put<unknown>(
+    `${DRIVER_PRIORITY_PATH}/policy`,
+    buildDriverPriorityPolicyUpdatePayload(input),
+  )
   return normaliseDriverPriorityPolicy(raw)
 }
 
@@ -1039,7 +1038,9 @@ export async function enrollDriverPriority(
   },
 ): Promise<unknown> {
   const reason = input.reason.trim()
-  if (reason.length < 5) throw new Error('An enrollment reason of at least 5 characters is required.')
+  if (reason.length < 5 || reason.length > 500) {
+    throw new Error('An enrollment reason between 5 and 500 characters is required.')
+  }
   if (!input.reviewAt) throw new Error('A review date is required.')
   if (!input.expiresAt) throw new Error('An expiry date is required.')
   return api.post(`${DRIVER_PRIORITY_PATH}/drivers/${driverId}/enroll`, {
@@ -1052,7 +1053,9 @@ export async function enrollDriverPriority(
 
 export async function revokeDriverPriority(driverId: string, reason: string): Promise<unknown> {
   const trimmedReason = reason.trim()
-  if (trimmedReason.length < 5) throw new Error('A revocation reason of at least 5 characters is required.')
+  if (trimmedReason.length < 5 || trimmedReason.length > 500) {
+    throw new Error('A revocation reason between 5 and 500 characters is required.')
+  }
   return api.post(`${DRIVER_PRIORITY_PATH}/drivers/${driverId}/revoke`, {
     reason: trimmedReason,
   })

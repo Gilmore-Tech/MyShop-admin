@@ -65,6 +65,21 @@ test('platform configuration failures explain deployment and value problems safe
   )
 })
 
+test('priority policy and enrollment failures use actionable app-owned copy', () => {
+  assert.match(
+    new ApiError(409, 'DRIVER_PRIORITY_POLICY_REVISION_CHANGED').message,
+    /Reload and review the latest revision/,
+  )
+  assert.match(
+    new ApiError(409, 'DRIVER_PRIORITY_ENROLLMENT_ACTIVE').message,
+    /backend hotfix is deployed/,
+  )
+  assert.match(
+    new ApiError(400, 'DRIVER_PRIORITY_ENROLLMENT_DATES_INVALID').message,
+    /future review date/,
+  )
+})
+
 test('platform attribution management errors use app-owned copy only', () => {
   assert.equal(
     new ApiError(400, 'INVALID_PLATFORM_REFERRAL_CODE').message,
