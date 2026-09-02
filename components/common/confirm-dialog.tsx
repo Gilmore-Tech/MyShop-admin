@@ -23,7 +23,7 @@ import { ErrorState } from '@/components/common/error-state'
 export function ConfirmDialog({
   open, onClose, title, description, confirmLabel, onConfirm,
   destructive = false, loading = false, error = null,
-  requireReason = false, minReason = 5, reasonLabel = 'Reason (kept in the audit log)',
+  requireReason = false, minReason = 5, maxReason, reasonLabel = 'Reason (kept in the audit log)',
   reasonPlaceholder, initialReason = '', children,
 }: {
   open: boolean
@@ -38,6 +38,7 @@ export function ConfirmDialog({
   error?: string | null
   requireReason?: boolean
   minReason?: number
+  maxReason?: number
   reasonLabel?: string
   reasonPlaceholder?: string
   initialReason?: string
@@ -50,7 +51,9 @@ export function ConfirmDialog({
   }, [open, initialReason])
 
   const trimmed = reason.trim()
-  const reasonOk = !requireReason || trimmed.length >= minReason
+  const reasonOk = !requireReason || (
+    trimmed.length >= minReason && (maxReason == null || trimmed.length <= maxReason)
+  )
 
   return (
     <Dialog open={open} onOpenChange={o => { if (!o && !loading) onClose() }}>
@@ -68,9 +71,12 @@ export function ConfirmDialog({
               onChange={e => setReason(e.target.value)}
               placeholder={reasonPlaceholder ?? `Say why - minimum ${minReason} characters`}
               rows={3}
+              maxLength={maxReason}
               disabled={loading}
             />
-            <p className="text-[11px] text-gray-400">{trimmed.length} characters - minimum {minReason}</p>
+            <p className="text-[11px] text-gray-400">
+              {trimmed.length} characters - minimum {minReason}{maxReason == null ? '' : `, maximum ${maxReason}`}
+            </p>
           </div>
         )}
         {error && <ErrorState compact title="That did not work" detail={error} />}

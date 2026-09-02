@@ -16,6 +16,42 @@ import {
 } from './api-client'
 import type { Permission, Role, CategoryScope } from './roles'
 import type { ReportGroupBy } from './format-date'
+import {
+  normaliseProviderRequestRestriction,
+  type ProviderRequestRestrictionListItem,
+  type ProviderRequestRestrictionListResponse,
+  type ProviderRequestRestrictionType,
+} from './provider-cancellation-restriction-contract'
+import {
+  normaliseAnnouncementHistory,
+  normaliseAnnouncementPreview,
+  type AnnouncementDraft,
+  type AnnouncementPublishResult,
+} from './announcement-campaign-contract'
+export {
+  type AnnouncementAudience,
+  type AnnouncementChannel,
+  type AnnouncementClassification,
+  type AnnouncementDestination,
+  type AnnouncementDraft,
+  type AnnouncementHistoryItem,
+  type AnnouncementPreview,
+  type AnnouncementPreviewCounts,
+  type AnnouncementPublishResult,
+} from './announcement-campaign-contract'
+export {
+  normaliseProviderRequestRestriction,
+  type ProviderRequestRestrictionListItem,
+  type ProviderRequestRestrictionListResponse,
+  type ProviderRequestRestrictionPolicyKind,
+  type ProviderRequestRestrictionStatus,
+  type ProviderRequestRestrictionType,
+  normaliseProviderCancellationRestriction,
+  type ProviderCancellationRestrictionListItem,
+  type ProviderCancellationRestrictionListResponse,
+  type ProviderCancellationRestrictionStatus,
+  type ProviderCancellationRestrictionType,
+} from './provider-cancellation-restriction-contract'
 import { normaliseRevenueReport, type RevenueReport, type RevenueGroupBy } from './revenue-report-contract'
 import { normaliseBookingOutcomesReport, type BookingOutcomesReport, type OutcomeVertical } from './booking-outcomes-contract'
 import { normaliseCommissionLedger, type CommissionLedgerReport, type LedgerGroupBy } from './commission-ledger-contract'
@@ -89,7 +125,33 @@ import {
   normaliseAdminRideListResponse,
   type AdminRideListResponse as NormalisedAdminRideListResponse,
 } from './admin-ride-contract'
+import {
+  buildDriverPriorityDriverListQuery,
+  buildDriverPriorityPolicyUpdatePayload,
+  normaliseDriverPriorityDriverList,
+  normaliseDriverPriorityHistory,
+  normaliseDriverPriorityMetrics,
+  normaliseDriverPriorityPolicy,
+  type DriverPriorityDriverList,
+  type DriverPriorityDriverListParams,
+  type DriverPriorityHistory,
+  type DriverPriorityMetrics,
+  type DriverPriorityPolicyResponse,
+  type DriverPriorityPolicyUpdate,
+  type DriverPriorityTier,
+} from './driver-priority-contract'
 export type { AdminRide, AdminRideListResponse } from './admin-ride-contract'
+export type {
+  DriverPriorityDriverList,
+  DriverPriorityDriverRow,
+  DriverPriorityHistory,
+  DriverPriorityHistoryItem,
+  DriverPriorityMetrics,
+  DriverPriorityPolicyResponse,
+  DriverPriorityPolicyUpdate,
+  DriverPriorityTier,
+  EffectiveDriverPriorityTier,
+} from './driver-priority-contract'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -581,6 +643,7 @@ export interface VerificationItem {
   region_id: string | null
   region_name: string | null
   docs_pending: number
+  docs_incomplete: number
   docs_approved: number
   docs_rejected: number
   total_docs: number
@@ -640,6 +703,7 @@ function normaliseItem(v: any): VerificationItem {
     region_name: v.region_name ?? v.regionName ?? null,
     provider_name: v.provider_name ?? v.providerName ?? null,
     docs_pending: Number(v.docs_pending ?? v.docsPending ?? 0),
+    docs_incomplete: Number(v.docs_incomplete ?? v.docsIncomplete ?? 0),
     docs_approved: Number(v.docs_approved ?? v.docsApproved ?? 0),
     docs_rejected: Number(v.docs_rejected ?? v.docsRejected ?? 0),
     total_docs: Number(v.total_docs ?? v.totalDocs ?? rawDocs.length),
@@ -862,6 +926,159 @@ export function liftProviderSuspension(providerId: string, suspensionId: string,
     `/admin/providers/${providerId}/suspensions/${suspensionId}/lift`,
     note && note.trim() ? { note: note.trim() } : {}
   )
+}
+
+// ── Provider request restrictions ─────────────────────────────────────────────
+
+export async function listProviderRequestRestrictions(params?: {
+  activeOnly?: boolean
+  providerType?: ProviderRequestRestrictionType
+  page?: number
+  limit?: number
+}): Promise<ProviderRequestRestrictionListResponse> {
+  const query = new URLSearchParams()
+  if (params?.activeOnly != null) query.set('activeOnly', String(params.activeOnly))
+  if (params?.providerType) query.set('providerType', params.providerType)
+  if (params?.page != null) query.set('page', String(params.page))
+  if (params?.limit != null) query.set('limit', String(params.limit))
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+  // The backend deliberately retains this route while widening its rows from
+  // accepted cancellations to all provider request-block policy kinds.
+  const raw = await api.get<unknown>(`/admin/providers/cancellation-restrictions${suffix}`)
+  const envelope = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? raw as Record<string, unknown>
+    : {}
+  const list = Array.isArray(raw)
+    ? raw
+    : Array.isArray(envelope.data)
+      ? envelope.data
+      : Array.isArray(envelope.items)
+        ? envelope.items
+      : Array.isArray(envelope.restrictions)
+          ? envelope.restrictions
+          : Array.isArray(envelope.blocks)
+            ? envelope.blocks
+          : []
+  const items = list
+    .map(normaliseProviderRequestRestriction)
+    .filter((item): item is ProviderRequestRestrictionListItem => item !== null)
+  const meta = envelope.meta && typeof envelope.meta === 'object' && !Array.isArray(envelope.meta)
+    ? envelope.meta as Record<string, unknown>
+    : envelope
+  return {
+    items,
+    total: Number(meta.total ?? list.length),
+    page: Number(meta.page ?? params?.page ?? 1),
+    limit: Number(meta.limit ?? params?.limit ?? 50),
+    totalPages: Number(meta.totalPages ?? meta.total_pages ?? 1),
+  }
+}
+
+export async function liftProviderRequestRestriction(
+  providerType: ProviderRequestRestrictionType,
+  providerId: string,
+  restrictionId: string,
+  reason: string
+) {
+  const trimmedReason = reason.trim()
+  if (!trimmedReason) throw new Error('A lift reason is required.')
+  const payload = { reason: trimmedReason }
+  return api.patch(
+    `/admin/providers/${providerType}/${providerId}/cancellation-restrictions/${restrictionId}/lift`,
+    payload,
+  )
+}
+
+// Transitional aliases for pages or extensions compiled against the previous
+// cancellation-only naming.
+export const listProviderCancellationRestrictions = listProviderRequestRestrictions
+export const liftProviderCancellationRestriction = liftProviderRequestRestriction
+
+// ── Driver priority policy ───────────────────────────────────────────────────
+
+const DRIVER_PRIORITY_PATH = '/admin/driver-priority'
+
+export async function getDriverPriorityPolicy(): Promise<DriverPriorityPolicyResponse> {
+  const raw = await api.get<unknown>(`${DRIVER_PRIORITY_PATH}/policy`)
+  return normaliseDriverPriorityPolicy(raw)
+}
+
+export async function updateDriverPriorityPolicy(
+  input: DriverPriorityPolicyUpdate,
+): Promise<DriverPriorityPolicyResponse> {
+  const raw = await api.put<unknown>(
+    `${DRIVER_PRIORITY_PATH}/policy`,
+    buildDriverPriorityPolicyUpdatePayload(input),
+  )
+  return normaliseDriverPriorityPolicy(raw)
+}
+
+export async function listDriverPriorityDrivers(
+  params: DriverPriorityDriverListParams = {},
+): Promise<DriverPriorityDriverList> {
+  const page = params.page ?? 1
+  const limit = params.limit ?? 25
+  const query = buildDriverPriorityDriverListQuery(params)
+  const raw = await api.get<unknown>(`${DRIVER_PRIORITY_PATH}/drivers?${query}`)
+  return normaliseDriverPriorityDriverList(raw, { page, limit })
+}
+
+export async function enrollDriverPriority(
+  driverId: string,
+  input: {
+    floorTier: DriverPriorityTier
+    reason: string
+    reviewAt: string
+    expiresAt: string
+  },
+): Promise<unknown> {
+  const reason = input.reason.trim()
+  if (reason.length < 5 || reason.length > 500) {
+    throw new Error('An enrollment reason between 5 and 500 characters is required.')
+  }
+  if (!input.reviewAt) throw new Error('A review date is required.')
+  if (!input.expiresAt) throw new Error('An expiry date is required.')
+  return api.post(`${DRIVER_PRIORITY_PATH}/drivers/${driverId}/enroll`, {
+    floorTier: input.floorTier,
+    reason,
+    reviewAt: input.reviewAt,
+    expiresAt: input.expiresAt,
+  })
+}
+
+export async function revokeDriverPriority(driverId: string, reason: string): Promise<unknown> {
+  const trimmedReason = reason.trim()
+  if (trimmedReason.length < 5 || trimmedReason.length > 500) {
+    throw new Error('A revocation reason between 5 and 500 characters is required.')
+  }
+  return api.post(`${DRIVER_PRIORITY_PATH}/drivers/${driverId}/revoke`, {
+    reason: trimmedReason,
+  })
+}
+
+export async function getDriverPriorityHistory(
+  driverId: string,
+  params: { page?: number; limit?: number } = {},
+): Promise<DriverPriorityHistory> {
+  const page = params.page ?? 1
+  const limit = params.limit ?? 25
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) })
+  const raw = await api.get<unknown>(
+    `${DRIVER_PRIORITY_PATH}/drivers/${driverId}/history?${query.toString()}`,
+  )
+  return normaliseDriverPriorityHistory(raw, { page, limit })
+}
+
+export async function getDriverPriorityMetrics(params: {
+  from?: string
+  to?: string
+} = {}): Promise<DriverPriorityMetrics> {
+  const query = new URLSearchParams()
+  if (params.from) query.set('from', params.from)
+  if (params.to) query.set('to', params.to)
+  const suffix = query.size ? `?${query.toString()}` : ''
+  const raw = await api.get<unknown>(`${DRIVER_PRIORITY_PATH}/metrics${suffix}`)
+  return normaliseDriverPriorityMetrics(raw)
 }
 
 // ReviewClientKycDto: { action: 'approve'|'reject', reason (min 5 on reject) }
@@ -2100,12 +2317,21 @@ export function deleteAdmin(adminId: string) {
 
 // ── Announcements ─────────────────────────────────────────────────────────────
 
-export type AnnouncementTopic = 'all_users' | 'clients' | 'drivers' | 'artisans'
+export async function previewAnnouncement(draft: AnnouncementDraft) {
+  const raw = await api.post<unknown>('/admin/announcements/preview', draft)
+  return normaliseAnnouncementPreview(raw, draft)
+}
 
-export function sendAnnouncement(title: string, body: string, topic: AnnouncementTopic) {
-  // Backend expects `targetAudience` with `all` (not `all_users`) for everyone.
-  const targetAudience = topic === 'all_users' ? 'all' : topic
-  return api.post('/admin/announcements', { title, body, targetAudience })
+export function publishAnnouncement(
+  draft: AnnouncementDraft,
+  previewToken: string,
+  idempotencyKey: string,
+) {
+  return api.post<AnnouncementPublishResult>(
+    '/admin/announcements/publish',
+    { ...draft, previewToken },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  )
 }
 
 // ── Analytics chart endpoints ─────────────────────────────────────────────────
@@ -3167,6 +3393,13 @@ export function assignJob(
     artisanId: string
     agreedPricePesewas: number | null
     assignedAt: string
+    assignment?: {
+      attemptId: string
+      revision: number
+      phase: 'awaiting_quote' | 'awaiting_admin_review' | 'awaiting_client_accept'
+      quoteDeadlineAt: string | null
+      acceptDeadlineAt: string | null
+    }
   }>(`/admin/jobs/${jobId}/assign`, data)
 }
 
@@ -3660,20 +3893,9 @@ export function sendDirectSms(recipient: string, message: string) {
 
 // ── Announcement History ──────────────────────────────────────────────────────
 
-export interface AnnouncementHistoryItem {
-  id: string
-  title: string
-  body: string
-  audience: string
-  channel: string
-  sentAt: string
-  sentBy: string | null
-  delivered: number
-  opened: number
-}
-
-export function getAnnouncementHistory() {
-  return api.get<AnnouncementHistoryItem[]>('/admin/announcements/history')
+export async function getAnnouncementHistory() {
+  const raw = await api.get<unknown>('/admin/announcements/history')
+  return normaliseAnnouncementHistory(raw)
 }
 
 // ── Help Center (CMS) ─────────────────────────────────────────────────────────

@@ -116,6 +116,9 @@ test('verification UI and API preserve the exact-document rejection contract', (
   assert.match(queue, /Only the selected documents will be marked rejected/)
   assert.match(queue, /Admin review is already saved/)
   assert.match(queue, /remains ready while the provider replaces only the rejected documents/)
+  assert.match(queue, /doc\.status === 'uploaded' \? \(/)
+  assert.match(queue, /It is not reviewable evidence\. Ask the provider to retry the document\./)
+  assert.match(api, /docs_incomplete:/)
   assert.doesNotMatch(queue, /awaitingReset/)
 
   assert.match(profile, /providerDocumentStatusPresentation\(status\)/)
