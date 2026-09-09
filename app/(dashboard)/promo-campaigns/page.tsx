@@ -55,8 +55,16 @@ const TYPE_LABELS = {
 const SCOPE_LABELS = { ride: 'Rides', artisan_job: 'Artisan jobs', both: 'Rides & jobs' } as const
 
 function describeValue(c: PromoCampaign): string {
+  if (isProviderAudience(c.audience) && c.providerRule) {
+    if (c.providerRule.rewardKind === 'commission_relief') {
+      return `${c.providerRule.rewardValue}% commission returned`
+    }
+    return c.providerRule.rewardKind === 'guaranteed_earnings'
+      ? `${formatGhs(c.providerRule.rewardValue)} guaranteed earnings`
+      : `${formatGhs(c.providerRule.rewardValue)} cash reward`
+  }
   if (c.campaignType === 'commission_relief') {
-    return `${c.discountValue}% commission relief${c.maxDiscountPesewas != null ? ` (max ${formatGhs(c.maxDiscountPesewas)})` : ''}`
+    return `${c.discountValue}% legacy commission relief`
   }
   return c.campaignType === 'percentage_discount'
     ? `${c.discountValue}%${c.maxDiscountPesewas != null ? ` (max ${formatGhs(c.maxDiscountPesewas)})` : ''}`
@@ -183,7 +191,7 @@ export default function PromoCampaignsPage() {
     },
     { key: 'audience', header: 'Audience', render: c => <CampaignAudienceBadge audience={c.audience} /> },
     {
-      key: 'discount', header: 'Discount',
+      key: 'discount', header: 'Reward / discount',
       render: c => (
         <>
           <p className="text-sm text-gray-800">{describeValue(c)}</p>

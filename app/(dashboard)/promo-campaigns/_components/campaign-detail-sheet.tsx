@@ -39,6 +39,15 @@ const TYPE_LABELS = {
 const SCOPE_LABELS = { ride: 'Rides', artisan_job: 'Artisan jobs', both: 'Rides & artisan jobs' } as const
 
 function describeCampaignDiscount(c: PromoCampaign): string {
+  if (isProviderAudience(c.audience) && c.providerRule) {
+    if (c.providerRule.rewardKind === 'commission_relief') {
+      return `Returns ${c.providerRule.rewardValue}% of qualifying platform commission`
+    }
+    if (c.providerRule.rewardKind === 'guaranteed_earnings') {
+      return `Guarantees ${formatGhs(c.providerRule.rewardValue)} in provider earnings after commission`
+    }
+    return `Pays a ${formatGhs(c.providerRule.rewardValue)} cash reward`
+  }
   if (c.campaignType === 'commission_relief') {
     return c.maxDiscountPesewas != null
       ? `Forgives ${c.discountValue}% of platform commission, up to ${formatGhs(c.maxDiscountPesewas)} per booking`
@@ -179,23 +188,22 @@ export function CampaignDetailSheet({
 
             {/* Stats */}
             <div className="grid grid-cols-2 gap-3">
-              <StatCard compact label="Reserved redemptions" value={String(detail.stats.reservedRedemptions)} />
-              <StatCard compact label="Settled redemptions" value={String(detail.stats.settledRedemptions)} />
-              <StatCard
-                compact
-                label={isProvider ? 'Unique providers (committed)' : 'Unique clients (committed)'}
-                value={detail.stats.uniqueBeneficiaries == null ? 'Unavailable' : String(detail.stats.uniqueBeneficiaries)}
-              />
-              <StatCard
-                compact
-                label="Budget reserved"
-                value={detail.stats.budgetReservedPesewas == null ? 'Unavailable' : formatGhs(detail.stats.budgetReservedPesewas)}
-              />
-              <StatCard
-                compact
-                label="Settled spend"
-                value={detail.stats.budgetSettledPesewas == null ? 'Unavailable' : formatGhs(detail.stats.budgetSettledPesewas)}
-              />
+              {isProvider ? <>
+                <StatCard compact label="Providers tracked" value={detail.stats.providersTracked == null ? 'Unavailable' : String(detail.stats.providersTracked)} />
+                <StatCard compact label="Providers qualified" value={detail.stats.providersQualified == null ? 'Unavailable' : String(detail.stats.providersQualified)} />
+                <StatCard compact label="Rewards available" value={detail.stats.rewardsAvailable == null ? 'Unavailable' : String(detail.stats.rewardsAvailable)} />
+                <StatCard compact label="Rewards paid" value={detail.stats.rewardsPaid == null ? 'Unavailable' : String(detail.stats.rewardsPaid)} />
+                <StatCard compact label="Rewards used for debt" value={detail.stats.rewardsAppliedToDebt == null ? 'Unavailable' : String(detail.stats.rewardsAppliedToDebt)} />
+                <StatCard compact label="Reward value created" value={detail.stats.rewardsGrossPesewas == null ? 'Unavailable' : formatGhs(detail.stats.rewardsGrossPesewas)} />
+                <StatCard compact label="Applied to deductions" value={detail.stats.rewardsDeductionsPesewas == null ? 'Unavailable' : formatGhs(detail.stats.rewardsDeductionsPesewas)} />
+                <StatCard compact label="Withdrawable reward value" value={detail.stats.rewardsWithdrawablePesewas == null ? 'Unavailable' : formatGhs(detail.stats.rewardsWithdrawablePesewas)} />
+              </> : <>
+                <StatCard compact label="Reserved redemptions" value={String(detail.stats.reservedRedemptions)} />
+                <StatCard compact label="Settled redemptions" value={String(detail.stats.settledRedemptions)} />
+                <StatCard compact label="Unique clients (committed)" value={detail.stats.uniqueBeneficiaries == null ? 'Unavailable' : String(detail.stats.uniqueBeneficiaries)} />
+                <StatCard compact label="Budget reserved" value={detail.stats.budgetReservedPesewas == null ? 'Unavailable' : formatGhs(detail.stats.budgetReservedPesewas)} />
+                <StatCard compact label="Settled spend" value={detail.stats.budgetSettledPesewas == null ? 'Unavailable' : formatGhs(detail.stats.budgetSettledPesewas)} />
+              </>}
               <StatCard
                 compact
                 label="Total committed"
@@ -203,8 +211,9 @@ export function CampaignDetailSheet({
               />
             </div>
             <p className="text-[10px] leading-4 text-gray-400">
-              Committed counts include reserved and settled redemptions. Total committed is reserved budget plus
-              settled spend; released and refunded redemptions are excluded.
+              {isProvider
+                ? 'Provider reward value first clears eligible deductions; only the remaining value becomes withdrawable.'
+                : 'Committed counts include reserved and settled redemptions. Total committed is reserved budget plus settled spend; released and refunded redemptions are excluded.'}
             </p>
             {budgetPct != null && (
               <div>
@@ -220,7 +229,16 @@ export function CampaignDetailSheet({
 
             {/* Terms */}
             <div className="space-y-1 rounded-lg bg-gray-50 p-3 text-xs">
-              <p className="text-gray-700">{describeCampaignDiscount(detail)} <span className="text-gray-400">({TYPE_LABELS[detail.campaignType]})</span></p>
+              <p className="text-gray-700">{describeCampaignDiscount(detail)} {!isProvider && <span className="text-gray-400">({TYPE_LABELS[detail.campaignType]})</span>}</p>
+              {isProvider && detail.providerRule && (
+                <div className="space-y-0.5 border-l-2 border-amber-200 pl-2 text-gray-500">
+                  <p className="font-medium text-gray-600">All selected checks must be completed:</p>
+                  {detail.providerRule.completedBookingsTarget != null && <p>{detail.providerRule.completedBookingsTarget} completed trips / jobs</p>}
+                  {detail.providerRule.verifiedOnlineMinutesTarget != null && <p>{(detail.providerRule.verifiedOnlineMinutesTarget / 60).toFixed(1)} verified online hours</p>}
+                  {detail.providerRule.generatedRevenueTargetPesewas != null && <p>{formatGhs(detail.providerRule.generatedRevenueTargetPesewas)} generated revenue</p>}
+                  {detail.providerRule.rewardKind === 'guaranteed_earnings' && <p>The final shortfall is calculated only after the campaign ends.</p>}
+                </div>
+              )}
               <p className="text-gray-500">{SCOPE_LABELS[detail.promoScope]}</p>
               {(detail.promoScope === 'ride' || detail.promoScope === 'both') && (
                 <p className="text-gray-500">Ride tiers: {categoryNames(detail.rideCategoryIds, rideCategories)}</p>

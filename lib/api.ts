@@ -101,6 +101,7 @@ import {
   type PromoCampaignScope,
   type PromoCampaignStatus,
   type PromoCampaignType,
+  type ProviderPromoRewardKind,
 } from './promo-campaign-contract'
 import {
   normaliseRidePricing,
@@ -4416,6 +4417,7 @@ export type {
   PromoCampaignScope,
   PromoCampaignStatus,
   PromoCampaignType,
+  ProviderPromoRewardKind,
 } from './promo-campaign-contract'
 
 export async function listPromoCampaigns(params?: {
@@ -4456,9 +4458,14 @@ export interface CreatePromoCampaignInput {
   /** Defaults to 'client' on the backend when omitted. */
   audience?: PromoCampaignAudience
   discountValue: number
+  providerRewardKind?: ProviderPromoRewardKind
+  providerRewardValue?: number
+  completedBookingsTarget?: number
+  verifiedOnlineMinutesTarget?: number
+  generatedRevenueTargetPesewas?: number
   /**
    * REQUIRED by the backend for percentage_discount (PROMO_CAP_REQUIRED).
-   * Optional for commission_relief: absolute cap on forgone commission per booking.
+   * Client campaigns only; provider incentive campaigns do not send this field.
    */
   maxDiscountPesewas?: number
   minBookingPesewas?: number
@@ -4471,7 +4478,7 @@ export interface CreatePromoCampaignInput {
   rideCategoryIds?: string[]
   /** Artisan or job-scoped client campaigns only — never with a driver audience. */
   serviceCategoryIds?: string[]
-  /** For provider audiences this means "new providers only". */
+  /** Client campaigns only. Provider incentive campaigns always leave this false. */
   newClientsOnly?: boolean
   maxUsesPerUser?: number
   maxUsesPerUserPerDay?: number
