@@ -8,15 +8,24 @@
 // role only). This module holds the pure types, defensive normalisers and
 // client-side validation mirrors so they stay unit-testable without a browser.
 
-// commission_relief is the provider-audience type: discountValue is the percent
-// of the platform commission forgiven (1-100), maxDiscountPesewas an optional
-// absolute cap on the forgone commission per booking.
+// commission_relief remains the transport discriminator for provider-audience
+// campaigns. Their actual reward and AND-combined qualification rules live in
+// providerRule; client discount behaviour remains unchanged.
 export type PromoCampaignType = 'percentage_discount' | 'fixed_discount' | 'commission_relief'
 export type PromoCampaignScope = 'ride' | 'artisan_job' | 'both'
 // Who the campaign pays out to. Client campaigns discount the fare; provider
-// campaigns (driver/artisan) forgive platform commission instead. Provider
+// campaigns (driver/artisan) pay a configured incentive instead. Provider
 // audiences imply their scope server-side (driver→ride, artisan→artisan_job).
 export type PromoCampaignAudience = 'client' | 'driver' | 'artisan'
+export type ProviderPromoRewardKind = 'fixed_bonus' | 'commission_relief' | 'guaranteed_earnings'
+
+export interface ProviderPromoRule {
+  rewardKind: ProviderPromoRewardKind
+  rewardValue: number
+  completedBookingsTarget: number | null
+  verifiedOnlineMinutesTarget: number | null
+  generatedRevenueTargetPesewas: number | null
+}
 
 export function isProviderAudience(audience: PromoCampaignAudience): boolean {
   return audience === 'driver' || audience === 'artisan'
@@ -32,21 +41,20 @@ export function isProviderAudience(audience: PromoCampaignAudience): boolean {
  */
 export function effectiveCampaignType(
   audience: PromoCampaignAudience,
-  requested: PromoCampaignType,
+  requested: PromoCampaignType
 ): PromoCampaignType {
   if (isProviderAudience(audience)) return 'commission_relief'
   return requested === 'commission_relief' ? 'percentage_discount' : requested
 }
-export type PromoCampaignStatus =
-  | 'draft'
-  | 'pending_approval'
-  | 'approved'
-  | 'paused'
-  | 'ended'
-  | 'budget_exhausted'
+export type PromoCampaignStatus = 'draft' | 'pending_approval' | 'approved' | 'paused' | 'ended' | 'budget_exhausted'
 
 export const PROMO_CAMPAIGN_STATUSES: PromoCampaignStatus[] = [
-  'draft', 'pending_approval', 'approved', 'paused', 'ended', 'budget_exhausted',
+  'draft',
+  'pending_approval',
+  'approved',
+  'paused',
+  'ended',
+  'budget_exhausted',
 ]
 
 /**
@@ -87,6 +95,7 @@ export interface PromoCampaign {
   approvedBy: string | null
   approvedAt: string | null
   createdAt: string
+  providerRule: ProviderPromoRule | null
 }
 
 export interface PromoCampaignStats {
@@ -101,6 +110,15 @@ export interface PromoCampaignStats {
   budgetCommittedPesewas: number
   /** Legacy committed-budget ledger; despite its name, it includes reservations. */
   budgetSpentPesewas: number
+  providersTracked: number | null
+  providersQualified: number | null
+  rewardsCreated: number | null
+  rewardsAvailable: number | null
+  rewardsPaid: number | null
+  rewardsAppliedToDebt: number | null
+  rewardsGrossPesewas: number | null
+  rewardsDeductionsPesewas: number | null
+  rewardsWithdrawablePesewas: number | null
 }
 
 export interface PromoCampaignDetail extends PromoCampaign {
@@ -187,6 +205,26 @@ function audienceAt(value: unknown): PromoCampaignAudience {
   throw new Error('Unsafe promo campaign response: unknown campaign audience.')
 }
 
+function providerRuleAt(value: unknown): ProviderPromoRule | null {
+  if (value == null) return null
+  const o = objectAt(value, 'provider promo rule')
+  const rewardKind = pick(o, 'rewardKind')
+  if (rewardKind !== 'fixed_bonus' && rewardKind !== 'commission_relief' && rewardKind !== 'guaranteed_earnings') {
+    throw new Error('Unsafe promo campaign response: unknown provider reward kind.')
+  }
+  const rewardValue = nullableInt(pick(o, 'rewardValue'))
+  if (rewardValue === null || rewardValue <= 0) {
+    throw new Error('Unsafe promo campaign response: provider reward value is invalid.')
+  }
+  return {
+    rewardKind,
+    rewardValue,
+    completedBookingsTarget: nullableInt(pick(o, 'completedBookingsTarget')),
+    verifiedOnlineMinutesTarget: nullableInt(pick(o, 'verifiedOnlineMinutesTarget')),
+    generatedRevenueTargetPesewas: nullableInt(pick(o, 'generatedRevenueTargetPesewas')),
+  }
+}
+
 // Provider audiences imply their scope server-side; tolerate the field being
 // omitted on transport by deriving the same mapping the backend applies.
 const IMPLIED_PROVIDER_SCOPE: Partial<Record<PromoCampaignAudience, PromoCampaignScope>> = {
@@ -229,6 +267,7 @@ export function normalisePromoCampaign(raw: unknown): PromoCampaign {
     approvedBy: nullableString(pick(o, 'approvedBy')),
     approvedAt: nullableString(pick(o, 'approvedAt')),
     createdAt: typeof pick(o, 'createdAt') === 'string' ? (pick(o, 'createdAt') as string) : '',
+    providerRule: providerRuleAt(pick(o, 'providerRule')),
   }
 }
 
@@ -243,8 +282,9 @@ export function normalisePromoCampaignDetail(raw: unknown): PromoCampaignDetail 
   const budgetReservedPesewas = nullableInt(pick(s, 'budgetReservedPesewas'))
   const budgetSettledPesewas = nullableInt(pick(s, 'budgetSettledPesewas'))
   const legacyBudgetSpentPesewas = nullableInt(pick(s, 'budgetSpentPesewas')) ?? campaign.budgetSpentPesewas
-  const budgetCommittedPesewas = nullableInt(pick(s, 'budgetCommittedPesewas'))
-    ?? (budgetReservedPesewas !== null && budgetSettledPesewas !== null
+  const budgetCommittedPesewas =
+    nullableInt(pick(s, 'budgetCommittedPesewas')) ??
+    (budgetReservedPesewas !== null && budgetSettledPesewas !== null
       ? budgetReservedPesewas + budgetSettledPesewas
       : legacyBudgetSpentPesewas)
   return {
@@ -258,19 +298,27 @@ export function normalisePromoCampaignDetail(raw: unknown): PromoCampaignDetail 
       // client campaigns, but provider campaigns historically distincted the
       // nullable clientId column, so fail visibly instead of presenting it as a
       // provider count during a rolling deployment.
-      uniqueBeneficiaries: uniqueBeneficiaries
-        ?? (campaign.audience === 'client' ? uniqueClients : uniqueProviders),
+      uniqueBeneficiaries: uniqueBeneficiaries ?? (campaign.audience === 'client' ? uniqueClients : uniqueProviders),
       budgetReservedPesewas,
       budgetSettledPesewas,
       budgetCommittedPesewas,
       budgetSpentPesewas: legacyBudgetSpentPesewas,
+      providersTracked: nullableInt(pick(s, 'providersTracked')),
+      providersQualified: nullableInt(pick(s, 'providersQualified')),
+      rewardsCreated: nullableInt(pick(s, 'rewardsCreated')),
+      rewardsAvailable: nullableInt(pick(s, 'rewardsAvailable')),
+      rewardsPaid: nullableInt(pick(s, 'rewardsPaid')),
+      rewardsAppliedToDebt: nullableInt(pick(s, 'rewardsAppliedToDebt')),
+      rewardsGrossPesewas: nullableInt(pick(s, 'rewardsGrossPesewas')),
+      rewardsDeductionsPesewas: nullableInt(pick(s, 'rewardsDeductionsPesewas')),
+      rewardsWithdrawablePesewas: nullableInt(pick(s, 'rewardsWithdrawablePesewas')),
     },
   }
 }
 
 export function normalisePromoCampaignListResponse(
   raw: unknown,
-  fallback?: { page?: number; limit?: number },
+  fallback?: { page?: number; limit?: number }
 ): PromoCampaignListResponse {
   const o = objectAt(raw, 'campaign list')
   const list = Array.isArray(pick(o, 'campaigns'))
@@ -322,11 +370,16 @@ export interface PromoCampaignDraftInput {
   startsAt: string // ISO
   endsAt: string // ISO
   budgetCapPesewas: number | null
+  providerRewardKind?: ProviderPromoRewardKind | null
+  providerRewardValue?: number | null
+  completedBookingsTarget?: number | null
+  verifiedOnlineMinutesTarget?: number | null
+  generatedRevenueTargetPesewas?: number | null
 }
 
 export function validatePromoCampaignDraft(
   input: PromoCampaignDraftInput,
-  limits: PromoCampaignSanityLimits | null,
+  limits: PromoCampaignSanityLimits | null
 ): string | null {
   if (input.name.trim().length === 0) return 'Enter a campaign name.'
   // Mirrors the backend's PROMO_AUDIENCE_TYPE_MISMATCH pairing rule.
@@ -342,6 +395,46 @@ export function validatePromoCampaignDraft(
   }
   if (!Number.isFinite(input.discountValue) || input.discountValue <= 0) {
     return 'Discount value must be greater than zero.'
+  }
+  if (isProviderAudience(input.audience)) {
+    if (!input.providerRewardKind || !input.providerRewardValue || input.providerRewardValue <= 0) {
+      return 'Choose a provider reward and enter its value.'
+    }
+    if (
+      input.completedBookingsTarget == null &&
+      input.verifiedOnlineMinutesTarget == null &&
+      input.generatedRevenueTargetPesewas == null
+    ) {
+      return 'Select at least one provider qualification target.'
+    }
+    if (input.providerRewardKind === 'commission_relief' && input.providerRewardValue > 100) {
+      return 'Commission relief cannot exceed 100% of the platform commission.'
+    }
+    if (
+      input.completedBookingsTarget != null &&
+      (!Number.isInteger(input.completedBookingsTarget) || input.completedBookingsTarget <= 0)
+    ) {
+      return 'Trips / jobs target must be a whole number greater than zero.'
+    }
+    if (
+      input.verifiedOnlineMinutesTarget != null &&
+      (!Number.isInteger(input.verifiedOnlineMinutesTarget) || input.verifiedOnlineMinutesTarget <= 0)
+    ) {
+      return 'Online-time target must be at least one minute.'
+    }
+    if (
+      input.generatedRevenueTargetPesewas != null &&
+      (!Number.isInteger(input.generatedRevenueTargetPesewas) || input.generatedRevenueTargetPesewas <= 0)
+    ) {
+      return 'Revenue target must be greater than zero.'
+    }
+    if (
+      input.providerRewardKind !== 'commission_relief' &&
+      input.budgetCapPesewas !== null &&
+      input.providerRewardValue > input.budgetCapPesewas
+    ) {
+      return 'The reward for one provider cannot exceed the campaign budget.'
+    }
   }
   if (input.campaignType === 'commission_relief') {
     if (input.discountValue > 100) return 'Commission relief cannot exceed 100% of the platform commission.'
@@ -362,11 +455,7 @@ export function validatePromoCampaignDraft(
       return 'A max-discount cap is required for percentage campaigns.'
     }
   }
-  if (
-    input.campaignType === 'fixed_discount' &&
-    limits &&
-    input.discountValue > limits.promoMaxFixedDiscountPesewas
-  ) {
+  if (input.campaignType === 'fixed_discount' && limits && input.discountValue > limits.promoMaxFixedDiscountPesewas) {
     return `Fixed discount cannot exceed the platform sanity limit of GHS ${(limits.promoMaxFixedDiscountPesewas / 100).toFixed(2)}.`
   }
   const starts = Date.parse(input.startsAt)
@@ -401,10 +490,9 @@ export function audienceScopedPayloadFields(input: {
   serviceCategoryIds?: string[]
 } {
   const { audience, promoScope, rideCategoryIds, serviceCategoryIds } = input
-  const sendRide = audience === 'driver'
-    || (audience === 'client' && (promoScope === 'ride' || promoScope === 'both'))
-  const sendService = audience === 'artisan'
-    || (audience === 'client' && (promoScope === 'artisan_job' || promoScope === 'both'))
+  const sendRide = audience === 'driver' || (audience === 'client' && (promoScope === 'ride' || promoScope === 'both'))
+  const sendService =
+    audience === 'artisan' || (audience === 'client' && (promoScope === 'artisan_job' || promoScope === 'both'))
   return {
     audience,
     promoScope: audience === 'client' ? promoScope : undefined,
