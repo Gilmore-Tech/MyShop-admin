@@ -67,8 +67,8 @@ const VALID_DRAFT = {
   budgetCapPesewas: 100_000,
 }
 
-// Provider-audience commission relief: discountValue is the percent of the
-// platform commission forgiven, the cap (maxDiscountPesewas) is optional.
+// Provider campaigns retain commission_relief as their transport discriminator;
+// the reward and selected AND-combined qualification checks are explicit.
 const VALID_RELIEF_DRAFT = {
   name: 'Driver relief week',
   audience: 'driver' as const,
@@ -81,6 +81,11 @@ const VALID_RELIEF_DRAFT = {
   startsAt: '2026-08-10T00:00:00.000Z',
   endsAt: '2026-08-17T00:00:00.000Z',
   budgetCapPesewas: 100_000,
+  providerRewardKind: 'commission_relief' as const,
+  providerRewardValue: 50,
+  completedBookingsTarget: 10,
+  verifiedOnlineMinutesTarget: null,
+  generatedRevenueTargetPesewas: null,
 }
 
 test('resume action is available for paused and reconciled budget-exhausted campaigns', () => {
@@ -126,11 +131,37 @@ test('campaign normaliser reads provider audiences and derives the implied scope
 
   // An explicit transport scope still wins over the derived one.
   const explicit = normalisePromoCampaign({
-    ...campaign, audience: 'driver', campaignType: 'commission_relief', promoScope: 'ride',
+    ...campaign,
+    audience: 'driver',
+    campaignType: 'commission_relief',
+    promoScope: 'ride',
   })
   assert.equal(explicit.promoScope, 'ride')
 
   assert.throws(() => normalisePromoCampaign({ ...campaign, audience: 'merchant' }))
+})
+
+test('campaign normaliser preserves provider reward and qualification rules', () => {
+  const result = normalisePromoCampaign({
+    ...campaign,
+    audience: 'driver',
+    campaignType: 'commission_relief',
+    promoScope: 'ride',
+    providerRule: {
+      rewardKind: 'guaranteed_earnings',
+      rewardValue: 50_000,
+      completedBookingsTarget: 10,
+      verifiedOnlineMinutesTarget: 420,
+      generatedRevenueTargetPesewas: 100_000,
+    },
+  })
+  assert.deepEqual(result.providerRule, {
+    rewardKind: 'guaranteed_earnings',
+    rewardValue: 50_000,
+    completedBookingsTarget: 10,
+    verifiedOnlineMinutesTarget: 420,
+    generatedRevenueTargetPesewas: 100_000,
+  })
 })
 
 test('campaign normaliser accepts the snake_case transport variant', () => {
@@ -231,18 +262,49 @@ test('detail normaliser never mistakes the legacy client count for unique provid
   assert.equal(currentProviderDetail.stats.budgetCommittedPesewas, 900)
 })
 
+test('detail normaliser preserves provider qualification and reward accounting totals', () => {
+  const detail = normalisePromoCampaignDetail({
+    ...campaign,
+    audience: 'artisan',
+    campaignType: 'commission_relief',
+    promoScope: 'artisan_job',
+    providerRule: {
+      rewardKind: 'fixed_bonus',
+      rewardValue: 5_000,
+      completedBookingsTarget: 5,
+    },
+    stats: {
+      providersTracked: 12,
+      providersQualified: 7,
+      rewardsCreated: 7,
+      rewardsAvailable: 3,
+      rewardsPaid: 2,
+      rewardsAppliedToDebt: 2,
+      rewardsGrossPesewas: 35_000,
+      rewardsDeductionsPesewas: 10_000,
+      rewardsWithdrawablePesewas: 25_000,
+    },
+  })
+  assert.equal(detail.stats.providersTracked, 12)
+  assert.equal(detail.stats.providersQualified, 7)
+  assert.equal(detail.stats.rewardsCreated, 7)
+  assert.equal(detail.stats.rewardsAppliedToDebt, 2)
+  assert.equal(detail.stats.rewardsGrossPesewas, 35_000)
+  assert.equal(detail.stats.rewardsWithdrawablePesewas, 25_000)
+})
+
 test('list normaliser reads the campaigns envelope with pagination fallbacks', () => {
-  const result = normalisePromoCampaignListResponse(
-    { campaigns: [campaign], total: 1, page: 2, limit: 20 },
-  )
+  const result = normalisePromoCampaignListResponse({
+    campaigns: [campaign],
+    total: 1,
+    page: 2,
+    limit: 20,
+  })
   assert.equal(result.campaigns.length, 1)
   assert.equal(result.total, 1)
   assert.equal(result.page, 2)
 
-  const fallback = normalisePromoCampaignListResponse(
-    { campaigns: [campaign] },
-    { page: 3, limit: 10 },
-  )
+  const fallback = normalisePromoCampaignListResponse({ campaigns: [campaign] }, { page: 3, limit: 10 })
   assert.equal(fallback.total, 1)
   assert.equal(fallback.page, 3)
   assert.equal(fallback.limit, 10)
@@ -272,21 +334,15 @@ test('draft validation requires a cap for percentage campaigns', () => {
   assert.equal(validatePromoCampaignDraft(VALID_DRAFT, LIMITS), null)
   assert.match(
     validatePromoCampaignDraft({ ...VALID_DRAFT, maxDiscountPesewas: null }, LIMITS) ?? '',
-    /cap is required/i,
+    /cap is required/i
   )
 })
 
 test('draft validation mirrors the sanity limits', () => {
+  assert.match(validatePromoCampaignDraft({ ...VALID_DRAFT, discountValue: 60 }, LIMITS) ?? '', /sanity limit of 50%/)
   assert.match(
-    validatePromoCampaignDraft({ ...VALID_DRAFT, discountValue: 60 }, LIMITS) ?? '',
-    /sanity limit of 50%/,
-  )
-  assert.match(
-    validatePromoCampaignDraft(
-      { ...VALID_DRAFT, campaignType: 'fixed_discount', discountValue: 6000 },
-      LIMITS,
-    ) ?? '',
-    /sanity limit of GHS 50\.00/,
+    validatePromoCampaignDraft({ ...VALID_DRAFT, campaignType: 'fixed_discount', discountValue: 6000 }, LIMITS) ?? '',
+    /sanity limit of GHS 50\.00/
   )
   // Without loaded limits the client defers to the backend.
   assert.equal(validatePromoCampaignDraft({ ...VALID_DRAFT, discountValue: 60 }, null), null)
@@ -294,18 +350,12 @@ test('draft validation mirrors the sanity limits', () => {
 
 test('draft validation rejects inverted windows and over-long durations', () => {
   assert.match(
-    validatePromoCampaignDraft(
-      { ...VALID_DRAFT, endsAt: '2026-08-09T00:00:00.000Z' },
-      LIMITS,
-    ) ?? '',
-    /end date must be after/i,
+    validatePromoCampaignDraft({ ...VALID_DRAFT, endsAt: '2026-08-09T00:00:00.000Z' }, LIMITS) ?? '',
+    /end date must be after/i
   )
   assert.match(
-    validatePromoCampaignDraft(
-      { ...VALID_DRAFT, endsAt: '2026-12-10T00:00:00.000Z' },
-      LIMITS,
-    ) ?? '',
-    /longer than 90 days/,
+    validatePromoCampaignDraft({ ...VALID_DRAFT, endsAt: '2026-12-10T00:00:00.000Z' }, LIMITS) ?? '',
+    /longer than 90 days/
   )
 })
 
@@ -313,34 +363,38 @@ test('draft validation mirrors the audience/type pairing rule', () => {
   // PROMO_AUDIENCE_TYPE_MISMATCH: provider audiences require commission relief.
   assert.match(
     validatePromoCampaignDraft({ ...VALID_DRAFT, campaignType: 'commission_relief' }, LIMITS) ?? '',
-    /commission-relief type/i,
+    /commission-relief type/i
   )
   assert.match(
     validatePromoCampaignDraft(
-      { ...VALID_RELIEF_DRAFT, campaignType: 'percentage_discount', maxDiscountPesewas: 1000 },
-      LIMITS,
+      {
+        ...VALID_RELIEF_DRAFT,
+        campaignType: 'percentage_discount',
+        maxDiscountPesewas: 1000,
+      },
+      LIMITS
     ) ?? '',
-    /commission-relief type/i,
+    /commission-relief type/i
   )
   assert.equal(validatePromoCampaignDraft(VALID_RELIEF_DRAFT, LIMITS), null)
   assert.equal(
     validatePromoCampaignDraft({ ...VALID_RELIEF_DRAFT, audience: 'artisan', rideCategoryIds: [] }, LIMITS),
-    null,
+    null
   )
 })
 
 test('draft validation bounds commission relief and keeps the cap optional', () => {
   assert.match(
     validatePromoCampaignDraft({ ...VALID_RELIEF_DRAFT, discountValue: 0 }, LIMITS) ?? '',
-    /greater than zero/i,
+    /greater than zero/i
   )
   assert.match(
     validatePromoCampaignDraft({ ...VALID_RELIEF_DRAFT, discountValue: 120 }, LIMITS) ?? '',
-    /cannot exceed 100%/,
+    /cannot exceed 100%/
   )
   assert.match(
     validatePromoCampaignDraft({ ...VALID_RELIEF_DRAFT, discountValue: 70 }, LIMITS) ?? '',
-    /sanity limit of 60%/,
+    /sanity limit of 60%/
   )
   // Without loaded limits the client defers to the backend for the relief cap.
   assert.equal(validatePromoCampaignDraft({ ...VALID_RELIEF_DRAFT, discountValue: 70 }, null), null)
@@ -348,24 +402,60 @@ test('draft validation bounds commission relief and keeps the cap optional', () 
   assert.equal(validatePromoCampaignDraft({ ...VALID_RELIEF_DRAFT, maxDiscountPesewas: 2000 }, LIMITS), null)
   assert.match(
     validatePromoCampaignDraft({ ...VALID_RELIEF_DRAFT, maxDiscountPesewas: 0 }, LIMITS) ?? '',
-    /relief cap must be greater than zero/i,
+    /relief cap must be greater than zero/i
+  )
+})
+
+test('provider incentive validation requires a reward and at least one positive target', () => {
+  assert.match(
+    validatePromoCampaignDraft(
+      {
+        ...VALID_RELIEF_DRAFT,
+        providerRewardKind: null,
+        providerRewardValue: null,
+      },
+      LIMITS
+    ) ?? '',
+    /choose a provider reward/i
+  )
+  assert.match(
+    validatePromoCampaignDraft(
+      {
+        ...VALID_RELIEF_DRAFT,
+        completedBookingsTarget: null,
+      },
+      LIMITS
+    ) ?? '',
+    /select at least one/i
+  )
+  assert.equal(
+    validatePromoCampaignDraft(
+      {
+        ...VALID_RELIEF_DRAFT,
+        providerRewardKind: 'fixed_bonus',
+        providerRewardValue: 5_000,
+      },
+      LIMITS
+    ),
+    null
   )
 })
 
 test('draft validation keeps provider category restrictions in their own vertical', () => {
   assert.match(
-    validatePromoCampaignDraft(
-      { ...VALID_RELIEF_DRAFT, serviceCategoryIds: ['svc-cat-1'] },
-      LIMITS,
-    ) ?? '',
-    /remove the service categories/i,
+    validatePromoCampaignDraft({ ...VALID_RELIEF_DRAFT, serviceCategoryIds: ['svc-cat-1'] }, LIMITS) ?? '',
+    /remove the service categories/i
   )
   assert.match(
     validatePromoCampaignDraft(
-      { ...VALID_RELIEF_DRAFT, audience: 'artisan', rideCategoryIds: ['ride-cat-1'] },
-      LIMITS,
+      {
+        ...VALID_RELIEF_DRAFT,
+        audience: 'artisan',
+        rideCategoryIds: ['ride-cat-1'],
+      },
+      LIMITS
     ) ?? '',
-    /remove the ride tiers/i,
+    /remove the ride tiers/i
   )
 })
 
@@ -382,7 +472,7 @@ test('audience-scoped payload fields omit promoScope and cross-vertical categori
       promoScope: 'both',
       rideCategoryIds: ['ride-1'],
       serviceCategoryIds: ['svc-1'],
-    },
+    }
   )
   // A ride-scoped client campaign never sends service categories.
   assert.deepEqual(
@@ -397,7 +487,7 @@ test('audience-scoped payload fields omit promoScope and cross-vertical categori
       promoScope: 'ride',
       rideCategoryIds: ['ride-1'],
       serviceCategoryIds: undefined,
-    },
+    }
   )
   assert.deepEqual(
     audienceScopedPayloadFields({
@@ -411,7 +501,7 @@ test('audience-scoped payload fields omit promoScope and cross-vertical categori
       promoScope: undefined,
       rideCategoryIds: ['ride-1'],
       serviceCategoryIds: undefined,
-    },
+    }
   )
   assert.deepEqual(
     audienceScopedPayloadFields({
@@ -425,7 +515,7 @@ test('audience-scoped payload fields omit promoScope and cross-vertical categori
       promoScope: undefined,
       rideCategoryIds: undefined,
       serviceCategoryIds: ['svc-1'],
-    },
+    }
   )
   // Empty selections are omitted entirely (= no restriction).
   assert.deepEqual(
@@ -440,7 +530,7 @@ test('audience-scoped payload fields omit promoScope and cross-vertical categori
       promoScope: undefined,
       rideCategoryIds: undefined,
       serviceCategoryIds: undefined,
-    },
+    }
   )
 })
 
@@ -448,8 +538,11 @@ test('banner guard enforces type and the 5MB size cap', () => {
   assert.equal(validatePromoBannerFile({ type: 'image/webp', size: 1024 }), null)
   assert.match(validatePromoBannerFile({ type: 'image/gif', size: 1024 }) ?? '', /JPEG, PNG or WebP/)
   assert.match(
-    validatePromoBannerFile({ type: 'image/png', size: PROMO_BANNER_MAX_BYTES + 1 }) ?? '',
-    /5MB or smaller/,
+    validatePromoBannerFile({
+      type: 'image/png',
+      size: PROMO_BANNER_MAX_BYTES + 1,
+    }) ?? '',
+    /5MB or smaller/
   )
 })
 
