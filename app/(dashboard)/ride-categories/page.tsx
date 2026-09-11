@@ -15,8 +15,8 @@ import { EmptyState } from '@/components/common/empty-state'
 import { FormDialog } from '@/components/common/form-dialog'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { getRideCategories, createRideCategory, updateRideCategory, type RideCategory } from '@/lib/api'
-import { ApiError } from '@/lib/api-client'
 import { formatGhs } from '@/lib/money'
+import { presentRideCategorySaveError } from '@/lib/ride-category-errors'
 import { DistanceFareSafeguardCard } from './_components/distance-fare-safeguard-card'
 
 // ── Money helpers ───────────────────────────────────────────────────────────────
@@ -168,12 +168,11 @@ function TierDialog({
       onSaved(saved)
       onClose()
     } catch (err: unknown) {
-      if (err instanceof ApiError && err.code === 'SLUG_ALREADY_EXISTS') {
-        setSlugError('That slug is already taken by another tier.')
-      } else if (err instanceof ApiError && err.code === 'INVALID_SLUG') {
-        setSlugError('Invalid slug - use lowercase kebab-case.')
+      const presentation = presentRideCategorySaveError(err)
+      if (presentation.target === 'slug') {
+        setSlugError(presentation.message)
       } else {
-        setError(err instanceof ApiError ? err.message : 'Failed to save tier.')
+        setError(presentation.message)
       }
     } finally {
       setSaving(false)

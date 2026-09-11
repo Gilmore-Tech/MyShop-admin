@@ -65,6 +65,21 @@ test('platform configuration failures explain deployment and value problems safe
   )
 })
 
+test('ride-category failures use plain-language dashboard copy', () => {
+  assert.equal(
+    new ApiError(400, 'INVALID_RIDE_CATEGORY_PRICING').message,
+    'Every Comfort fare must be equal to or higher than the corresponding Regular fare.'
+  )
+  assert.equal(
+    new ApiError(404, 'RIDE_CATEGORY_NOT_FOUND').message,
+    'This ride tier no longer exists. Reload the list and try again.'
+  )
+  assert.equal(
+    new ApiError(409, 'SLUG_ALREADY_EXISTS').message,
+    'That slug is already used by another ride tier.'
+  )
+})
+
 test('priority policy and enrollment failures use actionable app-owned copy', () => {
   assert.match(
     new ApiError(409, 'DRIVER_PRIORITY_POLICY_REVISION_CHANGED').message,
