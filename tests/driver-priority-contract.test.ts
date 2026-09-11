@@ -44,6 +44,9 @@ test('driver-list request failures render as errors instead of false empty resul
 })
 
 test('builds the exact nested runtime payload required by the backend policy DTO', () => {
+  const { qualityMeasurementStartedAt: _serverOwnedStart, ...publishableDefaults } =
+    DEFAULT_DRIVER_PRIORITY_POLICY
+  void _serverOwnedStart
   const payload = buildDriverPriorityPolicyUpdatePayload({
     ...DEFAULT_DRIVER_PRIORITY_POLICY,
     expectedRevision: 4,
@@ -54,7 +57,7 @@ test('builds the exact nested runtime payload required by the backend policy DTO
   })
 
   assert.deepEqual(payload, {
-    ...DEFAULT_DRIVER_PRIORITY_POLICY,
+    ...publishableDefaults,
     expectedRevision: 4,
     runtime: {
       shadowEnabled: true,
@@ -129,6 +132,10 @@ test('normalises the approved priority policy and safe runtime defaults', () => 
   assert.deepEqual(policy.revision.policy.thresholds.bronze, {
     weeklyMinutes: 2100,
     minSevenHourDays: 5,
+    minAcceptanceRateBps: 6000,
+    minCompletionRateBps: 8000,
+    minEligibleOffers: 10,
+    minAcceptedOffers: 5,
   })
   assert.equal(policy.revision.policy.bonusesMeters.diamond, 750)
   assert.deepEqual(policy.runtime, {
