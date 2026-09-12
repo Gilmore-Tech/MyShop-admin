@@ -20,6 +20,7 @@ import {
 import { ApiError } from '@/lib/api-client'
 import { formatGhs } from '@/lib/money'
 import { formatDateTime } from '@/lib/format-date'
+import { cancellationActorLabel, cancellationReasonLabel } from '@/lib/cancellation-evidence'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -521,10 +522,20 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                     <TimelineRow label="Client Confirmed" value={fmtDateShort(job.clientConfirmedCompleteAt)} />
                     <TimelineRow label="Completed" value={fmtDateShort(job.completedAt)} />
                     {job.cancelledAt && <TimelineRow label="Cancelled" value={fmtDateShort(job.cancelledAt)} highlight />}
-                    {job.cancellationReason && (
-                      <p className="mt-2 text-xs text-red-600 bg-red-50 rounded px-3 py-2">
-                        Reason: {job.cancellationReason}
-                      </p>
+                    {(job.status === 'cancelled' || job.cancelledAt) && (
+                      <div className="mt-2 space-y-1 rounded bg-red-50 px-3 py-2 text-xs text-red-700">
+                        <p className="font-semibold">Cancellation evidence</p>
+                        <p>
+                          Cancelled by:{' '}
+                          {cancellationActorLabel({
+                            booking: 'job',
+                            cancelledBy: job.cancelledBy,
+                            clientName: job.client.name,
+                            providerName: job.artisan?.name,
+                          })}
+                        </p>
+                        <p>Reason: {cancellationReasonLabel(job.cancellationReason)}</p>
+                      </div>
                     )}
                   </CardContent>
                 </Card>

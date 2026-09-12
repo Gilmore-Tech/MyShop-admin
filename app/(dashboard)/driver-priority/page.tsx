@@ -389,8 +389,8 @@ function PolicyEditor({
             }))} disabled={!canMutate || policy.revision.policy.algorithmVersion === 2}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">V1 — verified online time only</SelectItem>
-                <SelectItem value="2">V2 — online time + acceptance + completion</SelectItem>
+                <SelectItem value="1">V1 - verified online time only</SelectItem>
+                <SelectItem value="2">V2 - online time + acceptance + completion</SelectItem>
               </SelectContent>
             </Select>
           </div>
