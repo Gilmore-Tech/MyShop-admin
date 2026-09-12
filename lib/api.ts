@@ -3307,6 +3307,7 @@ export interface JobDetail {
   clientConfirmedCompleteAt: string | null
   completedAt: string | null
   cancelledAt: string | null
+  cancelledBy: string | null
   cancellationReason: string | null
   lastActivityAt: string
   hoursInactive: number

@@ -58,6 +58,32 @@ function sourceLabel(value: string | null | undefined): string {
   return SOURCE_LABEL_OVERRIDES[value] ?? title(value)
 }
 
+function isSessionRefresh(event: SystemAuditEvent): boolean {
+  return event.action === 'post_auth_refresh' || event.origin?.route === '/v1/auth/refresh'
+}
+
+function auditActorHeading(event: SystemAuditEvent): string {
+  if (isSessionRefresh(event) && event.actorAttribution === 'unauthenticated_request') {
+    const app = event.reportedClient?.app
+    return app ? `${title(app)} app session` : 'App session refresh'
+  }
+  return event.actorDisplayLabel ?? event.actorLabel ?? title(event.actorType)
+}
+
+function auditActorDetail(event: SystemAuditEvent): string {
+  if (isSessionRefresh(event) && event.actorAttribution === 'unauthenticated_request') {
+    return 'Refresh credential verified; older evidence did not retain its account identity'
+  }
+  if (event.actorAttribution === 'unauthenticated_request') {
+    return 'Public entry point - no account was authenticated'
+  }
+  return `${title(event.actorRole)} - ${event.actorId?.slice(0, 12) ?? title(event.actorAttribution ?? 'system')}`
+}
+
+function auditActionLabel(event: SystemAuditEvent): string {
+  return isSessionRefresh(event) ? 'Session token refreshed' : title(event.action)
+}
+
 function Outcome({ event }: { event: SystemAuditEvent }) {
   const failed = event.outcome === 'failure'
   return (
@@ -222,12 +248,8 @@ export default function SystemAuditPage() {
       key: 'actor', header: 'Actor', className: 'align-top whitespace-normal',
       render: event => (
         <>
-          <p className="text-sm font-medium">{event.actorDisplayLabel ?? event.actorLabel ?? title(event.actorType)}</p>
-          <p className="text-xs text-gray-400">
-            {event.actorAttribution === 'unauthenticated_request'
-              ? 'Public endpoint - no authenticated account'
-              : `${title(event.actorRole)} - ${event.actorId?.slice(0, 12) ?? title(event.actorAttribution ?? 'system')}`}
-          </p>
+          <p className="text-sm font-medium">{auditActorHeading(event)}</p>
+          <p className="text-xs text-gray-400">{auditActorDetail(event)}</p>
         </>
       ),
     },
@@ -236,7 +258,7 @@ export default function SystemAuditPage() {
       render: event => (
         <>
           <p className="text-xs font-semibold uppercase text-gray-400">{title(event.category)}</p>
-          <p className="text-sm text-gray-800">{title(event.action)}</p>
+          <p className="text-sm text-gray-800">{auditActionLabel(event)}</p>
           <p className="mt-1 max-w-80 truncate font-mono text-[10px] text-gray-500" title={`${event.origin?.method ?? ''} ${event.origin?.route ?? ''}`}>
             {event.origin?.route ? `${event.origin.method ?? 'HTTP'} ${event.origin.route}` : sourceLabel(event.source)}
           </p>
@@ -273,12 +295,22 @@ export default function SystemAuditPage() {
             <p>Source: {sourceLabel(event.source)} - {event.environment}</p>
             <p>Route: {event.origin?.method ?? '-'} {event.origin?.route ?? '-'}</p>
             <p>Reference: {event.requestReference ?? '-'}</p><p>Correlation: {event.correlationId ?? '-'}</p>
-            <p>Error: {event.diagnostic?.errorCode ?? '-'} - HTTP: {event.diagnostic?.status ?? '-'} - Duration: {event.diagnostic?.durationMs ?? '-'} ms</p>
+            <p>Result: {title(event.outcome)} - Duration: {event.diagnostic?.durationMs ?? '-'} ms</p>
+            {event.outcome === 'failure' && (
+              <p>Error: {event.diagnostic?.errorCode ?? 'Not classified'} - HTTP: {event.diagnostic?.status ?? '-'}</p>
+            )}
             <p>Reported client: {event.reportedClient?.app ?? 'unavailable'} - {event.reportedClient?.platform ?? 'platform unavailable'} - build {event.reportedClient?.build ?? 'unavailable'}</p>
-            <p>IP: {event.ipAddressMasked ?? '-'} - Version: {event.reportedClient?.version ?? event.appVersion ?? 'unavailable'}</p>
-            <p>Hash: {event.eventHash}</p><p>Retained to: {gmtTimestamp(event.retentionUntil)}{event.legalHold ? ' - LEGAL HOLD' : ''}</p>
+            <p>Network address (masked; may be a proxy): {event.ipAddressMasked ?? '-'}</p>
+            <p>App version: {event.reportedClient?.version ?? event.appVersion ?? 'unavailable'}</p>
+            <p>Integrity hash: {event.eventHash}</p>
+            <p>Keep evidence until: {gmtTimestamp(event.retentionUntil)}{event.legalHold ? ' - LEGAL HOLD' : ''}</p>
             <Button variant="outline" size="sm" onClick={() => void toggleLegalHold(event)}>{event.legalHold ? 'Release legal hold' : 'Apply legal hold'}</Button>
-            {event.metadata && <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2">{JSON.stringify(event.metadata, null, 2)}</pre>}
+            {event.metadata && (
+              <>
+                <p>Captured field names and safe diagnostics (secret values are never stored):</p>
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2">{JSON.stringify(event.metadata, null, 2)}</pre>
+              </>
+            )}
           </div>
         </details>
       ),
@@ -399,6 +431,12 @@ export default function SystemAuditPage() {
           </TabsList>
 
           <TabsContent value="timeline" className="space-y-4">
+            <div className="rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              This timeline records server and API evidence. For signed-in app screen views,
+              lifecycle changes and selected meaningful actions, open <strong>Mobile activity</strong>.
+              Historical session-refresh rows may lack an account identity; newly recorded successful
+              refreshes are attributed to their verified client, driver or artisan account.
+            </div>
             <FilterBar
               meta={<span className="text-xs text-gray-500">{dateBasisCaption('Actions', 'recorded')}</span>}
             >
