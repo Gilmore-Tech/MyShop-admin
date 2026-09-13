@@ -31,6 +31,7 @@ import { can } from '@/lib/roles'
 import { rideRouteAvailability, type RouteAvailability } from '@/lib/ride-gps-trail-contract'
 import { formatGhs } from '@/lib/money'
 import { formatDateTime } from '@/lib/format-date'
+import { cancellationActorLabel, cancellationReasonLabel } from '@/lib/cancellation-evidence'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -431,9 +432,20 @@ export default function RideDetailPage({ params }: { params: Promise<{ id: strin
                       </p>
                     )}
 
-                    {ride.cancellationReason && (
-                      <div className="mt-1 text-xs text-red-600 bg-red-50 rounded px-3 py-2">
-                        Cancellation reason: {ride.cancellationReason}
+                    {(ride.status === 'cancelled' || ride.cancelledAt) && (
+                      <div className="mt-1 space-y-1 rounded bg-red-50 px-3 py-2 text-xs text-red-700">
+                        <p className="font-semibold">Cancellation evidence</p>
+                        <p>
+                          Cancelled by:{' '}
+                          {cancellationActorLabel({
+                            booking: 'ride',
+                            cancelledBy: ride.cancelledBy,
+                            clientName: ride.client?.fullName,
+                            providerName: ride.driver?.fullName,
+                          })}
+                        </p>
+                        <p>Reason: {cancellationReasonLabel(ride.cancellationReason)}</p>
+                        {ride.cancelledAt && <p>Recorded: {formatDateTime(ride.cancelledAt)}</p>}
                       </div>
                     )}
                   </CardContent>

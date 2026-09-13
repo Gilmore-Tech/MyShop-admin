@@ -333,7 +333,7 @@ function PolicyEditor({
 
   useEffect(() => setDraft(policyDraft(policy)), [policy])
 
-  function updateTier(tier: DriverPriorityTier, field: 'weeklyMinutes' | 'minSevenHourDays' | 'bonus', value: number) {
+  function updateTier(tier: DriverPriorityTier, field: 'weeklyMinutes' | 'minSevenHourDays' | 'minAcceptanceRateBps' | 'minCompletionRateBps' | 'minEligibleOffers' | 'minAcceptedOffers' | 'bonus', value: number) {
     setDraft(current => field === 'bonus'
       ? { ...current, bonusesMeters: { ...current.bonusesMeters, [tier]: value } }
       : {
@@ -377,10 +377,30 @@ function PolicyEditor({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div className="grid gap-3 rounded-lg border border-blue-100 bg-blue-50 p-4 md:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-blue-700">Tier algorithm</Label>
+            <Select value={String(draft.algorithmVersion)} onValueChange={value => setDraft(current => ({
+              ...current,
+              algorithmVersion: Number(value) === 2 ? 2 : 1,
+              ...(Number(value) === 2 && policy.revision.policy.algorithmVersion === 1
+                ? { shadowEnabled: true, enabled: false, rolloutPercent: 0 }
+                : {}),
+            }))} disabled={!canMutate || policy.revision.policy.algorithmVersion === 2}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">V1 - verified online time only</SelectItem>
+                <SelectItem value="2">V2 - online time + acceptance + completion</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <PolicyNumber label="Quality evidence window" value={draft.qualityWindowDays} suffix="completed days" min={7} max={90} disabled={!canMutate} onChange={value => setDraft(current => ({ ...current, qualityWindowDays: value }))} />
+          <p className="text-xs text-blue-800 md:col-span-2">V2 counts only accepted offers, valid explicit declines, receipt-proven ignored offers, completed rides and qualifying provider cancellations. Client, admin, system and undelivered outcomes are excluded. Existing manual floors remain unchanged.</p>
+        </div>
         <div className="overflow-x-auto rounded-lg border border-gray-100">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[1180px] text-sm">
             <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-              <tr><th className="p-3">Tier</th><th className="p-3">7-day hours</th><th className="p-3">Days at 7h+</th><th className="p-3">Distance advantage</th></tr>
+              <tr><th className="p-3">Tier</th><th className="p-3">7-day hours</th><th className="p-3">Days at 7h+</th><th className="p-3">Acceptance</th><th className="p-3">Completion</th><th className="p-3">Eligible offers</th><th className="p-3">Accepted offers</th><th className="p-3">Distance advantage</th></tr>
             </thead>
             <tbody>
               {DRIVER_PRIORITY_TIERS.map(tier => (
@@ -388,6 +408,10 @@ function PolicyEditor({
                   <td className="p-3"><TierBadge tier={tier} /></td>
                   <td className="p-3"><Input type="number" min={1 / 60} max={84} step={1} value={draft.thresholds[tier].weeklyMinutes / 60} onChange={event => updateTier(tier, 'weeklyMinutes', Math.round(Number(event.target.value) * 60))} disabled={!canMutate} className="w-28" /></td>
                   <td className="p-3"><Input type="number" min={1} max={7} step={1} value={draft.thresholds[tier].minSevenHourDays} onChange={event => updateTier(tier, 'minSevenHourDays', Number(event.target.value))} disabled={!canMutate} className="w-24" /></td>
+                  <td className="p-3"><div className="flex items-center gap-1"><Input type="number" min={0} max={100} step={1} value={draft.thresholds[tier].minAcceptanceRateBps / 100} onChange={event => updateTier(tier, 'minAcceptanceRateBps', Math.round(Number(event.target.value) * 100))} disabled={!canMutate || draft.algorithmVersion === 1} className="w-24" /><span className="text-xs text-gray-400">%</span></div></td>
+                  <td className="p-3"><div className="flex items-center gap-1"><Input type="number" min={0} max={100} step={1} value={draft.thresholds[tier].minCompletionRateBps / 100} onChange={event => updateTier(tier, 'minCompletionRateBps', Math.round(Number(event.target.value) * 100))} disabled={!canMutate || draft.algorithmVersion === 1} className="w-24" /><span className="text-xs text-gray-400">%</span></div></td>
+                  <td className="p-3"><Input type="number" min={1} max={100000} step={1} value={draft.thresholds[tier].minEligibleOffers} onChange={event => updateTier(tier, 'minEligibleOffers', Number(event.target.value))} disabled={!canMutate || draft.algorithmVersion === 1} className="w-24" /></td>
+                  <td className="p-3"><Input type="number" min={1} max={100000} step={1} value={draft.thresholds[tier].minAcceptedOffers} onChange={event => updateTier(tier, 'minAcceptedOffers', Number(event.target.value))} disabled={!canMutate || draft.algorithmVersion === 1} className="w-24" /></td>
                   <td className="p-3"><div className="flex items-center gap-2"><Input type="number" min={0} max={750} value={draft.bonusesMeters[tier]} onChange={event => updateTier(tier, 'bonus', Number(event.target.value))} disabled={!canMutate} className="w-28" /><span className="text-xs text-gray-400">metres</span></div></td>
                 </tr>
               ))}
@@ -418,7 +442,7 @@ function PolicyEditor({
         {validation && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{validation}</p>}
         {error && <ErrorState compact title="Could not save policy" detail={error} />}
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-gray-500">Revision {policy.revision.revisionNumber} | {policy.revision.createdAt ? formatDateTime(policy.revision.createdAt) : 'initial policy'}{policy.revision.createdBy ? ` | ${policy.revision.createdBy}` : ''}</p>
+          <p className="text-xs text-gray-500">Revision {policy.revision.revisionNumber} | algorithm V{policy.revision.policy.algorithmVersion} | quality evidence since {policy.revision.policy.qualityMeasurementStartedAt ? formatDateTime(policy.revision.policy.qualityMeasurementStartedAt) : 'migration'} | {policy.revision.createdAt ? formatDateTime(policy.revision.createdAt) : 'initial policy'}{policy.revision.createdBy ? ` | ${policy.revision.createdBy}` : ''}</p>
           {canMutate && <Button variant="brand" onClick={() => setConfirming(true)} disabled={Boolean(validation)} className="gap-2"><ShieldCheck className="h-4 w-4" /> Save complete policy</Button>}
         </div>
       </CardContent>
@@ -554,7 +578,8 @@ export default function DriverPriorityPage() {
       ) : <span className="text-xs text-gray-400">Super Admin only</span>,
     },
     { key: 'effective', header: 'Effective tier', render: row => <TierBadge tier={row.effectiveTier} /> },
-    { key: 'automatic', header: 'Automatic', render: row => <TierBadge tier={row.automaticTier} /> },
+    { key: 'automatic', header: 'Automatic', render: row => <div><TierBadge tier={row.automaticTier} /><p className="mt-1 text-xs text-gray-400">V{row.algorithmVersion} active</p></div> },
+    { key: 'quality', header: 'V2 quality', render: row => <div className="space-y-1"><TierBadge tier={row.qualityTier} /><p className="text-xs text-gray-500">Accept {row.acceptanceRatePercent.toFixed(1)}% ({row.acceptedOfferCount}/{row.eligibleOfferCount})</p><p className="text-xs text-gray-500">Complete {row.completionRatePercent.toFixed(1)}% ({row.completedRideCount}/{row.completionEligibleCount})</p></div> },
     { key: 'floor', header: 'Manual floor', render: row => row.manualFloorTier ? <TierBadge tier={row.manualFloorTier} /> : <span className="text-gray-300">-</span> },
     { key: 'hours', header: 'Verified 7-day time', render: row => <div><p className="font-medium text-gray-700">{minutesLabel(row.weeklyMinutes)}</p><p className="text-xs text-gray-400">{row.qualifyingDays} day{row.qualifyingDays === 1 ? '' : 's'} at 7h+</p></div> },
     { key: 'review', header: 'Manual review', responsiveClassName: 'hidden lg:table-cell', render: row => <span className="text-xs text-gray-600">{row.reviewAt ? formatDateTime(row.reviewAt) : 'Not manually enrolled'}</span> },
@@ -588,11 +613,12 @@ export default function DriverPriorityPage() {
           <ErrorState title="Could not load priority drivers" detail={error} onRetry={() => { void loadSummary() }} />
         ) : (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               <StatCard icon={Award} label="Priority drivers" value={tieredCount.toLocaleString()} sub="Effective Bronze through Diamond" loading={loading} />
               <StatCard icon={Clock3} label="Last measurement" value={metrics?.measurement.lastBucketAt ? formatDateTime(metrics.measurement.lastBucketAt) : 'Waiting'} sub={`${metrics?.measurement.eligibleDriversLastBucket ?? 0} eligible in latest minute`} loading={loading} />
               <StatCard icon={SlidersHorizontal} label="Shadow changes" value={`${(metrics?.dispatch.shadowChangedPercent ?? 0).toFixed(1)}%`} sub={`${metrics?.dispatch.shadowChanged ?? 0} of ${metrics?.dispatch.total ?? 0} comparisons`} loading={loading} />
               <StatCard icon={ShieldCheck} label="Runtime" value={policy?.runtime.enabled ? `${policy.runtime.rolloutPercent}% live` : policy?.runtime.shadowEnabled ? 'Shadow only' : 'Disabled'} sub={`${metrics?.dispatch.invariantViolations ?? 0} invariant violation${metrics?.dispatch.invariantViolations === 1 ? '' : 's'}`} loading={loading} />
+              <StatCard icon={Award} label="V2 candidates" value={(metrics?.quality.evaluatedDrivers ?? 0).toLocaleString()} sub={`${metrics?.quality.differsFromActive ?? 0} differ from active automatic tier`} loading={loading} />
             </div>
 
             {policy && <PolicyEditor policy={policy} canMutate={isSuperAdmin} onSaved={next => { setPolicy(next); void loadSummary() }} />}
@@ -632,7 +658,7 @@ export default function DriverPriorityPage() {
                   loading={listLoading}
                   error={listError}
                   onRetry={() => { void loadDrivers() }}
-                  minWidth={980}
+                  minWidth={1280}
                   empty={<EmptyState icon={Award} title="No drivers match this filter" description="Clear the filters or wait for the first server measurement." />}
                   caption="Priority never overrides verification, document, vehicle, GPS freshness, active-work or request-block checks."
                 />
