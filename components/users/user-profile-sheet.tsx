@@ -248,6 +248,7 @@ function UploadDocumentDialog({ open, roleAccountId, providerType, providerName,
 
   const selected = options.find(o => o.value === documentType) ?? null
   const expiryRequired = selected?.expiryRequired ?? false
+  const isProfilePhoto = documentType === 'profile_photo'
 
   async function submit() {
     setError('')
@@ -322,14 +323,16 @@ function UploadDocumentDialog({ open, roleAccountId, providerType, providerName,
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">File (JPG, PNG or PDF - max 10 MB)</Label>
-            <Input type="file" accept="image/jpeg,image/png,application/pdf" onChange={e => setFile(e.target.files?.[0] ?? null)} className="h-10 file:mr-3 file:text-xs file:text-gray-600" />
+            <Label className="text-xs">{isProfilePhoto ? 'Profile photo (JPG or PNG - max 10 MB)' : 'File (JPG, PNG or PDF - max 10 MB)'}</Label>
+            <Input type="file" accept={isProfilePhoto ? 'image/jpeg,image/png' : 'image/jpeg,image/png,application/pdf'} onChange={e => setFile(e.target.files?.[0] ?? null)} className="h-10 file:mr-3 file:text-xs file:text-gray-600" />
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs">Expiry date{expiryRequired ? ' (required)' : ' (optional)'}</Label>
-            <Input type="date" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} className="h-10" />
-          </div>
+          {!isProfilePhoto && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Expiry date{expiryRequired ? ' (required)' : ' (optional)'}</Label>
+              <Input type="date" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} className="h-10" />
+            </div>
+          )}
 
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
