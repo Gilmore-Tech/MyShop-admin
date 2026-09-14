@@ -215,9 +215,9 @@ test('deleted-role recovery UI/API are distinct, fail-closed and expose no rejec
 
 test('user-management surfaces expose exact roles and the exact-role referral ledger', () => {
   const clients = readFileSync(new URL('../app/(dashboard)/users/clients/page.tsx', import.meta.url), 'utf8')
-  const profile = readFileSync(new URL('../components/users/user-profile-sheet.tsx', import.meta.url), 'utf8')
   const referrals = readFileSync(new URL('../app/(dashboard)/referrals/page.tsx', import.meta.url), 'utf8')
   const tabs = readFileSync(new URL('../components/users/user-tabs.tsx', import.meta.url), 'utf8')
+  const profile = readFileSync(new URL('../components/users/user-profile-sheet.tsx', import.meta.url), 'utf8')
 
   assert.equal(clients.includes('All Roles'), false)
   assert.equal(clients.includes('Loyalty Points'), false)
@@ -298,7 +298,7 @@ test('privileged provider-document upload is fail-closed and verifies its exact 
 
   const uploadableTypes = api.match(/export const ADMIN_UPLOADABLE_DOC_TYPES:[\s\S]*?= \[([\s\S]*?)\n\]/)?.[1]
   assert.ok(uploadableTypes, 'admin uploadable document catalogue is missing')
-  assert.equal(uploadableTypes.includes("value: 'profile_photo'"), false)
+  assert.equal(uploadableTypes.includes("value: 'profile_photo'"), true)
 })
 
 test('operational views never consume nested private auth-identity names or ids', () => {

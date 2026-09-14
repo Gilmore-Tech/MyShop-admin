@@ -220,6 +220,7 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   INVALID_EXPIRY_DATE: 'Enter a valid document expiry date.',
   FILE_TOO_LARGE: 'The selected file is too large.',
   INVALID_FILE_TYPE: 'The selected file type is not supported.',
+  INVALID_PROFILE_PHOTO_TYPE: 'Profile photos must be JPG or PNG images.',
   FILE_CONTENT_TYPE_MISMATCH: 'The file contents do not match its file type.',
   INVALID_FILE_CONTENT: 'The selected file could not be verified.',
   STORAGE_VERIFICATION_UNAVAILABLE: 'File verification is temporarily unavailable. Try again later.',
