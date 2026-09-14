@@ -1788,6 +1788,12 @@ export function documentTypeTracksExpiry(type: string): boolean {
 
 export const ADMIN_UPLOADABLE_DOC_TYPES: UploadableDocType[] = [
   {
+    value: 'profile_photo',
+    label: 'Profile Photo',
+    appliesTo: null,
+    expiryRequired: false,
+  },
+  {
     value: 'drivers_licence',
     label: "Driver's Licence",
     appliesTo: 'driver',
