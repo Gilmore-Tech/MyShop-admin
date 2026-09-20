@@ -43,6 +43,7 @@ export type Permission =
   | 'view_revenue_report'
   | 'view_pilot_report'
   | 'view_config'
+  | 'manage_driver_priority_enrollment'
   | 'view_ussd'
   | 'send_announcement'
   | 'manage_admins'
@@ -179,6 +180,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
     group: 'Config & USSD',
     permissions: [
+      { key: 'manage_driver_priority_enrollment', label: 'Manage manual driver priority', description: 'Enroll, change, or revoke reviewed manual priority floors; does not publish priority policy' },
       { key: 'view_config', label: 'View configuration', description: 'Platform marketplace config' },
       { key: 'view_ussd', label: 'View USSD & SMS logs', description: 'USSD sessions and SMS logs' },
     ],
