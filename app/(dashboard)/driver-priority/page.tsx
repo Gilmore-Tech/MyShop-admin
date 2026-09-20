@@ -476,7 +476,8 @@ function PolicyNumber({ label, value, suffix, min, max, disabled, onChange }: { 
 }
 
 export default function DriverPriorityPage() {
-  const { isSuperAdmin } = useRole()
+  const { isSuperAdmin, can } = useRole()
+  const canManageManualEnrollment = can('manage_driver_priority_enrollment')
   const [policy, setPolicy] = useState<DriverPriorityPolicyResponse | null>(null)
   const [metrics, setMetrics] = useState<DriverPriorityMetrics | null>(null)
   const [drivers, setDrivers] = useState<DriverPriorityDriverRow[]>([])
@@ -566,7 +567,7 @@ export default function DriverPriorityPage() {
     {
       key: 'enrollment',
       header: 'Manual enrollment',
-      render: row => isSuperAdmin ? (
+      render: row => canManageManualEnrollment ? (
         row.manualFloorTier ? (
           <div className="flex items-center gap-1">
             <Button size="sm" variant="outline" onClick={event => { event.stopPropagation(); setEnrolling(row) }} className="gap-1"><UserPlus className="h-3.5 w-3.5" /> Change floor</Button>
@@ -575,7 +576,7 @@ export default function DriverPriorityPage() {
         ) : (
           <Button size="sm" variant="brand" onClick={event => { event.stopPropagation(); setEnrolling(row) }} className="gap-1"><UserPlus className="h-3.5 w-3.5" /> Enroll driver</Button>
         )
-      ) : <span className="text-xs text-gray-400">Super Admin only</span>,
+      ) : <span className="text-xs text-gray-400">Permission required</span>,
     },
     { key: 'effective', header: 'Effective tier', render: row => <TierBadge tier={row.effectiveTier} /> },
     { key: 'automatic', header: 'Automatic', render: row => <div><TierBadge tier={row.automaticTier} /><p className="mt-1 text-xs text-gray-400">V{row.algorithmVersion} active</p></div> },
@@ -629,7 +630,7 @@ export default function DriverPriorityPage() {
                 <CardDescription>Search every driver, inspect verified time and apply a reviewed manual floor for the initial seed list.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {isSuperAdmin && (
+                {canManageManualEnrollment && (
                   <div className="flex items-start gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
                     <UserPlus className="mt-0.5 h-4 w-4 shrink-0" />
                     <p><span className="font-semibold">Add a priority driver manually:</span> search below, then select <span className="font-semibold">Enroll driver</span> beside their name. Use <span className="font-semibold">Change floor</span> to atomically replace an active manual floor while keeping its audit history.</p>
@@ -649,7 +650,7 @@ export default function DriverPriorityPage() {
                     </SelectContent>
                   </Select>
                   <label className="flex items-center gap-2 text-sm text-gray-600"><Checkbox checked={manualOnly} onCheckedChange={checked => setManualOnly(checked === true)} /> Manual floors only</label>
-                  {!isSuperAdmin && <span className="ml-auto rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700">Only the Super Administrator can change priority.</span>}
+                  {!canManageManualEnrollment && <span className="ml-auto rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700">Manual priority enrollment permission is required.</span>}
                 </div>
                 <ReportTable
                   columns={columns}

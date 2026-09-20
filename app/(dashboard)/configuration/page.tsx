@@ -37,6 +37,8 @@ const DEFAULTS = {
   // Financially authoritative: there is deliberately no client-side fallback.
   // The page refuses to render editable settings if the DB value is missing.
   commissionRatePercent:           Number.NaN,
+  driverCommissionDebtCapPesewas:  0,
+  artisanCommissionDebtCapPesewas: 0,
   rideBaseFarePesewas:             300,
   ridePerKmPesewas:                150,
   ridePerMinPesewas:               20,
@@ -105,6 +107,8 @@ type ConfigState = { [K in ConfigKey]: string | number }
 // config key) never reaches rendered text.
 const FIELD_LABELS: Record<ConfigKey, string> = {
   commissionRatePercent: 'Commission Rate (%)',
+  driverCommissionDebtCapPesewas: 'Driver commission owing cap',
+  artisanCommissionDebtCapPesewas: 'Artisan commission owing cap',
   rideBaseFarePesewas: 'Base Fare',
   ridePerKmPesewas: 'Per-Kilometre Rate',
   ridePerMinPesewas: 'Per-Minute Rate',
@@ -188,6 +192,8 @@ interface ValidationRule {
 
 const RULES: Partial<Record<ConfigKey, ValidationRule>> = {
   commissionRatePercent:           { min: 0, max: 100, message: 'Must be 0-100%' },
+  driverCommissionDebtCapPesewas:  { min: 0, max: 100000000, pattern: /^\d+$/, message: 'Must be a whole number from 0-100000000 pesewas' },
+  artisanCommissionDebtCapPesewas: { min: 0, max: 100000000, pattern: /^\d+$/, message: 'Must be a whole number from 0-100000000 pesewas' },
   rideBaseFarePesewas:             { min: 0, message: 'Must be 0 or more' },
   ridePerKmPesewas:                { min: 0, message: 'Must be 0 or more' },
   ridePerMinPesewas:               { min: 0, message: 'Must be 0 or more' },
@@ -403,7 +409,15 @@ function ConfigField({
           <Input
             type={type}
             value={value}
-            step={type === 'number' ? (configKey === 'commissionRatePercent' ? '0.01' : 'any') : undefined}
+            step={
+              type === 'number'
+                ? configKey === 'commissionRatePercent'
+                  ? '0.01'
+                  : configKey.endsWith('Pesewas')
+                    ? '1'
+                    : 'any'
+                : undefined
+            }
             onChange={e => onChange(configKey, e.target.value)}
             disabled={disabled}
             className={`w-44 text-sm h-8 ${
@@ -669,6 +683,12 @@ export default function ConfigurationPage() {
         <div className="space-y-4">
           <Section title="Commission" description="Platform revenue share applied to all completed bookings">
             {field('Commission Rate (%)', 'commissionRatePercent', { description: 'Applied to new payments and snapshotted for historical reporting.' })}
+            {field('Driver commission owing cap', 'driverCommissionDebtCapPesewas', {
+              description: 'Takes effect immediately. Drivers at or above this pending cash-commission balance cannot receive new rides. Enter 0 to disable.',
+            })}
+            {field('Artisan commission owing cap', 'artisanCommissionDebtCapPesewas', {
+              description: 'Takes effect immediately. Artisans at or above this pending cash-commission balance cannot receive new jobs. Enter 0 to disable.',
+            })}
           </Section>
 
           <Section title="Ride Fares" description="Fare formula components for ride-hailing bookings">

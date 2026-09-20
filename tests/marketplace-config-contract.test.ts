@@ -24,3 +24,20 @@ test('marketplace settings expose all backend-owned active-ride destination cont
   assert.match(source, /field\('Maximum Added Time', 'rideDestinationEditMaxAddedMins'/)
   assert.match(source, /field\('Preview Expiry', 'rideDestinationEditPreviewTtlSecs'/)
 })
+
+test('marketplace settings expose separate reviewed commission debt caps', () => {
+  const source = readFileSync(
+    new URL('../app/(dashboard)/configuration/page.tsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(source, /driverCommissionDebtCapPesewas:\s+0/)
+  assert.match(source, /artisanCommissionDebtCapPesewas:\s+0/)
+  assert.match(source, /Driver commission owing cap/)
+  assert.match(source, /Artisan commission owing cap/)
+  assert.match(source, /driverCommissionDebtCapPesewas:\s+\{ min: 0, max: 100000000, pattern: \/\^\\d\+\$\//)
+  assert.match(source, /artisanCommissionDebtCapPesewas:\s+\{ min: 0, max: 100000000, pattern: \/\^\\d\+\$\//)
+  assert.match(source, /Drivers at or above this pending cash-commission balance cannot receive new rides/)
+  assert.match(source, /Artisans at or above this pending cash-commission balance cannot receive new jobs/)
+  assert.match(source, /Enter 0 to disable/)
+})
