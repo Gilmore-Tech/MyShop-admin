@@ -43,6 +43,22 @@ test('driver-list request failures render as errors instead of false empty resul
   assert.match(source, /onRetry=\{\(\) => \{ void loadDrivers\(\) \}\}/)
 })
 
+test('manual enrollment follows its permission while policy publishing remains Super Admin only', () => {
+  const pageSource = readFileSync(
+    new URL('../app/(dashboard)/driver-priority/page.tsx', import.meta.url),
+    'utf8',
+  )
+  const rolesSource = readFileSync(new URL('../lib/roles.ts', import.meta.url), 'utf8')
+
+  assert.match(
+    pageSource,
+    /canManageManualEnrollment = can\('manage_driver_priority_enrollment'\)/,
+  )
+  assert.match(pageSource, /canManageManualEnrollment \? \(/)
+  assert.match(pageSource, /<PolicyEditor policy=\{policy\} canMutate=\{isSuperAdmin\}/)
+  assert.match(rolesSource, /'manage_driver_priority_enrollment'/)
+})
+
 test('builds the exact nested runtime payload required by the backend policy DTO', () => {
   const { qualityMeasurementStartedAt: _serverOwnedStart, ...publishableDefaults } =
     DEFAULT_DRIVER_PRIORITY_POLICY
