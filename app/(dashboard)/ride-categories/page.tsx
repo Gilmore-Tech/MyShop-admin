@@ -7,6 +7,7 @@ import { Plus, Pencil, ToggleLeft, ToggleRight, Loader2, Car, AlertTriangle } fr
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { DataTable, type DataTableColumn } from '@/components/common/data-table'
@@ -14,10 +15,12 @@ import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
 import { EmptyState } from '@/components/common/empty-state'
 import { FormDialog } from '@/components/common/form-dialog'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
-import { getRideCategories, createRideCategory, updateRideCategory, type RideCategory } from '@/lib/api'
+import { getRideCategories, createRideCategory, updateRideCategory, updateRegionRideCategory, listRegions, type RideCategory, type Region } from '@/lib/api'
+import { getAdminUser } from '@/lib/api-client'
 import { formatGhs } from '@/lib/money'
 import { presentRideCategorySaveError } from '@/lib/ride-category-errors'
 import { DistanceFareSafeguardCard } from './_components/distance-fare-safeguard-card'
+import { RemoteAreaZonesCard } from './_components/remote-area-zones-card'
 
 // ── Money helpers ───────────────────────────────────────────────────────────────
 // All rates travel as integer pesewas (GHS 26.00 = 2600). Display in GHS, send
@@ -67,10 +70,11 @@ const EMPTY_FORM: FormState = {
 // ── Tier dialog ─────────────────────────────────────────────────────────────────
 
 function TierDialog({
-  open, tier, onClose, onSaved,
+  open, tier, regionId, onClose, onSaved,
 }: {
   open: boolean
   tier: RideCategory | null
+  regionId: string | null
   onClose: () => void
   onSaved: (saved: RideCategory) => void
 }) {
@@ -156,7 +160,11 @@ function TierDialog({
     setSaving(true)
     try {
       const description = form.description.trim()
-      const saved = isEdit
+      const saved = isEdit && regionId
+        ? await updateRegionRideCategory(regionId, tier!.id, {
+            baseFarePesewas, perKmPesewas, perMinPesewas, minimumFarePesewas,
+          })
+        : isEdit
         ? await updateRideCategory(tier!.id, {
             name, slug, baseFarePesewas, perKmPesewas, perMinPesewas, minimumFarePesewas,
             capacityPersons, description,
@@ -184,7 +192,9 @@ function TierDialog({
       open={open}
       onClose={onClose}
       title={isEdit ? 'Edit ride tier' : 'New ride tier'}
-      description={isEdit ? 'Update this tier and its fare rates.' : 'Add a new ride tier with its own fare rates.'}
+      description={regionId
+        ? "Update this tier's rates for the selected region only."
+        : isEdit ? 'Update this tier and its fare rates.' : 'Add a new ride tier with its own fare rates.'}
       submitLabel={isEdit ? 'Save changes' : 'Create tier'}
       onSubmit={handleSubmit}
       loading={saving}
@@ -201,6 +211,7 @@ function TierDialog({
               value={form.name}
               onChange={e => handleNameChange(e.target.value)}
               maxLength={60}
+              disabled={regionId != null}
             />
           </div>
           <div className="space-y-1.5">
@@ -211,6 +222,7 @@ function TierDialog({
               onChange={e => set('slug', e.target.value.toLowerCase())}
               maxLength={60}
               className="font-mono text-sm"
+              disabled={regionId != null}
             />
           </div>
         </div>
@@ -230,6 +242,7 @@ function TierDialog({
             value={form.description}
             onChange={e => set('description', e.target.value)}
             maxLength={140}
+            disabled={regionId != null}
           />
         </div>
       </div>
@@ -277,7 +290,10 @@ function TierDialog({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function RideCategoriesPage() {
+  const adminUser = getAdminUser()
   const [tiers, setTiers] = useState<RideCategory[]>([])
+  const [regions, setRegions] = useState<Region[]>([])
+  const [selectedRegionId, setSelectedRegionId] = useState(adminUser?.regionId ?? 'global')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -289,16 +305,21 @@ export default function RideCategoriesPage() {
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
-    getRideCategories()
+    getRideCategories(selectedRegionId === 'global' ? undefined : selectedRegionId)
       .then(data => setTiers(Array.isArray(data) ? data : []))
       .catch(() => {
         setTiers([])
         setError('Could not load ride tiers. Check your connection and try again.')
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [selectedRegionId])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    listRegions()
+      .then(data => setRegions(Array.isArray(data) ? data : []))
+      .catch(() => setRegions([]))
+  }, [])
 
   function openCreate() { setEditing(null); setDialogOpen(true) }
   function openEdit(tier: RideCategory) { setEditing(tier); setDialogOpen(true) }
@@ -315,7 +336,9 @@ export default function RideCategoriesPage() {
   async function applyToggle(tier: RideCategory, isActive: boolean) {
     setTogglingId(tier.id)
     try {
-      const updated = await updateRideCategory(tier.id, { isActive })
+      const updated = selectedRegionId === 'global'
+        ? await updateRideCategory(tier.id, { isActive })
+        : await updateRegionRideCategory(selectedRegionId, tier.id, { isEnabled: isActive })
       setTiers(prev => prev.map(t => t.id === updated.id ? updated : t))
     } catch {
       // keep existing state on failure
@@ -438,14 +461,31 @@ export default function RideCategoriesPage() {
           subtitle="Manage ride tiers and their per-tier fare rates"
           actions={
             <RoleGate permission="edit_ride_categories">
-              <Button variant="brand" className="gap-2" onClick={openCreate}>
-                <Plus className="h-4 w-4" /> Add tier
-              </Button>
+              {selectedRegionId === 'global' ? (
+                <Button variant="brand" className="gap-2" onClick={openCreate}>
+                  <Plus className="h-4 w-4" /> Add tier
+                </Button>
+              ) : null}
             </RoleGate>
           }
         />
 
-        <DistanceFareSafeguardCard />
+        <div className="mb-4 flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-900">Pricing region</p>
+            <p className="text-xs text-gray-500">Availability and rates below apply only to this region.</p>
+          </div>
+          <Select value={selectedRegionId} onValueChange={setSelectedRegionId} disabled={Boolean(adminUser?.regionId)}>
+            <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {!adminUser?.regionId && <SelectItem value="global">Global tier definitions</SelectItem>}
+              {regions.map(region => <SelectItem key={region.id} value={region.id}>{region.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {selectedRegionId === 'global' && <DistanceFareSafeguardCard />}
+        {selectedRegionId !== 'global' && <RemoteAreaZonesCard regionId={selectedRegionId} />}
 
         <FilterBar onRefresh={load} refreshing={loading} meta={`${activeCount} active - ${tiers.length - activeCount} inactive`}>
           <FilterSearch value={search} onChange={setSearch} placeholder="Search tiers" />
@@ -463,7 +503,7 @@ export default function RideCategoriesPage() {
               icon={Car}
               title={search ? 'No tiers match your search' : 'No ride tiers yet'}
               description={search ? 'Try a different search.' : 'Add a tier to start pricing rides.'}
-              action={!search ? (
+              action={!search && selectedRegionId === 'global' ? (
                 <RoleGate permission="edit_ride_categories">
                   <Button variant="brand" size="sm" className="gap-1.5" onClick={openCreate}>
                     <Plus className="h-3.5 w-3.5" /> Add first tier
@@ -478,6 +518,7 @@ export default function RideCategoriesPage() {
         <TierDialog
           open={dialogOpen}
           tier={editing}
+          regionId={selectedRegionId === 'global' ? null : selectedRegionId}
           onClose={() => setDialogOpen(false)}
           onSaved={handleSaved}
         />

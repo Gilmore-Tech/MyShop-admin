@@ -17,10 +17,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  getCategories, getPromoCampaignSanityLimits, getRideCategories, listPromoCampaigns,
+  getCategories, getPromoCampaignSanityLimits, getRideCategories, listPromoCampaigns, listRegions,
   submitPromoCampaign,
   type PromoCampaign, type PromoCampaignAudience, type PromoCampaignSanityLimits,
-  type PromoCampaignStatus,
+  type PromoCampaignStatus, type Region,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatDate } from '@/lib/format-date'
@@ -85,6 +85,7 @@ export default function PromoCampaignsPage() {
   const [limitsLoading, setLimitsLoading] = useState(true)
   const [rideCategories, setRideCategories] = useState<CategoryOption[]>([])
   const [serviceCategories, setServiceCategories] = useState<CategoryOption[]>([])
+  const [regions, setRegions] = useState<Region[]>([])
 
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<PromoCampaign | null>(null)
@@ -146,6 +147,9 @@ export default function PromoCampaignsPage() {
         setServiceCategories(flat.map(c => ({ id: c.id, name: c.name })))
       })
       .catch(() => { /* picker falls back to "all categories" */ })
+    void listRegions()
+      .then(list => { if (!cancelled) setRegions(list) })
+      .catch(() => { /* form will require the region list before save */ })
     return () => { cancelled = true }
   }, [])
 
@@ -342,6 +346,7 @@ export default function PromoCampaignsPage() {
           limits={limits}
           rideCategories={rideCategories}
           serviceCategories={serviceCategories}
+          regions={regions}
           onClose={() => { setCreating(false); setEditing(null) }}
           onSaved={() => { setCreating(false); setEditing(null); void load(true) }}
         />
