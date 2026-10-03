@@ -2247,6 +2247,9 @@ export interface Region {
   id: string
   name: string
   code: string
+  ridesEnabled: boolean
+  jobsEnabled: boolean
+  serviceAreaName: string | null
 }
 
 export interface AdminAccount {
@@ -2681,8 +2684,9 @@ function normaliseRideCategory(raw: any): RideCategory {
 // GET /admin/ride-categories — all tiers, including inactive, ordered by sortOrder.
 // The api-client unwrap() already peels the { success, data } envelope; we also
 // tolerate a bare array in case the interceptor shape differs (see §3 of the spec).
-export async function getRideCategories(): Promise<RideCategory[]> {
-  const raw = await api.get<any>('/admin/ride-categories')
+export async function getRideCategories(regionId?: string): Promise<RideCategory[]> {
+  const query = regionId ? `?regionId=${encodeURIComponent(regionId)}` : ''
+  const raw = await api.get<any>(`/admin/ride-categories${query}`)
   const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.items ?? [])
   return list.map(normaliseRideCategory).sort((a, b) => a.sortOrder - b.sortOrder)
 }
@@ -2729,6 +2733,91 @@ export async function updateRideCategory(
 ): Promise<RideCategory> {
   const raw = await api.patch<any>(`/admin/ride-categories/${id}`, data)
   return normaliseRideCategory(raw?.data ?? raw)
+}
+
+export async function updateRegionRideCategory(
+  regionId: string,
+  id: string,
+  data: Partial<{
+    isEnabled: boolean
+    baseFarePesewas: number
+    perKmPesewas: number
+    perMinPesewas: number
+    minimumFarePesewas: number
+    sortOrder: number
+  }>,
+): Promise<RideCategory> {
+  await api.patch<unknown>(`/admin/regions/${regionId}/ride-categories/${id}`, data)
+  const refreshed = await getRideCategories(regionId)
+  const category = refreshed.find(item => item.id === id)
+  if (!category) throw new Error('The updated regional ride tier was not returned.')
+  return category
+}
+
+export interface RideRemoteAreaZone {
+  id: string
+  regionId: string
+  regionName: string
+  stableKey: string
+  label: string
+  adjustmentRateBps: number
+  pickupMaxRadiusKm: number
+  isActive: boolean
+  boundary: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown[] }
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RideRemoteAreaZoneInput {
+  stableKey: string
+  label: string
+  adjustmentRateBps: number
+  pickupMaxRadiusKm: number
+  isActive: boolean
+  boundary: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown[] }
+  reason: string
+}
+
+function normaliseRideRemoteAreaZone(raw: any): RideRemoteAreaZone {
+  return {
+    id: String(raw.id),
+    regionId: String(raw.regionId ?? raw.region_id),
+    regionName: String(raw.regionName ?? raw.region_name ?? ''),
+    stableKey: String(raw.stableKey ?? raw.stable_key ?? ''),
+    label: String(raw.label ?? ''),
+    adjustmentRateBps: Number(raw.adjustmentRateBps ?? raw.adjustment_rate_bps ?? 0),
+    pickupMaxRadiusKm: Number(raw.pickupMaxRadiusKm ?? raw.pickup_max_radius_km ?? 0),
+    isActive: Boolean(raw.isActive ?? raw.is_active),
+    boundary: raw.boundary,
+    createdAt: String(raw.createdAt ?? raw.created_at ?? ''),
+    updatedAt: String(raw.updatedAt ?? raw.updated_at ?? ''),
+  }
+}
+
+export async function listRideRemoteAreaZones(regionId: string): Promise<RideRemoteAreaZone[]> {
+  const raw = await api.get<any>(`/admin/regions/${regionId}/ride-remote-area-zones`)
+  const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.items ?? [])
+  return list.map(normaliseRideRemoteAreaZone)
+}
+
+export async function createRideRemoteAreaZone(
+  regionId: string,
+  input: RideRemoteAreaZoneInput,
+): Promise<RideRemoteAreaZone> {
+  const raw = await api.post<any>(`/admin/regions/${regionId}/ride-remote-area-zones`, input)
+  return normaliseRideRemoteAreaZone(raw?.data ?? raw)
+}
+
+export async function updateRideRemoteAreaZone(
+  regionId: string,
+  zoneId: string,
+  input: RideRemoteAreaZoneInput,
+): Promise<RideRemoteAreaZone> {
+  const raw = await api.patch<any>(
+    `/admin/regions/${regionId}/ride-remote-area-zones/${zoneId}`,
+    input,
+  )
+  return normaliseRideRemoteAreaZone(raw?.data ?? raw)
 }
 
 // ── Distance fare safeguard policy ───────────────────────────────────────────
@@ -4428,6 +4517,7 @@ export type {
 } from './promo-campaign-contract'
 
 export async function listPromoCampaigns(params?: {
+  regionId?: string
   status?: PromoCampaignStatus
   audience?: PromoCampaignAudience
   page?: number
@@ -4453,6 +4543,7 @@ export async function getPromoCampaign(campaignId: string): Promise<PromoCampaig
 }
 
 export interface CreatePromoCampaignInput {
+  regionId: string
   name: string
   description?: string
   termsText?: string

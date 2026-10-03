@@ -12,6 +12,7 @@ import {
 } from '../lib/announcement-campaign-contract.ts'
 
 const smsDraft: AnnouncementDraft = {
+  regionId: '44444444-4444-4444-8444-444444444444',
   title: 'Service update',
   body: 'Drivers should expect a brief delay.',
   targetAudience: 'drivers',

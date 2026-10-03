@@ -69,6 +69,7 @@ export function canResumePromoCampaign(status: PromoCampaignStatus): boolean {
 
 export interface PromoCampaign {
   id: string
+  regionId: string
   name: string
   description: string | null
   termsText: string | null
@@ -241,6 +242,7 @@ export function normalisePromoCampaign(raw: unknown): PromoCampaign {
   const audience = audienceAt(pick(o, 'audience'))
   return {
     id,
+    regionId: nullableString(pick(o, 'regionId')) ?? '',
     name: typeof pick(o, 'name') === 'string' ? (pick(o, 'name') as string) : '',
     description: nullableString(pick(o, 'description')),
     termsText: nullableString(pick(o, 'termsText')),

@@ -10,6 +10,7 @@ export type AnnouncementDestination =
   | 'app_store'
 
 export interface AnnouncementDraft {
+  regionId: string
   title: string
   body: string
   targetAudience: AnnouncementAudience

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import {
   createPromoCampaign,
+  getRideCategories,
   updatePromoCampaign,
   type CreatePromoCampaignInput,
   type PromoCampaign,
@@ -17,6 +18,7 @@ import {
   type PromoCampaignScope,
   type PromoCampaignType,
   type ProviderPromoRewardKind,
+  type Region,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { formatGhs } from '@/lib/money'
@@ -35,6 +37,7 @@ export interface CategoryOption {
 }
 
 interface FormState {
+  regionId: string
   name: string
   description: string
   termsText: string
@@ -64,6 +67,7 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = {
+  regionId: '',
   name: '',
   description: '',
   termsText: '',
@@ -112,6 +116,7 @@ export function CampaignFormDialog({
   limits,
   rideCategories,
   serviceCategories,
+  regions,
   onClose,
   onSaved,
 }: {
@@ -120,6 +125,7 @@ export function CampaignFormDialog({
   limits: PromoCampaignSanityLimits | null
   rideCategories: CategoryOption[]
   serviceCategories: CategoryOption[]
+  regions: Region[]
   onClose: () => void
   onSaved: (campaign: PromoCampaign) => void
 }) {
@@ -127,11 +133,13 @@ export function CampaignFormDialog({
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [regionalRideCategories, setRegionalRideCategories] = useState<CategoryOption[]>([])
 
   useEffect(() => {
     if (!open) return
     if (existing) {
       setForm({
+        regionId: existing.regionId,
         name: existing.name,
         description: existing.description ?? '',
         termsText: existing.termsText ?? '',
@@ -172,16 +180,40 @@ export function CampaignFormDialog({
         generatedRevenueTargetGhs: pesewasToGhsInput(existing.providerRule?.generatedRevenueTargetPesewas) || '500.00',
       })
     } else {
-      setForm(EMPTY_FORM)
+      setForm({ ...EMPTY_FORM, regionId: regions.length === 1 ? regions[0].id : '' })
     }
     setError('')
-  }, [open, existing])
+  }, [open, existing, regions])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!form.regionId) {
+      setRegionalRideCategories([])
+      return () => { cancelled = true }
+    }
+    void getRideCategories(form.regionId)
+      .then((list) => {
+        if (!cancelled) {
+          setRegionalRideCategories(
+            list.filter((category) => category.isActive).map((category) => ({
+              id: category.id,
+              name: category.name,
+            }))
+          )
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRegionalRideCategories([])
+      })
+    return () => { cancelled = true }
+  }, [form.regionId])
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
   const isProvider = isProviderAudience(form.audience)
+  const selectedRegion = regions.find((region) => region.id === form.regionId) ?? null
   const isPercent = form.campaignType === 'percentage_discount'
   const isRelief = form.campaignType === 'commission_relief'
   const showRideCategories =
@@ -247,6 +279,21 @@ export function CampaignFormDialog({
 
   async function handleSubmit() {
     setError('')
+
+    if (!form.regionId) {
+      setError('Select the operational region for this campaign.')
+      return
+    }
+    const requiresRides =
+      form.audience === 'driver' ||
+      (form.audience === 'client' && (form.promoScope === 'ride' || form.promoScope === 'both'))
+    const requiresJobs =
+      form.audience === 'artisan' ||
+      (form.audience === 'client' && (form.promoScope === 'artisan_job' || form.promoScope === 'both'))
+    if (!selectedRegion || (requiresRides && !selectedRegion.ridesEnabled) || (requiresJobs && !selectedRegion.jobsEnabled)) {
+      setError('Choose only services that are enabled in the selected region.')
+      return
+    }
 
     // The audience is authoritative over the type - stale Select emissions can
     // never produce an illegal pair (see effectiveCampaignType).
@@ -317,6 +364,7 @@ export function CampaignFormDialog({
     }
 
     const payload: CreatePromoCampaignInput = {
+      regionId: form.regionId,
       name: form.name.trim(),
       description: form.description.trim() || undefined,
       termsText: form.termsText.trim() || undefined,
@@ -381,6 +429,33 @@ export function CampaignFormDialog({
       loading={saving}
       error={error || null}
     >
+      <div className="space-y-1.5">
+        <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Operational region</Label>
+        <Select
+          value={form.regionId}
+          onValueChange={(value) => setForm((current) => ({
+            ...current,
+            regionId: value,
+            rideCategoryIds: [],
+            serviceCategoryIds: [],
+          }))}
+          disabled={isEdit && existing!.status !== 'draft' && existing!.status !== 'pending_approval'}
+        >
+          <SelectTrigger><SelectValue placeholder="Select a region" /></SelectTrigger>
+          <SelectContent>
+            {regions.map((region) => (
+              <SelectItem key={region.id} value={region.id}>
+                {region.name} ({[
+                  region.ridesEnabled ? 'rides' : null,
+                  region.jobsEnabled ? 'jobs' : null,
+                ].filter(Boolean).join(' + ') || 'no services'})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-gray-400">Only users currently operating in this region can receive this campaign.</p>
+      </div>
+
       {/* Audience */}
       <div className="space-y-1.5">
         <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Audience</Label>
@@ -390,8 +465,8 @@ export function CampaignFormDialog({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="client">Client</SelectItem>
-            <SelectItem value="driver">Drivers</SelectItem>
-            <SelectItem value="artisan">Artisans</SelectItem>
+            <SelectItem value="driver" disabled={selectedRegion ? !selectedRegion.ridesEnabled : false}>Drivers</SelectItem>
+            <SelectItem value="artisan" disabled={selectedRegion ? !selectedRegion.jobsEnabled : false}>Artisans</SelectItem>
           </SelectContent>
         </Select>
         <p className="text-[10px] text-gray-400">
@@ -625,9 +700,14 @@ export function CampaignFormDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="both">Rides & artisan jobs</SelectItem>
-                <SelectItem value="ride">Rides only</SelectItem>
-                <SelectItem value="artisan_job">Artisan jobs only</SelectItem>
+                <SelectItem
+                  value="both"
+                  disabled={selectedRegion ? !selectedRegion.ridesEnabled || !selectedRegion.jobsEnabled : false}
+                >
+                  Rides & artisan jobs
+                </SelectItem>
+                <SelectItem value="ride" disabled={selectedRegion ? !selectedRegion.ridesEnabled : false}>Rides only</SelectItem>
+                <SelectItem value="artisan_job" disabled={selectedRegion ? !selectedRegion.jobsEnabled : false}>Artisan jobs only</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -652,7 +732,7 @@ export function CampaignFormDialog({
             <CategoryPicker
               label="Ride tiers"
               emptyHint="All ride tiers"
-              options={rideCategories}
+              options={form.regionId ? regionalRideCategories : rideCategories}
               selected={form.rideCategoryIds}
               onToggle={(id) => toggleCategory('rideCategoryIds', id)}
             />
