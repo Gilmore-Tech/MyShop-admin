@@ -12,12 +12,14 @@ import { Button } from '@/components/ui/button'
 import { getPilotReport, type PilotMetric } from '@/lib/api'
 import { userSafeAdminError } from '@/lib/api-client'
 import { exportPilotCsv } from '@/lib/report-export'
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
 
 /**
  * The 10 pilot success targets for the Ashanti Region open beta - all-time
  * figures against fixed targets (carried over from the retired Reports page).
  */
 export default function PilotTargetsPage() {
+  const { activeRegion } = useAdminRegionScope()
   const [metrics, setMetrics] = useState<PilotMetric[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -36,14 +38,14 @@ export default function PilotTargetsPage() {
 
   useEffect(() => { load() }, [load])
 
-  const met = (metrics ?? []).filter(m => m.target > 0 && m.actual >= m.target).length
+  const met = (metrics ?? []).filter(m => m.actual !== null && m.target > 0 && m.actual >= m.target).length
 
   return (
     <PageGuard permission="view_pilot_report">
       <div>
         <PageHeader
           title="Pilot targets"
-          subtitle="The 10 pilot success targets - Ashanti Region open beta, all-time progress"
+          subtitle={`The 10 pilot success targets - ${activeRegion?.name ?? 'selected region'}, all-time progress`}
           actions={
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => metrics && exportPilotCsv(metrics)} disabled={!metrics || metrics.length === 0}>
               <Download className="h-3.5 w-3.5" /> Download CSV
@@ -67,8 +69,8 @@ export default function PilotTargetsPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {metrics.map(m => {
-                const progress = m.target > 0 ? Math.min((m.actual / m.target) * 100, 100) : 0
-                const reached = m.target > 0 && m.actual >= m.target
+                const progress = m.actual !== null && m.target > 0 ? Math.min((m.actual / m.target) * 100, 100) : 0
+                const reached = m.actual !== null && m.target > 0 && m.actual >= m.target
                 return (
                   <div key={m.key} className="bg-white rounded-xl shadow-sm p-4">
                     <div className="flex items-start justify-between gap-2 mb-2">
@@ -77,7 +79,7 @@ export default function PilotTargetsPage() {
                     </div>
                     <div className="flex items-baseline gap-1 mb-1.5">
                       <span className={`text-base font-bold tabular-nums ${reached ? 'text-emerald-600' : 'text-gray-900'}`}>
-                        {m.actual.toLocaleString()}{m.unit}
+                        {m.actual === null ? 'Not available' : `${m.actual.toLocaleString()}${m.unit}`}
                       </span>
                       <span className="text-xs text-gray-400">/ {m.target.toLocaleString()}{m.unit}</span>
                     </div>
@@ -87,7 +89,7 @@ export default function PilotTargetsPage() {
                         style={{ width: `${progress}%` }}
                       />
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-1 text-right">{progress.toFixed(0)}% of target</p>
+                    <p className="text-[10px] text-gray-400 mt-1 text-right">{m.actual === null ? 'Awaiting enough data' : `${progress.toFixed(0)}% of target`}</p>
                   </div>
                 )
               })}
