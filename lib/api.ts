@@ -453,16 +453,38 @@ export interface PilotMetric {
   label: string
   key: string
   target: number
-  actual: number
+  actual: number | null
   unit: string
 }
 
 export async function getPilotReport(): Promise<PilotMetric[]> {
   const raw = await api.get<any>('/admin/reports/pilot')
-  if (Array.isArray(raw)) return raw
-  if (Array.isArray(raw?.metrics)) return raw.metrics
-  if (Array.isArray(raw?.items)) return raw.items
-  return []
+  const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.metrics) ? raw.metrics : Array.isArray(raw?.items) ? raw.items : []
+  const metadata: Record<string, { label: string; unit: string }> = {
+    registeredClients: { label: 'Registered clients', unit: '' },
+    approvedDrivers: { label: 'Approved drivers', unit: '' },
+    approvedArtisans: { label: 'Approved artisans', unit: '' },
+    completedRides: { label: 'Completed rides', unit: '' },
+    completedJobs: { label: 'Completed jobs', unit: '' },
+    avgRating: { label: 'Average rating', unit: '' },
+    providerRetentionPct: { label: 'Provider retention', unit: '%' },
+    ussdSessions: { label: 'USSD sessions', unit: '' },
+    paymentSuccessRatePct: { label: 'Payment success rate', unit: '%' },
+    avgPickupMins: { label: 'Average pickup time', unit: ' min' },
+  }
+  return rows.map((row: any, index: number) => {
+    const key = String(row?.key ?? row?.metric ?? `metric-${index}`)
+    const meta = metadata[key] ?? { label: key, unit: '' }
+    const actual = Number(row?.actual)
+    const target = Number(row?.target)
+    return {
+      key,
+      label: String(row?.label ?? meta.label),
+      actual: row?.actual === null || row?.actual === undefined || !Number.isFinite(actual) ? null : actual,
+      target: Number.isFinite(target) ? target : 0,
+      unit: String(row?.unit ?? meta.unit),
+    }
+  })
 }
 
 // ── Live Map ──────────────────────────────────────────────────────────────────
@@ -2269,7 +2291,9 @@ export interface AdminAccount {
 
 // GET /admin/regions — active operational regions for the account picker.
 export function listRegions() {
-  return api.get<Region[]>('/admin/regions')
+  // Keep the catalogue nationwide so a global operator can switch away from
+  // the currently selected operational region.
+  return api.get<Region[]>('/admin/regions', { skipRegionScope: true })
 }
 
 export function listAdmins() {

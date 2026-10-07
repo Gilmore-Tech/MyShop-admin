@@ -17,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  getCategories, getPromoCampaignSanityLimits, getRideCategories, listPromoCampaigns, listRegions,
+  getCategories, getPromoCampaignSanityLimits, getRideCategories, listPromoCampaigns,
   submitPromoCampaign,
   type PromoCampaign, type PromoCampaignAudience, type PromoCampaignSanityLimits,
   type PromoCampaignStatus, type Region,
@@ -31,6 +31,7 @@ import { CampaignDetailSheet } from './_components/campaign-detail-sheet'
 import { CampaignFormDialog, type CategoryOption } from './_components/campaign-form-dialog'
 import { CampaignStatusBadge } from './_components/campaign-status-badge'
 import { SanityLimitsCard } from './_components/sanity-limits-card'
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
 
 const STATUS_OPTIONS: Array<{ value: 'all' | PromoCampaignStatus; label: string }> = [
   { value: 'all',              label: 'All' },
@@ -72,6 +73,7 @@ function describeValue(c: PromoCampaign): string {
 }
 
 export default function PromoCampaignsPage() {
+  const { activeRegionId, activeRegion } = useAdminRegionScope()
   const [campaigns, setCampaigns] = useState<PromoCampaign[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -85,7 +87,7 @@ export default function PromoCampaignsPage() {
   const [limitsLoading, setLimitsLoading] = useState(true)
   const [rideCategories, setRideCategories] = useState<CategoryOption[]>([])
   const [serviceCategories, setServiceCategories] = useState<CategoryOption[]>([])
-  const [regions, setRegions] = useState<Region[]>([])
+  const regions: Region[] = activeRegion ? [activeRegion] : []
 
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<PromoCampaign | null>(null)
@@ -136,7 +138,7 @@ export default function PromoCampaignsPage() {
         if (!cancelled) setLimitsLoading(false)
       }
     })()
-    void getRideCategories()
+    void getRideCategories(activeRegionId ?? undefined)
       .then(list => { if (!cancelled) setRideCategories(list.map(c => ({ id: c.id, name: c.name }))) })
       .catch(() => { /* picker falls back to "all tiers" */ })
     void getCategories()
@@ -147,11 +149,8 @@ export default function PromoCampaignsPage() {
         setServiceCategories(flat.map(c => ({ id: c.id, name: c.name })))
       })
       .catch(() => { /* picker falls back to "all categories" */ })
-    void listRegions()
-      .then(list => { if (!cancelled) setRegions(list) })
-      .catch(() => { /* form will require the region list before save */ })
     return () => { cancelled = true }
-  }, [])
+  }, [activeRegionId])
 
   async function handleQuickSubmit(campaign: PromoCampaign) {
     setSubmittingId(campaign.id)

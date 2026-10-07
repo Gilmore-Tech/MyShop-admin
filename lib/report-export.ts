@@ -87,9 +87,9 @@ export function exportOverviewCsv(data: OverviewReport, userTotal: number | null
 export function exportPilotCsv(metrics: PilotMetric[]): void {
   const headers = ['Metric', 'Key', 'Actual', 'Target', 'Unit', '% of Target', 'Met']
   const rows: Cell[][] = metrics.map(m => {
-    const progress = m.target > 0 ? round2((m.actual / m.target) * 100) : ''
-    const met = m.target > 0 && m.actual >= m.target
-    return [m.label, m.key, m.actual, m.target, m.unit, progress, met]
+    const progress = m.actual !== null && m.target > 0 ? round2((m.actual / m.target) * 100) : ''
+    const met = m.actual !== null && m.target > 0 && m.actual >= m.target
+    return [m.label, m.key, m.actual ?? '', m.target, m.unit, progress, met]
   })
   downloadCsv(`myshop-pilot-targets-${today()}.csv`, toCsv(headers, rows))
 }

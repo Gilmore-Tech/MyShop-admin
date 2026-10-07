@@ -14,7 +14,6 @@ import { DataTable, type DataTableColumn } from '@/components/common/data-table'
 import { EmptyState } from '@/components/common/empty-state'
 import {
   getAnnouncementHistory,
-  listRegions,
   previewAnnouncement,
   publishAnnouncement,
   type AnnouncementAudience,
@@ -39,6 +38,7 @@ import {
 import { ApiError, userSafeAdminError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { formatDateTime } from '@/lib/format-date'
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
 
 const AUDIENCE: {
   value: AnnouncementAudience
@@ -69,6 +69,7 @@ const CHANNEL_LABELS: Record<AnnouncementChannel, string> = {
 }
 
 export default function AnnouncementsPage() {
+  const { activeRegion } = useAdminRegionScope()
   const { category } = useRole()
   const lockedAudience: AnnouncementAudience | null =
     category === 'rides' ? 'drivers' : category === 'artisan' ? 'artisans' : null
@@ -80,7 +81,7 @@ export default function AnnouncementsPage() {
   const [history, setHistory] = useState<AnnouncementHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
-  const [regions, setRegions] = useState<Region[]>([])
+  const regions: Region[] = activeRegion ? [activeRegion] : []
 
   const loadHistory = useCallback(() => {
     setHistoryLoading(true)
@@ -92,9 +93,6 @@ export default function AnnouncementsPage() {
   }, [])
 
   useEffect(() => { loadHistory() }, [loadHistory])
-  useEffect(() => {
-    void listRegions().then(setRegions).catch(() => setRegions([]))
-  }, [])
 
   const columns: DataTableColumn<AnnouncementHistoryItem>[] = [
     {

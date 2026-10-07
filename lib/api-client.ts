@@ -18,6 +18,7 @@ export const API_BASE = typeof window !== 'undefined' ? '/api/proxy' : (process.
 const TOKEN_KEY = 'myshop_admin_token'
 const REFRESH_KEY = 'myshop_admin_refresh'
 const ADMIN_KEY = 'myshop_admin_user'
+export const ADMIN_REGION_KEY = 'myshop_admin_active_region'
 export const ADMIN_ACTIVITY_KEY = 'myshop_admin_last_activity'
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ export function clearTokens() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(REFRESH_KEY)
   localStorage.removeItem(ADMIN_KEY)
+  localStorage.removeItem(ADMIN_REGION_KEY)
   localStorage.removeItem(ADMIN_ACTIVITY_KEY)
 }
 
@@ -102,6 +104,8 @@ export interface AdminUser {
 
 interface ApiOptions extends RequestInit {
   skipAuth?: boolean
+  /** Do not attach the active operational-region scope (region catalogue/admin identity calls). */
+  skipRegionScope?: boolean
   // Skip the API_BASE prefix and call the path as-is. Use for Next.js route
   // handlers like /api/sms that live on this same origin and aren't part of
   // the NestJS backend.
@@ -133,13 +137,23 @@ export const FEATURES = {
 } as const
 
 export async function apiFetch<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
-  const { skipAuth, localRoute, ...init } = options
+  const { skipAuth, skipRegionScope, localRoute, ...init } = options
   const token = getToken()
 
   const headers = new Headers(init.headers)
   headers.set('Content-Type', 'application/json')
   if (!skipAuth && token) {
     headers.set('Authorization', `Bearer ${token}`)
+  }
+  if (!skipAuth && !skipRegionScope && typeof window !== 'undefined') {
+    const admin = getAdminUser()
+    const activeRegionId = localStorage.getItem(ADMIN_REGION_KEY)?.trim()
+    if (
+      activeRegionId &&
+      (admin?.role === 'super_admin' || admin?.role === 'product_owner')
+    ) {
+      headers.set('X-MyShop-Region-Id', activeRegionId)
+    }
   }
 
   const url = localRoute ? path : `${API_BASE}${path}`

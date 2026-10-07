@@ -7,7 +7,6 @@ import { Plus, Pencil, ToggleLeft, ToggleRight, Loader2, Car, AlertTriangle } fr
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge } from '@/components/common/status-badge'
 import { DataTable, type DataTableColumn } from '@/components/common/data-table'
@@ -15,12 +14,12 @@ import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
 import { EmptyState } from '@/components/common/empty-state'
 import { FormDialog } from '@/components/common/form-dialog'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
-import { getRideCategories, createRideCategory, updateRideCategory, updateRegionRideCategory, listRegions, type RideCategory, type Region } from '@/lib/api'
-import { getAdminUser } from '@/lib/api-client'
+import { getRideCategories, createRideCategory, updateRideCategory, updateRegionRideCategory, type RideCategory } from '@/lib/api'
 import { formatGhs } from '@/lib/money'
 import { presentRideCategorySaveError } from '@/lib/ride-category-errors'
 import { DistanceFareSafeguardCard } from './_components/distance-fare-safeguard-card'
 import { RemoteAreaZonesCard } from './_components/remote-area-zones-card'
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
 
 // ── Money helpers ───────────────────────────────────────────────────────────────
 // All rates travel as integer pesewas (GHS 26.00 = 2600). Display in GHS, send
@@ -211,7 +210,7 @@ function TierDialog({
               value={form.name}
               onChange={e => handleNameChange(e.target.value)}
               maxLength={60}
-              disabled={regionId != null}
+              disabled={isEdit && regionId != null}
             />
           </div>
           <div className="space-y-1.5">
@@ -222,7 +221,7 @@ function TierDialog({
               onChange={e => set('slug', e.target.value.toLowerCase())}
               maxLength={60}
               className="font-mono text-sm"
-              disabled={regionId != null}
+              disabled={isEdit && regionId != null}
             />
           </div>
         </div>
@@ -242,7 +241,7 @@ function TierDialog({
             value={form.description}
             onChange={e => set('description', e.target.value)}
             maxLength={140}
-            disabled={regionId != null}
+            disabled={isEdit && regionId != null}
           />
         </div>
       </div>
@@ -290,10 +289,8 @@ function TierDialog({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function RideCategoriesPage() {
-  const adminUser = getAdminUser()
+  const { activeRegionId, activeRegion } = useAdminRegionScope()
   const [tiers, setTiers] = useState<RideCategory[]>([])
-  const [regions, setRegions] = useState<Region[]>([])
-  const [selectedRegionId, setSelectedRegionId] = useState(adminUser?.regionId ?? 'global')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -305,21 +302,22 @@ export default function RideCategoriesPage() {
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
-    getRideCategories(selectedRegionId === 'global' ? undefined : selectedRegionId)
+    if (!activeRegionId) {
+      setTiers([])
+      setError('Select an operational region before managing ride tiers.')
+      setLoading(false)
+      return
+    }
+    getRideCategories(activeRegionId)
       .then(data => setTiers(Array.isArray(data) ? data : []))
       .catch(() => {
         setTiers([])
         setError('Could not load ride tiers. Check your connection and try again.')
       })
       .finally(() => setLoading(false))
-  }, [selectedRegionId])
+  }, [activeRegionId])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => {
-    listRegions()
-      .then(data => setRegions(Array.isArray(data) ? data : []))
-      .catch(() => setRegions([]))
-  }, [])
 
   function openCreate() { setEditing(null); setDialogOpen(true) }
   function openEdit(tier: RideCategory) { setEditing(tier); setDialogOpen(true) }
@@ -336,9 +334,8 @@ export default function RideCategoriesPage() {
   async function applyToggle(tier: RideCategory, isActive: boolean) {
     setTogglingId(tier.id)
     try {
-      const updated = selectedRegionId === 'global'
-        ? await updateRideCategory(tier.id, { isActive })
-        : await updateRegionRideCategory(selectedRegionId, tier.id, { isEnabled: isActive })
+      if (!activeRegionId) return
+      const updated = await updateRegionRideCategory(activeRegionId, tier.id, { isEnabled: isActive })
       setTiers(prev => prev.map(t => t.id === updated.id ? updated : t))
     } catch {
       // keep existing state on failure
@@ -461,31 +458,22 @@ export default function RideCategoriesPage() {
           subtitle="Manage ride tiers and their per-tier fare rates"
           actions={
             <RoleGate permission="edit_ride_categories">
-              {selectedRegionId === 'global' ? (
-                <Button variant="brand" className="gap-2" onClick={openCreate}>
-                  <Plus className="h-4 w-4" /> Add tier
-                </Button>
-              ) : null}
+              <Button variant="brand" className="gap-2" onClick={openCreate}>
+                <Plus className="h-4 w-4" /> Add tier
+              </Button>
             </RoleGate>
           }
         />
 
         <div className="mb-4 flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-gray-900">Pricing region</p>
-            <p className="text-xs text-gray-500">Availability and rates below apply only to this region.</p>
+            <p className="text-sm font-semibold text-gray-900">{activeRegion?.name ?? 'Selected region'}</p>
+            <p className="text-xs text-gray-500">Availability and rates below apply only to the active dashboard region.</p>
           </div>
-          <Select value={selectedRegionId} onValueChange={setSelectedRegionId} disabled={Boolean(adminUser?.regionId)}>
-            <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {!adminUser?.regionId && <SelectItem value="global">Global tier definitions</SelectItem>}
-              {regions.map(region => <SelectItem key={region.id} value={region.id}>{region.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
         </div>
 
-        {selectedRegionId === 'global' && <DistanceFareSafeguardCard />}
-        {selectedRegionId !== 'global' && <RemoteAreaZonesCard regionId={selectedRegionId} />}
+        <DistanceFareSafeguardCard />
+        {activeRegionId && <RemoteAreaZonesCard regionId={activeRegionId} />}
 
         <FilterBar onRefresh={load} refreshing={loading} meta={`${activeCount} active - ${tiers.length - activeCount} inactive`}>
           <FilterSearch value={search} onChange={setSearch} placeholder="Search tiers" />
@@ -503,7 +491,7 @@ export default function RideCategoriesPage() {
               icon={Car}
               title={search ? 'No tiers match your search' : 'No ride tiers yet'}
               description={search ? 'Try a different search.' : 'Add a tier to start pricing rides.'}
-              action={!search && selectedRegionId === 'global' ? (
+              action={!search ? (
                 <RoleGate permission="edit_ride_categories">
                   <Button variant="brand" size="sm" className="gap-1.5" onClick={openCreate}>
                     <Plus className="h-3.5 w-3.5" /> Add first tier
@@ -518,7 +506,7 @@ export default function RideCategoriesPage() {
         <TierDialog
           open={dialogOpen}
           tier={editing}
-          regionId={selectedRegionId === 'global' ? null : selectedRegionId}
+          regionId={activeRegionId}
           onClose={() => setDialogOpen(false)}
           onSaved={handleSaved}
         />
