@@ -13,6 +13,7 @@ import {
   API_BASE,
   getToken,
   apiErrorFromResponse,
+  applyAdminRegionScopeHeader,
 } from './api-client'
 import type { Permission, Role, CategoryScope } from './roles'
 import type { ReportGroupBy } from './format-date'
@@ -1748,6 +1749,7 @@ export async function uploadProviderPhoto(
   const headers = new Headers()
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  applyAdminRegionScopeHeader(headers)
   // Intentionally no Content-Type — the browser sets the multipart boundary.
 
   const res = await fetch(`${API_BASE}${roleAccountPath(role, roleAccountId, 'profile-photo')}`, {
@@ -1903,6 +1905,7 @@ export async function uploadProviderDocument(
   const headers = new Headers()
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  applyAdminRegionScopeHeader(headers)
   // Intentionally no Content-Type — the browser sets the multipart boundary.
 
   const res = await fetch(
@@ -4701,6 +4704,7 @@ export async function uploadPromoCampaignBanner(
   const headers = new Headers()
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  applyAdminRegionScopeHeader(headers)
   // Intentionally no Content-Type — the browser sets the multipart boundary.
 
   const res = await fetch(

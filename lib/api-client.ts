@@ -100,6 +100,20 @@ export interface AdminUser {
   regionScope: string | null
 }
 
+/** Attach the dashboard's selected operational region to a browser request. */
+export function applyAdminRegionScopeHeader(headers: Headers): Headers {
+  if (typeof window === 'undefined') return headers
+  const admin = getAdminUser()
+  const activeRegionId = localStorage.getItem(ADMIN_REGION_KEY)?.trim()
+  if (
+    activeRegionId &&
+    (admin?.role === 'super_admin' || admin?.role === 'product_owner')
+  ) {
+    headers.set('X-MyShop-Region-Id', activeRegionId)
+  }
+  return headers
+}
+
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
 
 interface ApiOptions extends RequestInit {
@@ -145,16 +159,7 @@ export async function apiFetch<T = unknown>(path: string, options: ApiOptions = 
   if (!skipAuth && token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
-  if (!skipAuth && !skipRegionScope && typeof window !== 'undefined') {
-    const admin = getAdminUser()
-    const activeRegionId = localStorage.getItem(ADMIN_REGION_KEY)?.trim()
-    if (
-      activeRegionId &&
-      (admin?.role === 'super_admin' || admin?.role === 'product_owner')
-    ) {
-      headers.set('X-MyShop-Region-Id', activeRegionId)
-    }
-  }
+  if (!skipAuth && !skipRegionScope) applyAdminRegionScopeHeader(headers)
 
   const url = localRoute ? path : `${API_BASE}${path}`
   const res = await fetch(url, { ...init, headers })
@@ -261,6 +266,9 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   INVALID_RIDE_CATEGORY_PRICING:
     'Every Comfort fare must be equal to or higher than the corresponding Regular fare.',
   INVALID_RIDE_CATEGORY_RATE: 'Enter a valid non-negative fare amount.',
+  ADMIN_REGION_REQUIRED: 'Select an operational region before continuing.',
+  ADMIN_REGION_SCOPE_MISMATCH: 'This action does not belong to the selected operational region.',
+  INVALID_ADMIN_REGION_SCOPE: 'Select an active operational region and try again.',
   RIDE_CATEGORY_NOT_FOUND: 'This ride tier no longer exists. Reload the list and try again.',
   SLUG_ALREADY_EXISTS: 'That slug is already used by another ride tier.',
   INVALID_SLUG: 'Use a lowercase slug such as "regular" or "comfort-plus".',

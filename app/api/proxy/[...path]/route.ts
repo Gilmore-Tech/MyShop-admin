@@ -20,6 +20,11 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
   // server-issued idempotency key on the way to the API.
   const idempotencyKey = req.headers.get('idempotency-key')
   if (idempotencyKey) headers.set('idempotency-key', idempotencyKey)
+  // Super Administrator and Product Owner select one operational region in
+  // the dashboard. Forward that server-validated scope on every proxied API
+  // request so reads and writes never fall back to nationwide data.
+  const operationalRegionId = req.headers.get('x-myshop-region-id')
+  if (operationalRegionId) headers.set('x-myshop-region-id', operationalRegionId)
 
   // Forward the body as raw bytes, not text — reading multipart/form-data via
   // req.text() decodes as UTF-8 and corrupts binary uploads (e.g. profile photos).
