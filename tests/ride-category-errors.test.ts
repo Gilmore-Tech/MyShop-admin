@@ -84,3 +84,14 @@ test('does not expose arbitrary runtime error text', () => {
 
   assert.equal(presentation.message, 'The ride tier could not be saved. Try again.')
 })
+
+test('explains a missing operational region instead of showing generic validation copy', () => {
+  const presentation = presentRideCategorySaveError(
+    new ApiError(400, 'ADMIN_REGION_REQUIRED'),
+  )
+
+  assert.equal(
+    presentation.message,
+    'Select the operational region for this ride tier and try again.',
+  )
+})

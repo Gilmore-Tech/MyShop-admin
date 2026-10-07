@@ -79,6 +79,17 @@ export function presentRideCategorySaveError(
     }
   }
 
+  if (
+    error.code === 'ADMIN_REGION_REQUIRED' ||
+    error.code === 'INVALID_ADMIN_REGION_SCOPE' ||
+    error.code === 'ADMIN_REGION_SCOPE_MISMATCH'
+  ) {
+    return {
+      message: 'Select the operational region for this ride tier and try again.',
+      target: 'form',
+    }
+  }
+
   if (error.code === 'VALIDATION_ERROR' || error.code === 'HTTP_400') {
     return {
       message: 'Review the tier details. Fare amounts must be valid non-negative amounts, and capacity must be between 1 and 20.',
