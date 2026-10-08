@@ -2282,6 +2282,7 @@ export interface AdminAccount {
   email: string
   fullName: string
   role: Role | null
+  roles: Role[]
   permissions: Permission[]
   regionId: string | null
   categoryScope: CategoryScope | null
@@ -2290,6 +2291,18 @@ export interface AdminAccount {
   isActive: boolean
   lastLoginAt: string | null
   createdAt: string
+}
+
+export interface AdminRolePolicy {
+  role: Exclude<Role, 'super_admin'>
+  label: string
+  description: string
+  requiresRegion: boolean
+  category: CategoryScope | null
+  permissions: Permission[]
+  revision: number
+  customized: boolean
+  updatedAt: string | null
 }
 
 // GET /admin/regions — active operational regions for the account picker.
@@ -2307,16 +2320,14 @@ export function getAdmin(adminId: string) {
   return api.get<AdminAccount>(`/admin/admins/${adminId}`)
 }
 
-// Role-first create. Supply `role` (+ `regionId` for region-scoped roles); the
-// backend derives permissions + category scope. `permissions` is an optional
-// advanced override.
+// Role-tag create/update. The backend derives effective permissions from the
+// reviewed bundles; individual account overrides are deliberately unsupported.
 export function createAdmin(data: {
   email: string
   fullName: string
   password: string
-  role?: Role
+  roles: Exclude<Role, 'super_admin'>[]
   regionId?: string
-  permissions?: Permission[]
 }) {
   return api.post<AdminAccount>('/admin/admins', data)
 }
@@ -2326,9 +2337,24 @@ export function createAdmin(data: {
 // manage_admins from the last holder.
 export function updateAdminPermissions(
   adminId: string,
-  data: { role?: Role; regionId?: string; permissions?: Permission[] }
+  data: { roles: Exclude<Role, 'super_admin'>[]; regionId?: string }
 ) {
   return api.patch<AdminAccount>(`/admin/admins/${adminId}/permissions`, data)
+}
+
+export function listAdminRolePolicies() {
+  return api.get<AdminRolePolicy[]>('/admin/admins/role-policies')
+}
+
+export function updateAdminRolePolicy(
+  role: Exclude<Role, 'super_admin'>,
+  permissions: Permission[],
+  reason: string,
+) {
+  return api.patch<AdminRolePolicy>(`/admin/admins/role-policies/${role}`, {
+    permissions,
+    reason,
+  })
 }
 
 export function deactivateAdmin(adminId: string) {
