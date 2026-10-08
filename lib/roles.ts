@@ -235,9 +235,26 @@ export function effectiveAdminPermissions(
   role: unknown,
   permissions: Permission[] | null | undefined,
 ): Permission[] {
-  return role === 'super_admin' || role === 'product_owner'
+  return role === 'super_admin'
     ? [...ALL_PERMISSIONS]
     : [...(permissions ?? [])]
+}
+
+export function hasRole(
+  roles: readonly string[] | null | undefined,
+  legacyRole: unknown,
+  role: Role,
+): boolean {
+  return (roles ?? []).includes(role) || legacyRole === role
+}
+
+export function hasGlobalRole(
+  roles: readonly string[] | null | undefined,
+  legacyRole: unknown,
+): boolean {
+  return (['super_admin', 'product_owner', 'director', 'accountant'] as Role[]).some((role) =>
+    hasRole(roles, legacyRole, role),
+  )
 }
 
 /** Returns true if the admin's permission set includes the given permission. */
@@ -332,7 +349,7 @@ const DIRECTOR_PERMS = dedupe(ALL_PERMISSIONS.filter(
   p => p !== 'manage_admins' && p !== 'view_config' && p !== 'intake_role_account_recovery'
 ))
 
-const PRODUCT_OWNER_PERMS = dedupe(ALL_PERMISSIONS)
+const PRODUCT_OWNER_PERMS = dedupe(ALL_PERMISSIONS.filter(p => p !== 'manage_admins'))
 
 const ACCOUNTANT_PERMS: Permission[] = dedupe([
   'view_dashboard', 'view_analytics', 'view_activity', 'view_reports', 'view_rides_report',
@@ -349,7 +366,7 @@ export const ROLE_DEFINITIONS: Record<Role, RoleDef> = {
   },
   product_owner: {
     role: 'product_owner', level: 1, label: 'Product Owner',
-    description: 'Full platform access including account and configuration management.',
+    description: 'Full business and configuration access, excluding administrator governance.',
     requiresRegion: false, requiresCategory: false, category: null, global: true,
     permissions: PRODUCT_OWNER_PERMS,
   },

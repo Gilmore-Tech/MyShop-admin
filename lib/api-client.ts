@@ -5,7 +5,8 @@
  */
 import {
   effectiveAdminPermissions,
-  isGlobalAdminRole,
+  hasGlobalRole,
+  hasRole,
   type Permission,
   type Role,
   type CategoryScope,
@@ -54,7 +55,7 @@ export function getAdminUser(): AdminUser | null {
   try {
     const user = JSON.parse(raw) as AdminUser
     if (!user || typeof user !== 'object') return null
-    const hasGlobalScope = isGlobalAdminRole(user.role)
+    const hasGlobalScope = hasGlobalRole(user.roles, user.role)
     return {
       ...user,
       permissions: effectiveAdminPermissions(user.role, user.permissions),
@@ -93,6 +94,7 @@ export interface AdminUser {
   // Named role + data scope (mirrors the backend). `role` null = legacy/custom
   // admin; `regionId`/`categoryScope` null = global (owner/director/accountant).
   role: Role | null
+  roles: Role[]
   regionId: string | null
   regionName: string | null
   categoryScope: CategoryScope | null
@@ -107,7 +109,8 @@ export function applyAdminRegionScopeHeader(headers: Headers): Headers {
   const activeRegionId = localStorage.getItem(ADMIN_REGION_KEY)?.trim()
   if (
     activeRegionId &&
-    (admin?.role === 'super_admin' || admin?.role === 'product_owner')
+    (hasRole(admin?.roles, admin?.role, 'super_admin') ||
+      hasRole(admin?.roles, admin?.role, 'product_owner'))
   ) {
     headers.set('X-MyShop-Region-Id', activeRegionId)
   }
