@@ -22,11 +22,12 @@ import { PermissionPicker, GrantedPermissions } from '@/components/admin/permiss
 import {
  listAdmins, createAdmin, updateAdminPermissions, deactivateAdmin,
  reactivateAdmin, resetAdminPassword, deleteAdmin, listRegions,
- type AdminAccount, type Region,
+ listAdminRolePolicies, updateAdminRolePolicy,
+ type AdminAccount, type AdminRolePolicy, type Region,
 } from '@/lib/api'
 import { ApiError, getAdminUser } from '@/lib/api-client'
 import {
- PERMISSION_LABELS, ROLE_DEFINITIONS, ROLE_ORDER, roleLabel, permissionsForRole,
+ PERMISSION_LABELS, ROLE_DEFINITIONS, ROLE_ORDER, roleLabel,
  type Permission, type Role,
 } from '@/lib/roles'
 import { formatDateTime } from '@/lib/format-date'
@@ -48,6 +49,7 @@ type DialogMode =
  | { type:'reset-password'; admin: AdminAccount }
  | { type:'deactivate'; admin: AdminAccount }
  | { type:'delete'; admin: AdminAccount }
+ | { type:'role-policy'; policy: AdminRolePolicy }
 
 export default function AdminAccountsPage() {
  const [admins, setAdmins] = useState<AdminAccount[]>([])
@@ -64,16 +66,15 @@ export default function AdminAccountsPage() {
  const [newEmail, setNewEmail] = useState('')
  const [newFullName, setNewFullName] = useState('')
  const [newPassword, setNewPassword] = useState('')
- const [newRole, setNewRole] = useState<Role>('admin')
+ const [newRoles, setNewRoles] = useState<Role[]>(['admin'])
  const [newRegionId, setNewRegionId] = useState('')
- const [newPermissions, setNewPermissions] = useState<Permission[]>(permissionsForRole('admin'))
- const [showAdvanced, setShowAdvanced] = useState(false)
 
- // ── Permission edit state
- const [editRole, setEditRole] = useState<Role | ''>('')
+ // ── Role assignment state
+ const [editRoles, setEditRoles] = useState<Role[]>([])
  const [editRegionId, setEditRegionId] = useState('')
- const [editPermissions, setEditPermissions] = useState<Permission[]>([])
- const [editAdvanced, setEditAdvanced] = useState(false)
+ const [rolePolicies, setRolePolicies] = useState<AdminRolePolicy[]>([])
+ const [policyPermissions, setPolicyPermissions] = useState<Permission[]>([])
+ const [policyReason, setPolicyReason] = useState('')
 
  // ── Regions (for the scope picker)
  const [regions, setRegions] = useState<Region[]>([])
@@ -91,8 +92,9 @@ export default function AdminAccountsPage() {
  setLoading(true)
  setError('')
  try {
- const data = await listAdmins()
+ const [data, policies] = await Promise.all([listAdmins(), listAdminRolePolicies()])
  setAdmins(data)
+ setRolePolicies(policies)
  } catch (err) {
  setError(err instanceof ApiError ? err.message :'Failed to load admin accounts.')
  } finally {
@@ -108,19 +110,19 @@ export default function AdminAccountsPage() {
  setDeleteConfirm('')
  }
  if (mode.type ==='permissions') {
- const r = (mode.admin.role ?? '') as Role | ''
- setEditRole(r)
+ setEditRoles(mode.admin.roles?.length ? mode.admin.roles : mode.admin.role ? [mode.admin.role] : [])
  setEditRegionId(mode.admin.regionId ?? '')
- setEditPermissions(mode.admin.permissions ?? [])
- setEditAdvanced(false)
  }
  if (mode.type ==='create') {
  setNewEmail(''); setNewFullName('')
- setNewPassword(''); setNewRole('admin'); setNewRegionId('')
- setNewPermissions(permissionsForRole('admin')); setShowAdvanced(false)
+ setNewPassword(''); setNewRoles(['admin']); setNewRegionId('')
  }
  if (mode.type ==='reset-password') {
  setNewPw(''); setConfirmPw('')
+ }
+ if (mode.type === 'role-policy') {
+ setPolicyPermissions(mode.policy.permissions)
+ setPolicyReason('')
  }
  setDialog(mode)
  }
@@ -133,28 +135,26 @@ export default function AdminAccountsPage() {
  if (dialog.type ==='create') {
  if (!newEmail || !newFullName || !newPassword)
  { setSubmitError('Email, full name and password are required.'); setSubmitting(false); return }
- const def = ROLE_DEFINITIONS[newRole]
- if (def.requiresRegion && !newRegionId)
- { setSubmitError(`${def.label} must be assigned to a region.`); setSubmitting(false); return }
+ if (newRoles.length === 0)
+ { setSubmitError('Select at least one role.'); setSubmitting(false); return }
+ const needsRegion = newRoles.every(role => ROLE_DEFINITIONS[role].requiresRegion)
+ if (needsRegion && !newRegionId)
+ { setSubmitError('Select the region shared by these roles.'); setSubmitting(false); return }
  await createAdmin({
  email: newEmail.trim(), fullName: newFullName.trim(), password: newPassword,
- role: newRole,
- regionId: def.requiresRegion ? newRegionId : undefined,
- permissions: showAdvanced ? newPermissions : undefined,
+ roles: newRoles as Exclude<Role, 'super_admin'>[],
+ regionId: needsRegion ? newRegionId : undefined,
  })
  } else if (dialog.type ==='permissions') {
- if (editRole) {
- const def = ROLE_DEFINITIONS[editRole]
- if (def.requiresRegion && !editRegionId)
- { setSubmitError(`${def.label} must be assigned to a region.`); setSubmitting(false); return }
+ if (editRoles.length === 0)
+ { setSubmitError('Select at least one role.'); setSubmitting(false); return }
+ const needsRegion = editRoles.every(role => ROLE_DEFINITIONS[role].requiresRegion)
+ if (needsRegion && !editRegionId)
+ { setSubmitError('Select the region shared by these roles.'); setSubmitting(false); return }
  await updateAdminPermissions(dialog.admin.id, {
- role: editRole,
- regionId: def.requiresRegion ? editRegionId : undefined,
- permissions: editAdvanced ? editPermissions : undefined,
+ roles: editRoles as Exclude<Role, 'super_admin'>[],
+ regionId: needsRegion ? editRegionId : undefined,
  })
- } else {
- await updateAdminPermissions(dialog.admin.id, { permissions: editPermissions })
- }
  } else if (dialog.type ==='reset-password') {
  if (newPw.length < 8) { setSubmitError('Password must be at least 8 characters.'); setSubmitting(false); return }
  if (newPw !== confirmPw) { setSubmitError('Passwords do not match.'); setSubmitting(false); return }
@@ -163,6 +163,10 @@ export default function AdminAccountsPage() {
  await deactivateAdmin(dialog.admin.id)
  } else if (dialog.type ==='delete') {
  await deleteAdmin(dialog.admin.id)
+ } else if (dialog.type === 'role-policy') {
+ if (policyReason.trim().length < 10)
+ { setSubmitError('Enter an audit reason of at least 10 characters.'); setSubmitting(false); return }
+ await updateAdminRolePolicy(dialog.policy.role, policyPermissions, policyReason.trim())
  }
  setDialog(null)
  await load()
@@ -173,15 +177,13 @@ export default function AdminAccountsPage() {
  }
  }
 
- function pickNewRole(r: Role) {
- setNewRole(r)
- setNewPermissions(permissionsForRole(r))
- if (!ROLE_DEFINITIONS[r].requiresRegion) setNewRegionId('')
+ function toggleRole(roles: Role[], role: Role, apply: (next: Role[]) => void) {
+ const next = roles.includes(role) ? roles.filter(item => item !== role) : [...roles, role]
+ apply(next)
+ if (next.some(item => !ROLE_DEFINITIONS[item].requiresRegion)) {
+ if (apply === setNewRoles) setNewRegionId('')
+ if (apply === setEditRoles) setEditRegionId('')
  }
- function pickEditRole(r: Role) {
- setEditRole(r)
- setEditPermissions(permissionsForRole(r))
- if (!ROLE_DEFINITIONS[r].requiresRegion) setEditRegionId('')
  }
 
  async function toggleActive(admin: AdminAccount) {
@@ -210,7 +212,13 @@ export default function AdminAccountsPage() {
  key: 'admin', header: 'Admin',
  render: admin => <AvatarCell name={admin.fullName} sub={admin.email} />,
  },
- { key: 'role', header: 'Role', render: admin => <span className="text-sm text-gray-700">{roleLabel(admin.role)}</span> },
+ { key: 'role', header: 'Roles', className: 'whitespace-normal', render: admin => (
+ <div className="flex flex-wrap gap-1">
+ {(admin.roles?.length ? admin.roles : admin.role ? [admin.role] : []).map(role => (
+ <span key={role} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{roleLabel(role)}</span>
+ ))}
+ </div>
+ ) },
  {
  key: 'scope', header: 'Scope', className: 'whitespace-normal',
  render: admin => (
@@ -253,7 +261,7 @@ export default function AdminAccountsPage() {
  <div>
  <PageHeader
  title="Admin accounts"
- subtitle="Only the root admin can create accounts and assign permissions"
+ subtitle="Only the Super Administrator can assign role tags and edit role access"
  actions={
  <Button onClick={() => openDialog({ type:'create' })} variant="brand" className="gap-2">
  <Plus className="h-4 w-4" /> Create admin
@@ -264,6 +272,7 @@ export default function AdminAccountsPage() {
  <Tabs defaultValue="accounts">
  <TabsList className="bg-white mb-6">
  <TabsTrigger value="accounts">Admin accounts</TabsTrigger>
+ <TabsTrigger value="roles">Role permissions</TabsTrigger>
  </TabsList>
 
  <TabsContent value="accounts">
@@ -291,9 +300,11 @@ export default function AdminAccountsPage() {
  <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'view', admin })}>
  <Eye className="h-4 w-4" /> View permissions
  </DropdownMenuItem>
+ {!admin.roles?.includes('super_admin') && admin.id !== currentAdminId && (
  <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'permissions', admin })}>
- <Shield className="h-4 w-4" /> Edit permissions
+ <Shield className="h-4 w-4" /> Edit role tags
  </DropdownMenuItem>
+ )}
  <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'reset-password', admin })}>
  <KeyRound className="h-4 w-4" /> Reset password
  </DropdownMenuItem>
@@ -314,6 +325,27 @@ export default function AdminAccountsPage() {
  )}
  minWidth={900}
  />
+ </TabsContent>
+
+ <TabsContent value="roles">
+ <div className="grid gap-4 lg:grid-cols-2">
+ {rolePolicies.map(policy => (
+ <div key={policy.role} className="rounded-xl border border-gray-200 bg-white p-5">
+ <div className="flex items-start justify-between gap-4">
+ <div>
+ <h3 className="font-semibold text-gray-900">{policy.label}</h3>
+ <p className="mt-1 text-xs text-gray-500">{policy.description}</p>
+ </div>
+ <Button size="sm" variant="outline" onClick={() => openDialog({ type: 'role-policy', policy })}>
+ Edit access
+ </Button>
+ </div>
+ <p className="mt-3 text-xs text-gray-500">
+ {policy.permissions.length} permissions - {policy.customized ? `reviewed revision ${policy.revision}` : 'default bundle'}
+ </p>
+ </div>
+ ))}
+ </div>
  </TabsContent>
  </Tabs>
 
@@ -339,19 +371,19 @@ export default function AdminAccountsPage() {
  <Label>Password</Label>
  <Input type="password" placeholder="Min 8 characters" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
  </div>
- <div className="space-y-1.5">
- <Label>Role</Label>
- <Select value={newRole} onValueChange={v => pickNewRole(v as Role)}>
- <SelectTrigger><SelectValue /></SelectTrigger>
- <SelectContent>
- {ROLE_ORDER.map(r => (
- <SelectItem key={r} value={r}>{ROLE_DEFINITIONS[r].label}</SelectItem>
+ <div className="space-y-2">
+ <Label>Role tags</Label>
+ <div className="flex flex-wrap gap-2">
+ {ROLE_ORDER.map(role => (
+ <button key={role} type="button" onClick={() => toggleRole(newRoles, role, setNewRoles)}
+ className={`rounded-full border px-3 py-1.5 text-xs ${newRoles.includes(role) ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-600'}`}>
+ {ROLE_DEFINITIONS[role].label}
+ </button>
  ))}
- </SelectContent>
- </Select>
- <p className="text-xs text-gray-400">{ROLE_DEFINITIONS[newRole].description}</p>
  </div>
- {ROLE_DEFINITIONS[newRole].requiresRegion && (
+ <p className="text-xs text-gray-400">Access is the union of every selected role.</p>
+ </div>
+ {newRoles.length > 0 && newRoles.every(role => ROLE_DEFINITIONS[role].requiresRegion) && (
  <div className="space-y-1.5">
  <Label>Region</Label>
  <Select value={newRegionId} onValueChange={setNewRegionId}>
@@ -362,17 +394,6 @@ export default function AdminAccountsPage() {
  </Select>
  </div>
  )}
- {ROLE_DEFINITIONS[newRole].category && (
- <p className="text-xs text-gray-500">Category scope: <strong>{ROLE_DEFINITIONS[newRole].category === 'rides' ? 'Rides' : 'Artisan'}</strong> (set by the role)</p>
- )}
- <div className="space-y-1.5">
- <button type="button" className="text-xs text-orange-600 hover:underline" onClick={() => setShowAdvanced(v => !v)}>
- {showAdvanced ? 'Hide' : 'Show'} advanced permission overrides
- </button>
- {showAdvanced && (
- <PermissionPicker value={newPermissions} onChange={setNewPermissions} excludeKeys={['manage_admins']} />
- )}
- </div>
  </FormDialog>
 
  {/* ── View Permissions Dialog ──────────────────────────────────────────── */}
@@ -396,48 +417,42 @@ export default function AdminAccountsPage() {
  </div>
  <DialogFooter>
  <Button variant="outline" onClick={() => setDialog(null)}>Close</Button>
+ {dialog?.type === 'view' && !dialog.admin.roles?.includes('super_admin') && dialog.admin.id !== currentAdminId && (
  <Button
- onClick={() => { if (dialog?.type ==='view') openDialog({ type:'permissions', admin: dialog.admin }) }}
+ onClick={() => openDialog({ type:'permissions', admin: dialog.admin })}
  variant="brand"
  className="gap-2"
  >
- <Pencil className="h-4 w-4" /> Edit permissions
+ <Pencil className="h-4 w-4" /> Edit role tags
  </Button>
+ )}
  </DialogFooter>
  </DialogContent>
  </Dialog>
 
- {/* ── Edit Permissions Dialog ──────────────────────────────────────────── */}
+ {/* ── Edit Role Tags Dialog ────────────────────────────────────────────── */}
  <FormDialog
  open={dialog?.type === 'permissions'}
  onClose={() => setDialog(null)}
- title={`Edit permissions - ${dialog?.type === 'permissions' ? dialog.admin.fullName : ''}`}
+ title={`Edit role tags - ${dialog?.type === 'permissions' ? dialog.admin.fullName : ''}`}
  submitLabel="Save changes"
  onSubmit={handleSubmit}
  loading={submitting}
  error={submitError || null}
  >
- {dialog?.type ==='permissions' && dialog.admin.id === currentAdminId && (
- <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
- You can&apos;t remove your own <strong>Manage admins</strong> permission.
- </p>
- )}
- <p className="text-xs text-gray-400">
- Changes take effect on this admin&apos;s next sign-in.
- </p>
- <div className="space-y-1.5">
- <Label>Role</Label>
- <Select value={editRole} onValueChange={v => pickEditRole(v as Role)}>
- <SelectTrigger><SelectValue placeholder="Custom (no role)" /></SelectTrigger>
- <SelectContent>
- {ROLE_ORDER.map(r => (
- <SelectItem key={r} value={r}>{ROLE_DEFINITIONS[r].label}</SelectItem>
+ <p className="text-xs text-gray-400">Changes are enforced by the backend on the next request.</p>
+ <div className="space-y-2">
+ <Label>Role tags</Label>
+ <div className="flex flex-wrap gap-2">
+ {ROLE_ORDER.map(role => (
+ <button key={role} type="button" onClick={() => toggleRole(editRoles, role, setEditRoles)}
+ className={`rounded-full border px-3 py-1.5 text-xs ${editRoles.includes(role) ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-600'}`}>
+ {ROLE_DEFINITIONS[role].label}
+ </button>
  ))}
- </SelectContent>
- </Select>
- {editRole && <p className="text-xs text-gray-400">{ROLE_DEFINITIONS[editRole].description}</p>}
  </div>
- {editRole && ROLE_DEFINITIONS[editRole].requiresRegion && (
+ </div>
+ {editRoles.length > 0 && editRoles.every(role => ROLE_DEFINITIONS[role].requiresRegion) && (
  <div className="space-y-1.5">
  <Label>Region</Label>
  <Select value={editRegionId} onValueChange={setEditRegionId}>
@@ -448,18 +463,24 @@ export default function AdminAccountsPage() {
  </Select>
  </div>
  )}
+ </FormDialog>
+
+ <FormDialog
+ open={dialog?.type === 'role-policy'}
+ onClose={() => setDialog(null)}
+ title={`Edit role access - ${dialog?.type === 'role-policy' ? dialog.policy.label : ''}`}
+ submitLabel="Save role access"
+ onSubmit={handleSubmit}
+ loading={submitting}
+ error={submitError || null}
+ >
+ <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
+ This changes access for every administrator carrying this role tag.
+ </p>
+ <PermissionPicker value={policyPermissions} onChange={setPolicyPermissions} excludeKeys={['manage_admins']} />
  <div className="space-y-1.5">
- <button type="button" className="text-xs text-orange-600 hover:underline" onClick={() => setEditAdvanced(v => !v)}>
- {editAdvanced ? 'Hide' : 'Show'} advanced permission overrides
- </button>
- {(editAdvanced || !editRole) && (
- <PermissionPicker
- value={editPermissions}
- onChange={setEditPermissions}
- excludeKeys={['manage_admins']}
- disabledKeys={dialog?.type ==='permissions' && dialog.admin.id === currentAdminId ? ['manage_admins'] : []}
- />
- )}
+ <Label>Reason for changing this role</Label>
+ <Input value={policyReason} onChange={event => setPolicyReason(event.target.value)} placeholder="Explain why this access bundle is changing" />
  </div>
  </FormDialog>
 

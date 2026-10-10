@@ -22,6 +22,7 @@ import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { userSafeAdminError } from '@/lib/api-client'
 import type { RidePricingSummary } from '@/lib/ride-pricing-contract'
 import { formatGhs } from '@/lib/money'
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
 
 type SelectedMarker = LiveMapMarker & { detail: Record<string, unknown> | null }
 
@@ -343,6 +344,7 @@ function JobsTable() {
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 export default function LiveMapPage() {
+  const { activeRegionId } = useAdminRegionScope()
   const [markers, setMarkers]         = useState<LiveMapMarker[]>([])
   const [showFilter, setShowFilter]   = useState('both')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -402,7 +404,7 @@ export default function LiveMapPage() {
     const token = typeof window !== 'undefined' ? localStorage.getItem('myshop_admin_token') : null
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'https://myshop-api-2hy2.onrender.com'
     const socket: Socket = io(wsUrl, {
-      auth: { token },
+      auth: { token, regionId: activeRegionId },
       transports: ['websocket'],
       reconnectionAttempts: 5,
     })
@@ -412,7 +414,7 @@ export default function LiveMapPage() {
     socket.on('admin:marker:updated', applyMarkerUpdate)
 
     return () => { socket.disconnect() }
-  }, [applyMarkerUpdate])
+  }, [activeRegionId, applyMarkerUpdate])
 
   async function handleMarkerClick(m: LiveMapMarker) {
     if (selected?.bookingId === m.bookingId) { setSelected(null); return }

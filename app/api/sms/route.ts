@@ -22,18 +22,27 @@ const ROLE_MAP: Record<SmsAudience, readonly RoleAccountRole[]> = {
 // The Arkesel route runs in Next.js, outside Nest's guards. Ask a harmless
 // backend endpoint protected by the same permission to validate both the JWT
 // and the current database-backed `send_announcement` grant before spending.
-async function authorizeAnnouncement(token: string): Promise<Response> {
+function backendHeaders(token: string, regionId?: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+    ...(regionId ? { 'X-MyShop-Region-Id': regionId } : {}),
+  }
+}
+
+async function authorizeAnnouncement(token: string, regionId?: string): Promise<Response> {
   return fetch(`${BACKEND_BASE}/admin/announcements/history`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: backendHeaders(token, regionId),
   })
 }
 
 // ── Fetch all phone numbers from NestJS backend for a given role ──────────────
 
-async function fetchPhones(role: RoleAccountRole, token: string): Promise<string[]> {
+async function fetchPhones(
+  role: RoleAccountRole,
+  token: string,
+  regionId?: string,
+): Promise<string[]> {
   const phones: string[] = []
   let page = 1
   const limit = 500
@@ -43,10 +52,7 @@ async function fetchPhones(role: RoleAccountRole, token: string): Promise<string
     params.set('role', role)
 
     const res = await fetch(`${BACKEND_BASE}/admin/users?${params}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: backendHeaders(token, regionId),
     })
 
     if (!res.ok) {
@@ -189,12 +195,13 @@ export async function POST(req: NextRequest) {
 
     // Extract admin JWT from the incoming request
     const authHeader = req.headers.get('authorization') ?? ''
+    const operationalRegionId = req.headers.get('x-myshop-region-id')?.trim() || undefined
     const token = authHeader.replace(/^Bearer\s+/i, '')
     if (!token) {
       return errorResponse(401, 'ADMIN_SESSION_REQUIRED', 'Sign in before sending announcements.')
     }
 
-    const authorization = await authorizeAnnouncement(token)
+    const authorization = await authorizeAnnouncement(token, operationalRegionId)
     if (!authorization.ok) {
       const status = authorization.status === 401 || authorization.status === 403
         ? authorization.status
@@ -214,7 +221,9 @@ export async function POST(req: NextRequest) {
     // shared by multiple role accounts receives one copy of a broad broadcast.
     const phones = recipient
       ? [recipient]
-      : [...new Set((await Promise.all(ROLE_MAP[audience!].map(role => fetchPhones(role, token)))).flat())]
+      : [...new Set((await Promise.all(
+          ROLE_MAP[audience!].map(role => fetchPhones(role, token, operationalRegionId)),
+        )).flat())]
     if (phones.length === 0) {
       return errorResponse(404, 'AUDIENCE_EMPTY', 'No valid recipients were found for this audience.')
     }

@@ -10,12 +10,15 @@ import {
   ROLE_DEFINITIONS,
 } from '../lib/roles.ts'
 
-test('Super Admin exposes the complete permission catalogue without inheriting from manage_admins', () => {
+test('only Super Admin synthesizes the full catalogue; other roles trust backend access', () => {
   assert.equal(isSuperAdminRole('product_owner'), false)
   assert.equal(isSuperAdminRole('super_admin'), true)
   assert.equal(isSuperAdminRole('admin'), false)
-  assert.deepEqual(effectiveAdminPermissions('product_owner', []), ALL_PERMISSIONS)
-  assert.deepEqual(ROLE_DEFINITIONS.product_owner.permissions, ALL_PERMISSIONS)
+  assert.deepEqual(effectiveAdminPermissions('product_owner', ['view_dashboard']), ['view_dashboard'])
+  assert.deepEqual(
+    ROLE_DEFINITIONS.product_owner.permissions,
+    ALL_PERMISSIONS.filter(permission => permission !== 'manage_admins'),
+  )
   assert.deepEqual(effectiveAdminPermissions('admin', ['manage_admins']), ['manage_admins'])
 })
 

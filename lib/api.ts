@@ -13,6 +13,7 @@ import {
   API_BASE,
   getToken,
   apiErrorFromResponse,
+  applyAdminRegionScopeHeader,
 } from './api-client'
 import type { Permission, Role, CategoryScope } from './roles'
 import type { ReportGroupBy } from './format-date'
@@ -453,16 +454,38 @@ export interface PilotMetric {
   label: string
   key: string
   target: number
-  actual: number
+  actual: number | null
   unit: string
 }
 
 export async function getPilotReport(): Promise<PilotMetric[]> {
   const raw = await api.get<any>('/admin/reports/pilot')
-  if (Array.isArray(raw)) return raw
-  if (Array.isArray(raw?.metrics)) return raw.metrics
-  if (Array.isArray(raw?.items)) return raw.items
-  return []
+  const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.metrics) ? raw.metrics : Array.isArray(raw?.items) ? raw.items : []
+  const metadata: Record<string, { label: string; unit: string }> = {
+    registeredClients: { label: 'Registered clients', unit: '' },
+    approvedDrivers: { label: 'Approved drivers', unit: '' },
+    approvedArtisans: { label: 'Approved artisans', unit: '' },
+    completedRides: { label: 'Completed rides', unit: '' },
+    completedJobs: { label: 'Completed jobs', unit: '' },
+    avgRating: { label: 'Average rating', unit: '' },
+    providerRetentionPct: { label: 'Provider retention', unit: '%' },
+    ussdSessions: { label: 'USSD sessions', unit: '' },
+    paymentSuccessRatePct: { label: 'Payment success rate', unit: '%' },
+    avgPickupMins: { label: 'Average pickup time', unit: ' min' },
+  }
+  return rows.map((row: any, index: number) => {
+    const key = String(row?.key ?? row?.metric ?? `metric-${index}`)
+    const meta = metadata[key] ?? { label: key, unit: '' }
+    const actual = Number(row?.actual)
+    const target = Number(row?.target)
+    return {
+      key,
+      label: String(row?.label ?? meta.label),
+      actual: row?.actual === null || row?.actual === undefined || !Number.isFinite(actual) ? null : actual,
+      target: Number.isFinite(target) ? target : 0,
+      unit: String(row?.unit ?? meta.unit),
+    }
+  })
 }
 
 // ── Live Map ──────────────────────────────────────────────────────────────────
@@ -1726,6 +1749,7 @@ export async function uploadProviderPhoto(
   const headers = new Headers()
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  applyAdminRegionScopeHeader(headers)
   // Intentionally no Content-Type — the browser sets the multipart boundary.
 
   const res = await fetch(`${API_BASE}${roleAccountPath(role, roleAccountId, 'profile-photo')}`, {
@@ -1881,6 +1905,7 @@ export async function uploadProviderDocument(
   const headers = new Headers()
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  applyAdminRegionScopeHeader(headers)
   // Intentionally no Content-Type — the browser sets the multipart boundary.
 
   const res = await fetch(
@@ -2247,6 +2272,9 @@ export interface Region {
   id: string
   name: string
   code: string
+  ridesEnabled: boolean
+  jobsEnabled: boolean
+  serviceAreaName: string | null
 }
 
 export interface AdminAccount {
@@ -2254,6 +2282,7 @@ export interface AdminAccount {
   email: string
   fullName: string
   role: Role | null
+  roles: Role[]
   permissions: Permission[]
   regionId: string | null
   categoryScope: CategoryScope | null
@@ -2264,9 +2293,23 @@ export interface AdminAccount {
   createdAt: string
 }
 
+export interface AdminRolePolicy {
+  role: Exclude<Role, 'super_admin'>
+  label: string
+  description: string
+  requiresRegion: boolean
+  category: CategoryScope | null
+  permissions: Permission[]
+  revision: number
+  customized: boolean
+  updatedAt: string | null
+}
+
 // GET /admin/regions — active operational regions for the account picker.
 export function listRegions() {
-  return api.get<Region[]>('/admin/regions')
+  // Keep the catalogue nationwide so a global operator can switch away from
+  // the currently selected operational region.
+  return api.get<Region[]>('/admin/regions', { skipRegionScope: true })
 }
 
 export function listAdmins() {
@@ -2277,16 +2320,14 @@ export function getAdmin(adminId: string) {
   return api.get<AdminAccount>(`/admin/admins/${adminId}`)
 }
 
-// Role-first create. Supply `role` (+ `regionId` for region-scoped roles); the
-// backend derives permissions + category scope. `permissions` is an optional
-// advanced override.
+// Role-tag create/update. The backend derives effective permissions from the
+// reviewed bundles; individual account overrides are deliberately unsupported.
 export function createAdmin(data: {
   email: string
   fullName: string
   password: string
-  role?: Role
+  roles: Exclude<Role, 'super_admin'>[]
   regionId?: string
-  permissions?: Permission[]
 }) {
   return api.post<AdminAccount>('/admin/admins', data)
 }
@@ -2296,9 +2337,24 @@ export function createAdmin(data: {
 // manage_admins from the last holder.
 export function updateAdminPermissions(
   adminId: string,
-  data: { role?: Role; regionId?: string; permissions?: Permission[] }
+  data: { roles: Exclude<Role, 'super_admin'>[]; regionId?: string }
 ) {
   return api.patch<AdminAccount>(`/admin/admins/${adminId}/permissions`, data)
+}
+
+export function listAdminRolePolicies() {
+  return api.get<AdminRolePolicy[]>('/admin/admins/role-policies')
+}
+
+export function updateAdminRolePolicy(
+  role: Exclude<Role, 'super_admin'>,
+  permissions: Permission[],
+  reason: string,
+) {
+  return api.patch<AdminRolePolicy>(`/admin/admins/role-policies/${role}`, {
+    permissions,
+    reason,
+  })
 }
 
 export function deactivateAdmin(adminId: string) {
@@ -2681,8 +2737,9 @@ function normaliseRideCategory(raw: any): RideCategory {
 // GET /admin/ride-categories — all tiers, including inactive, ordered by sortOrder.
 // The api-client unwrap() already peels the { success, data } envelope; we also
 // tolerate a bare array in case the interceptor shape differs (see §3 of the spec).
-export async function getRideCategories(): Promise<RideCategory[]> {
-  const raw = await api.get<any>('/admin/ride-categories')
+export async function getRideCategories(regionId?: string): Promise<RideCategory[]> {
+  const query = regionId ? `?regionId=${encodeURIComponent(regionId)}` : ''
+  const raw = await api.get<any>(`/admin/ride-categories${query}`)
   const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.items ?? [])
   return list.map(normaliseRideCategory).sort((a, b) => a.sortOrder - b.sortOrder)
 }
@@ -2729,6 +2786,91 @@ export async function updateRideCategory(
 ): Promise<RideCategory> {
   const raw = await api.patch<any>(`/admin/ride-categories/${id}`, data)
   return normaliseRideCategory(raw?.data ?? raw)
+}
+
+export async function updateRegionRideCategory(
+  regionId: string,
+  id: string,
+  data: Partial<{
+    isEnabled: boolean
+    baseFarePesewas: number
+    perKmPesewas: number
+    perMinPesewas: number
+    minimumFarePesewas: number
+    sortOrder: number
+  }>,
+): Promise<RideCategory> {
+  await api.patch<unknown>(`/admin/regions/${regionId}/ride-categories/${id}`, data)
+  const refreshed = await getRideCategories(regionId)
+  const category = refreshed.find(item => item.id === id)
+  if (!category) throw new Error('The updated regional ride tier was not returned.')
+  return category
+}
+
+export interface RideRemoteAreaZone {
+  id: string
+  regionId: string
+  regionName: string
+  stableKey: string
+  label: string
+  adjustmentRateBps: number
+  pickupMaxRadiusKm: number
+  isActive: boolean
+  boundary: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown[] }
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RideRemoteAreaZoneInput {
+  stableKey: string
+  label: string
+  adjustmentRateBps: number
+  pickupMaxRadiusKm: number
+  isActive: boolean
+  boundary: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown[] }
+  reason: string
+}
+
+function normaliseRideRemoteAreaZone(raw: any): RideRemoteAreaZone {
+  return {
+    id: String(raw.id),
+    regionId: String(raw.regionId ?? raw.region_id),
+    regionName: String(raw.regionName ?? raw.region_name ?? ''),
+    stableKey: String(raw.stableKey ?? raw.stable_key ?? ''),
+    label: String(raw.label ?? ''),
+    adjustmentRateBps: Number(raw.adjustmentRateBps ?? raw.adjustment_rate_bps ?? 0),
+    pickupMaxRadiusKm: Number(raw.pickupMaxRadiusKm ?? raw.pickup_max_radius_km ?? 0),
+    isActive: Boolean(raw.isActive ?? raw.is_active),
+    boundary: raw.boundary,
+    createdAt: String(raw.createdAt ?? raw.created_at ?? ''),
+    updatedAt: String(raw.updatedAt ?? raw.updated_at ?? ''),
+  }
+}
+
+export async function listRideRemoteAreaZones(regionId: string): Promise<RideRemoteAreaZone[]> {
+  const raw = await api.get<any>(`/admin/regions/${regionId}/ride-remote-area-zones`)
+  const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.items ?? [])
+  return list.map(normaliseRideRemoteAreaZone)
+}
+
+export async function createRideRemoteAreaZone(
+  regionId: string,
+  input: RideRemoteAreaZoneInput,
+): Promise<RideRemoteAreaZone> {
+  const raw = await api.post<any>(`/admin/regions/${regionId}/ride-remote-area-zones`, input)
+  return normaliseRideRemoteAreaZone(raw?.data ?? raw)
+}
+
+export async function updateRideRemoteAreaZone(
+  regionId: string,
+  zoneId: string,
+  input: RideRemoteAreaZoneInput,
+): Promise<RideRemoteAreaZone> {
+  const raw = await api.patch<any>(
+    `/admin/regions/${regionId}/ride-remote-area-zones/${zoneId}`,
+    input,
+  )
+  return normaliseRideRemoteAreaZone(raw?.data ?? raw)
 }
 
 // ── Distance fare safeguard policy ───────────────────────────────────────────
@@ -4428,6 +4570,7 @@ export type {
 } from './promo-campaign-contract'
 
 export async function listPromoCampaigns(params?: {
+  regionId?: string
   status?: PromoCampaignStatus
   audience?: PromoCampaignAudience
   page?: number
@@ -4453,6 +4596,7 @@ export async function getPromoCampaign(campaignId: string): Promise<PromoCampaig
 }
 
 export interface CreatePromoCampaignInput {
+  regionId: string
   name: string
   description?: string
   termsText?: string
@@ -4586,6 +4730,7 @@ export async function uploadPromoCampaignBanner(
   const headers = new Headers()
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  applyAdminRegionScopeHeader(headers)
   // Intentionally no Content-Type — the browser sets the multipart boundary.
 
   const res = await fetch(

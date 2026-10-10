@@ -1,6 +1,6 @@
 'use client'
 
-import { Bell, LogOut, AlertTriangle, ShieldAlert, Flag, BadgeAlert, ServerCrash, HeartPulse, Info, CheckCheck, X, ChevronRight, UserCog } from 'lucide-react'
+import { Bell, LogOut, AlertTriangle, ShieldAlert, Flag, BadgeAlert, ServerCrash, HeartPulse, Info, CheckCheck, X, ChevronRight, UserCog, MapPin } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -17,6 +17,8 @@ import {
   type AdminNotification, type AdminNotificationType,
 } from '@/lib/api'
 import { ProfileDialog } from '@/components/admin/profile-dialog'
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // ─── Notification helpers ─────────────────────────────────────────────────────
 
@@ -196,6 +198,7 @@ export default function Header() {
   const [panelOpen, setPanelOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
+  const { regions, activeRegionId, activeRegion, canSelectRegion, setActiveRegionId } = useAdminRegionScope()
 
   useEffect(() => {
     setAdmin(getAdminUser())
@@ -247,6 +250,26 @@ export default function Header() {
         <Greeting name={admin?.fullName ?? null} />
 
       <div className="flex items-center gap-3 ml-auto">
+        {canSelectRegion ? (
+          <div className="hidden md:flex items-center gap-2" title="All dashboard data and actions are limited to this region">
+            <MapPin className="h-4 w-4 text-orange-500" />
+            <Select value={activeRegionId ?? undefined} onValueChange={setActiveRegionId}>
+              <SelectTrigger className="h-9 w-[190px] bg-white" aria-label="Active operational region">
+                <SelectValue placeholder="Select region" />
+              </SelectTrigger>
+              <SelectContent>
+                {regions.map(region => (
+                  <SelectItem key={region.id} value={region.id}>{region.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : activeRegion ? (
+          <div className="hidden md:flex items-center gap-1.5 rounded-lg bg-orange-50 px-2.5 py-2 text-xs font-medium text-orange-700">
+            <MapPin className="h-3.5 w-3.5" /> {activeRegion.name}
+          </div>
+        ) : null}
+
         {/* Notification bell */}
         <div className="relative" ref={bellRef}>
           <button

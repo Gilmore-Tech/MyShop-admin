@@ -49,10 +49,10 @@ test('list envelope keeps counts, pagination and drops malformed rows', () => {
   assert.deepEqual(normaliseOnlineProviders(undefined, { page: 3, limit: 10 }).page, 3)
 })
 
-test('a heartbeat older than five minutes (or missing) is stale', () => {
+test('a heartbeat older than two minutes (or missing) is stale', () => {
   const now = new Date('2026-08-22T12:10:00.000Z')
-  assert.equal(isHeartbeatStale('2026-08-22T12:06:00.000Z', now), false)
-  assert.equal(isHeartbeatStale('2026-08-22T12:04:59.000Z', now), true)
+  assert.equal(isHeartbeatStale('2026-08-22T12:08:01.000Z', now), false)
+  assert.equal(isHeartbeatStale('2026-08-22T12:07:59.000Z', now), true)
   assert.equal(isHeartbeatStale(null, now), true)
   assert.equal(isHeartbeatStale('not-a-date', now), true)
 })

@@ -2,9 +2,11 @@ import { isRecord, count, nullableNumber, nullableString, pick } from './contrac
 
 /**
  * `GET /admin/providers/online` and `/admin/providers/online/counts`.
- * "Online" is the provider's own toggle (`online_status = 'online'`); the
- * backend's zombie sweeper flips stale sessions off, and `lastSeenAt` lets the
- * UI flag anyone whose heartbeat has gone quiet.
+ * "Online" means the provider's explicit Online choice has a complete session
+ * with fresh presence evidence. The durable choice survives a recoverable
+ * connection loss, but the API excludes that disconnected session from this
+ * live operations view. `lastSeenAt` lets the UI flag a row that becomes stale
+ * after it was fetched.
  */
 export interface OnlineProviderCounts {
   driversOnline: number
@@ -96,8 +98,8 @@ export function normaliseOnlineProviders(raw: unknown, requested: { page?: numbe
   }
 }
 
-/** Heartbeats older than this are shown as "stale" (backend TTL is 5 min). */
-export const STALE_HEARTBEAT_MS = 5 * 60 * 1000
+/** Mirrors the backend's live-session freshness fence. */
+export const STALE_HEARTBEAT_MS = 2 * 60 * 1000
 
 export function isHeartbeatStale(lastSeenAt: string | null, now: Date = new Date()): boolean {
   if (!lastSeenAt) return true

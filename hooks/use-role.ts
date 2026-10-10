@@ -6,6 +6,7 @@ import {
   can,
   effectiveAdminPermissions,
   isSuperAdminRole,
+  hasRole,
   type Permission,
   type Role,
   type CategoryScope,
@@ -24,6 +25,10 @@ export function useRole() {
     if (typeof window === 'undefined') return null
     return getAdminUser()?.role ?? null
   })
+  const [roles, setRoles] = useState<Role[]>(() => {
+    if (typeof window === 'undefined') return []
+    return getAdminUser()?.roles ?? []
+  })
   const [region, setRegion] = useState<{ id: string | null; name: string | null }>(() => {
     if (typeof window === 'undefined') return { id: null, name: null }
     const u = getAdminUser()
@@ -39,11 +44,12 @@ export function useRole() {
     setPermissions(user?.permissions ?? null)
     setAdminName(user?.fullName ?? '')
     setRole(user?.role ?? null)
+    setRoles(user?.roles ?? [])
     setRegion({ id: user?.regionId ?? null, name: user?.regionName ?? null })
     setCategory(user?.categoryScope ?? null)
   }, [])
 
-  const isSuperAdmin = isSuperAdminRole(role)
+  const isSuperAdmin = hasRole(roles, role, 'super_admin') || isSuperAdminRole(role)
   const effectivePermissions: Permission[] | null = permissions === null
     ? null
     : effectiveAdminPermissions(role, permissions)
@@ -53,6 +59,7 @@ export function useRole() {
     permissions: effectivePermissions,
     adminName,
     role,
+    roles,
     // Region the admin is scoped to (null = global). `region.name` drives the
     // sidebar scope indicator and locked region filters.
     region,

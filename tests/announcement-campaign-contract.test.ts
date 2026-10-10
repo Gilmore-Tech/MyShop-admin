@@ -16,6 +16,7 @@ const proxy = readFileSync(
   new URL('../app/api/proxy/[...path]/route.ts', import.meta.url),
   'utf8',
 )
+const smsRoute = readFileSync(new URL('../app/api/sms/route.ts', import.meta.url), 'utf8')
 
 test('announcements use normalised server preview, publish, and history contracts', () => {
   assert.match(api, /api\.post<unknown>\('\/admin\/announcements\/preview', draft\)/)
@@ -36,6 +37,14 @@ test('announcement publish idempotency key survives the same-origin proxy', () =
   assert.match(proxy, /headers\.set\('idempotency-key', idempotencyKey\)/)
   assert.match(apiClient, /IDEMPOTENCY_KEY_REQUIRED:/)
   assert.match(apiClient, /INVALID_IDEMPOTENCY_KEY:/)
+})
+
+test('selected operational region survives the same-origin proxy', () => {
+  assert.match(apiClient, /applyAdminRegionScopeHeader\(headers\)/)
+  assert.match(proxy, /req\.headers\.get\('x-myshop-region-id'\)/)
+  assert.match(proxy, /headers\.set\('x-myshop-region-id', operationalRegionId\)/)
+  assert.match(smsRoute, /req\.headers\.get\('x-myshop-region-id'\)/)
+  assert.match(smsRoute, /fetchPhones\(role, token, operationalRegionId\)/)
 })
 
 test('announcement composer restores audited push, SMS, and combined channels', () => {

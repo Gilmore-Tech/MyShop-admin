@@ -5,7 +5,8 @@
  */
 import {
   effectiveAdminPermissions,
-  isGlobalAdminRole,
+  hasGlobalRole,
+  hasRole,
   type Permission,
   type Role,
   type CategoryScope,
@@ -18,6 +19,7 @@ export const API_BASE = typeof window !== 'undefined' ? '/api/proxy' : (process.
 const TOKEN_KEY = 'myshop_admin_token'
 const REFRESH_KEY = 'myshop_admin_refresh'
 const ADMIN_KEY = 'myshop_admin_user'
+export const ADMIN_REGION_KEY = 'myshop_admin_active_region'
 export const ADMIN_ACTIVITY_KEY = 'myshop_admin_last_activity'
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
@@ -42,6 +44,7 @@ export function clearTokens() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(REFRESH_KEY)
   localStorage.removeItem(ADMIN_KEY)
+  localStorage.removeItem(ADMIN_REGION_KEY)
   localStorage.removeItem(ADMIN_ACTIVITY_KEY)
 }
 
@@ -52,7 +55,7 @@ export function getAdminUser(): AdminUser | null {
   try {
     const user = JSON.parse(raw) as AdminUser
     if (!user || typeof user !== 'object') return null
-    const hasGlobalScope = isGlobalAdminRole(user.role)
+    const hasGlobalScope = hasGlobalRole(user.roles, user.role)
     return {
       ...user,
       permissions: effectiveAdminPermissions(user.role, user.permissions),
@@ -91,6 +94,7 @@ export interface AdminUser {
   // Named role + data scope (mirrors the backend). `role` null = legacy/custom
   // admin; `regionId`/`categoryScope` null = global (owner/director/accountant).
   role: Role | null
+  roles: Role[]
   regionId: string | null
   regionName: string | null
   categoryScope: CategoryScope | null
@@ -98,10 +102,27 @@ export interface AdminUser {
   regionScope: string | null
 }
 
+/** Attach the dashboard's selected operational region to a browser request. */
+export function applyAdminRegionScopeHeader(headers: Headers): Headers {
+  if (typeof window === 'undefined') return headers
+  const admin = getAdminUser()
+  const activeRegionId = localStorage.getItem(ADMIN_REGION_KEY)?.trim()
+  if (
+    activeRegionId &&
+    (hasRole(admin?.roles, admin?.role, 'super_admin') ||
+      hasRole(admin?.roles, admin?.role, 'product_owner'))
+  ) {
+    headers.set('X-MyShop-Region-Id', activeRegionId)
+  }
+  return headers
+}
+
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
 
 interface ApiOptions extends RequestInit {
   skipAuth?: boolean
+  /** Do not attach the active operational-region scope (region catalogue/admin identity calls). */
+  skipRegionScope?: boolean
   // Skip the API_BASE prefix and call the path as-is. Use for Next.js route
   // handlers like /api/sms that live on this same origin and aren't part of
   // the NestJS backend.
@@ -133,7 +154,7 @@ export const FEATURES = {
 } as const
 
 export async function apiFetch<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
-  const { skipAuth, localRoute, ...init } = options
+  const { skipAuth, skipRegionScope, localRoute, ...init } = options
   const token = getToken()
 
   const headers = new Headers(init.headers)
@@ -141,6 +162,7 @@ export async function apiFetch<T = unknown>(path: string, options: ApiOptions = 
   if (!skipAuth && token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
+  if (!skipAuth && !skipRegionScope) applyAdminRegionScopeHeader(headers)
 
   const url = localRoute ? path : `${API_BASE}${path}`
   const res = await fetch(url, { ...init, headers })
@@ -247,6 +269,9 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   INVALID_RIDE_CATEGORY_PRICING:
     'Every Comfort fare must be equal to or higher than the corresponding Regular fare.',
   INVALID_RIDE_CATEGORY_RATE: 'Enter a valid non-negative fare amount.',
+  ADMIN_REGION_REQUIRED: 'Select an operational region before continuing.',
+  ADMIN_REGION_SCOPE_MISMATCH: 'This action does not belong to the selected operational region.',
+  INVALID_ADMIN_REGION_SCOPE: 'Select an active operational region and try again.',
   RIDE_CATEGORY_NOT_FOUND: 'This ride tier no longer exists. Reload the list and try again.',
   SLUG_ALREADY_EXISTS: 'That slug is already used by another ride tier.',
   INVALID_SLUG: 'Use a lowercase slug such as "regular" or "comfort-plus".',

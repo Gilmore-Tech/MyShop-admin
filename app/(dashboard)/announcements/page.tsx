@@ -23,6 +23,7 @@ import {
   type AnnouncementDraft,
   type AnnouncementHistoryItem,
   type AnnouncementPreview,
+  type Region,
 } from '@/lib/api'
 import {
   ANNOUNCEMENT_REASON_MIN_CHARS,
@@ -37,6 +38,7 @@ import {
 import { ApiError, userSafeAdminError } from '@/lib/api-client'
 import { useRole } from '@/hooks/use-role'
 import { formatDateTime } from '@/lib/format-date'
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
 
 const AUDIENCE: {
   value: AnnouncementAudience
@@ -67,6 +69,7 @@ const CHANNEL_LABELS: Record<AnnouncementChannel, string> = {
 }
 
 export default function AnnouncementsPage() {
+  const { activeRegion } = useAdminRegionScope()
   const { category } = useRole()
   const lockedAudience: AnnouncementAudience | null =
     category === 'rides' ? 'drivers' : category === 'artisan' ? 'artisans' : null
@@ -78,6 +81,7 @@ export default function AnnouncementsPage() {
   const [history, setHistory] = useState<AnnouncementHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
+  const regions: Region[] = activeRegion ? [activeRegion] : []
 
   const loadHistory = useCallback(() => {
     setHistoryLoading(true)
@@ -188,6 +192,7 @@ export default function AnnouncementsPage() {
           onClose={() => setComposeOpen(false)}
           lockedAudience={lockedAudience}
           audienceOptions={audienceOptions}
+          regions={regions}
           onPublished={() => {
             setComposeOpen(false)
             loadHistory()
@@ -199,14 +204,16 @@ export default function AnnouncementsPage() {
 }
 
 function ComposeDialog({
-  open, onClose, lockedAudience, audienceOptions, onPublished,
+  open, onClose, lockedAudience, audienceOptions, regions, onPublished,
 }: {
   open: boolean
   onClose: () => void
   lockedAudience: AnnouncementAudience | null
   audienceOptions: typeof AUDIENCE
+  regions: Region[]
   onPublished: () => void
 }) {
+  const [regionId, setRegionId] = useState('')
   const [targetAudience, setTargetAudience] = useState<AnnouncementAudience>(lockedAudience ?? 'all')
   const [classification, setClassification] = useState<AnnouncementClassification>('service')
   const [channel, setChannel] = useState<AnnouncementChannel>('push')
@@ -221,6 +228,7 @@ function ComposeDialog({
   useEffect(() => {
     if (!open) return
     setTargetAudience(lockedAudience ?? 'all')
+    setRegionId(regions.length === 1 ? regions[0].id : '')
     setClassification('service')
     setChannel('push')
     setDestination('notifications')
@@ -229,7 +237,7 @@ function ComposeDialog({
     setReason('')
     setPreview(null)
     setError('')
-  }, [open, lockedAudience])
+  }, [open, lockedAudience, regions])
 
   function invalidatePreview() {
     setPreview(null)
@@ -238,6 +246,7 @@ function ComposeDialog({
 
   function draft(): AnnouncementDraft {
     return {
+      regionId,
       title: title.trim(),
       body: body.trim(),
       targetAudience,
@@ -294,6 +303,7 @@ function ComposeDialog({
   const reasonLength = reason.trim().length
   const reasonTooShort = reasonLength > 0 && reasonLength < ANNOUNCEMENT_REASON_MIN_CHARS
   const invalid =
+    !regionId ||
     !title.trim() ||
     !body.trim() ||
     reasonLength < ANNOUNCEMENT_REASON_MIN_CHARS ||
@@ -322,6 +332,19 @@ function ComposeDialog({
         ? 'Nothing is sent while generating a preview.'
         : 'Publishing queues this exact revision. The preview token is time-limited and single-use.'}
     >
+      <div className="space-y-1.5">
+        <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Operational region</Label>
+        <Select value={regionId} onValueChange={(value) => { setRegionId(value); invalidatePreview() }}>
+          <SelectTrigger className="bg-gray-50"><SelectValue placeholder="Select a region" /></SelectTrigger>
+          <SelectContent>
+            {regions.map((region) => (
+              <SelectItem key={region.id} value={region.id}>{region.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-gray-400">Only users currently operating in this region are included.</p>
+      </div>
+
       <div>
         <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 block">Target audience</Label>
         <div className="grid grid-cols-2 gap-2">

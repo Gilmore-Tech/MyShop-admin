@@ -14,10 +14,12 @@ import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
 import { EmptyState } from '@/components/common/empty-state'
 import { FormDialog } from '@/components/common/form-dialog'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
-import { getRideCategories, createRideCategory, updateRideCategory, type RideCategory } from '@/lib/api'
+import { getRideCategories, createRideCategory, updateRideCategory, updateRegionRideCategory, type RideCategory } from '@/lib/api'
 import { formatGhs } from '@/lib/money'
 import { presentRideCategorySaveError } from '@/lib/ride-category-errors'
 import { DistanceFareSafeguardCard } from './_components/distance-fare-safeguard-card'
+import { RemoteAreaZonesCard } from './_components/remote-area-zones-card'
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
 
 // ── Money helpers ───────────────────────────────────────────────────────────────
 // All rates travel as integer pesewas (GHS 26.00 = 2600). Display in GHS, send
@@ -67,10 +69,11 @@ const EMPTY_FORM: FormState = {
 // ── Tier dialog ─────────────────────────────────────────────────────────────────
 
 function TierDialog({
-  open, tier, onClose, onSaved,
+  open, tier, regionId, onClose, onSaved,
 }: {
   open: boolean
   tier: RideCategory | null
+  regionId: string | null
   onClose: () => void
   onSaved: (saved: RideCategory) => void
 }) {
@@ -156,7 +159,11 @@ function TierDialog({
     setSaving(true)
     try {
       const description = form.description.trim()
-      const saved = isEdit
+      const saved = isEdit && regionId
+        ? await updateRegionRideCategory(regionId, tier!.id, {
+            baseFarePesewas, perKmPesewas, perMinPesewas, minimumFarePesewas,
+          })
+        : isEdit
         ? await updateRideCategory(tier!.id, {
             name, slug, baseFarePesewas, perKmPesewas, perMinPesewas, minimumFarePesewas,
             capacityPersons, description,
@@ -184,7 +191,9 @@ function TierDialog({
       open={open}
       onClose={onClose}
       title={isEdit ? 'Edit ride tier' : 'New ride tier'}
-      description={isEdit ? 'Update this tier and its fare rates.' : 'Add a new ride tier with its own fare rates.'}
+      description={regionId
+        ? "Update this tier's rates for the selected region only."
+        : isEdit ? 'Update this tier and its fare rates.' : 'Add a new ride tier with its own fare rates.'}
       submitLabel={isEdit ? 'Save changes' : 'Create tier'}
       onSubmit={handleSubmit}
       loading={saving}
@@ -201,6 +210,7 @@ function TierDialog({
               value={form.name}
               onChange={e => handleNameChange(e.target.value)}
               maxLength={60}
+              disabled={isEdit && regionId != null}
             />
           </div>
           <div className="space-y-1.5">
@@ -211,6 +221,7 @@ function TierDialog({
               onChange={e => set('slug', e.target.value.toLowerCase())}
               maxLength={60}
               className="font-mono text-sm"
+              disabled={isEdit && regionId != null}
             />
           </div>
         </div>
@@ -230,6 +241,7 @@ function TierDialog({
             value={form.description}
             onChange={e => set('description', e.target.value)}
             maxLength={140}
+            disabled={isEdit && regionId != null}
           />
         </div>
       </div>
@@ -277,6 +289,7 @@ function TierDialog({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function RideCategoriesPage() {
+  const { activeRegionId, activeRegion } = useAdminRegionScope()
   const [tiers, setTiers] = useState<RideCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -289,14 +302,20 @@ export default function RideCategoriesPage() {
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
-    getRideCategories()
+    if (!activeRegionId) {
+      setTiers([])
+      setError('Select an operational region before managing ride tiers.')
+      setLoading(false)
+      return
+    }
+    getRideCategories(activeRegionId)
       .then(data => setTiers(Array.isArray(data) ? data : []))
       .catch(() => {
         setTiers([])
         setError('Could not load ride tiers. Check your connection and try again.')
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [activeRegionId])
 
   useEffect(() => { load() }, [load])
 
@@ -315,7 +334,8 @@ export default function RideCategoriesPage() {
   async function applyToggle(tier: RideCategory, isActive: boolean) {
     setTogglingId(tier.id)
     try {
-      const updated = await updateRideCategory(tier.id, { isActive })
+      if (!activeRegionId) return
+      const updated = await updateRegionRideCategory(activeRegionId, tier.id, { isEnabled: isActive })
       setTiers(prev => prev.map(t => t.id === updated.id ? updated : t))
     } catch {
       // keep existing state on failure
@@ -445,7 +465,15 @@ export default function RideCategoriesPage() {
           }
         />
 
+        <div className="mb-4 flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-900">{activeRegion?.name ?? 'Selected region'}</p>
+            <p className="text-xs text-gray-500">Availability and rates below apply only to the active dashboard region.</p>
+          </div>
+        </div>
+
         <DistanceFareSafeguardCard />
+        {activeRegionId && <RemoteAreaZonesCard regionId={activeRegionId} />}
 
         <FilterBar onRefresh={load} refreshing={loading} meta={`${activeCount} active - ${tiers.length - activeCount} inactive`}>
           <FilterSearch value={search} onChange={setSearch} placeholder="Search tiers" />
@@ -478,6 +506,7 @@ export default function RideCategoriesPage() {
         <TierDialog
           open={dialogOpen}
           tier={editing}
+          regionId={activeRegionId}
           onClose={() => setDialogOpen(false)}
           onSaved={handleSaved}
         />
