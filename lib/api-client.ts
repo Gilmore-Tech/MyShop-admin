@@ -338,6 +338,10 @@ const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   SMS_BODY_TOO_LONG: 'Shorten the announcement to one SMS. The encoding-dependent limit, including the MyShop prefix, is 160 GSM-7 septets or 70 UCS-2 code units.',
   CRITICAL_ANNOUNCEMENT_REQUIRES_SUPER_ADMIN: 'Only the Super Administrator can publish a critical announcement.',
   AUDIENCE_OUT_OF_SCOPE: 'You cannot send an announcement to that audience with this account scope.',
+  AUDIENCE_SCOPE_OUT_OF_SCOPE: 'You cannot use that announcement audience scope with this account.',
+  UNASSIGNED_AUDIENCE_REQUIRES_CLIENTS: 'Unassigned recipients can only be selected for client announcements.',
+  SPECIFIC_ANNOUNCEMENT_RECIPIENTS_REQUIRED: 'Select at least one recipient before generating the preview.',
+  SPECIFIC_ANNOUNCEMENT_RECIPIENTS_NOT_ALLOWED: 'Clear the selected recipients or choose Specific users.',
 }
 
 function fallbackForStatus(status: number): string {

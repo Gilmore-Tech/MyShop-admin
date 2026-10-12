@@ -21,7 +21,12 @@ export function AdminRegionScopeProvider({ children }: { children: React.ReactNo
   const [ready, setReady] = useState(false)
   const [error, setError] = useState(false)
   const admin = getAdminUser()
-  const canSelectRegion = admin?.role === 'super_admin' || admin?.role === 'product_owner'
+  const canSelectRegion = Boolean(
+    admin?.role === 'super_admin' ||
+    admin?.role === 'product_owner' ||
+    admin?.roles?.includes('super_admin') ||
+    admin?.roles?.includes('product_owner'),
+  )
 
   const load = useCallback(() => {
     setReady(false)

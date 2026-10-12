@@ -2,7 +2,7 @@
 
 import { PageGuard } from '@/components/common/page-guard'
 import { useCallback, useEffect, useState } from 'react'
-import { BellRing, Car, Send, User, Users, Wrench } from 'lucide-react'
+import { BellRing, Car, Send, User, Users, Wrench, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,15 +14,18 @@ import { DataTable, type DataTableColumn } from '@/components/common/data-table'
 import { EmptyState } from '@/components/common/empty-state'
 import {
   getAnnouncementHistory,
+  listUsers,
   previewAnnouncement,
   publishAnnouncement,
   type AnnouncementAudience,
+  type AnnouncementAudienceScope,
   type AnnouncementChannel,
   type AnnouncementClassification,
   type AnnouncementDestination,
   type AnnouncementDraft,
   type AnnouncementHistoryItem,
   type AnnouncementPreview,
+  type PlatformUser,
   type Region,
 } from '@/lib/api'
 import {
@@ -68,8 +71,24 @@ const CHANNEL_LABELS: Record<AnnouncementChannel, string> = {
   sms_push: 'SMS + Push',
 }
 
+const AUDIENCE_SCOPE: Array<{
+  value: AnnouncementAudienceScope
+  label: string
+  sub: string
+}> = [
+  { value: 'home_region', label: 'Home region', sub: 'Stable account region; best for regional marketing.' },
+  { value: 'current_region', label: 'Currently in region', sub: 'Only accounts currently resolved inside this region.' },
+  { value: 'all_regions', label: 'All regions', sub: 'Company-wide audience; Super Admin or Product Owner only.' },
+  { value: 'unassigned', label: 'Unassigned clients', sub: 'Clients without reliable regional evidence.' },
+  { value: 'specific_users', label: 'Specific users', sub: 'Search and select exact role accounts.' },
+]
+
+const AUDIENCE_SCOPE_LABELS = Object.fromEntries(
+  AUDIENCE_SCOPE.map(option => [option.value, option.label]),
+) as Record<AnnouncementAudienceScope, string>
+
 export default function AnnouncementsPage() {
-  const { activeRegion } = useAdminRegionScope()
+  const { activeRegion, canSelectRegion } = useAdminRegionScope()
   const { category } = useRole()
   const lockedAudience: AnnouncementAudience | null =
     category === 'rides' ? 'drivers' : category === 'artisan' ? 'artisans' : null
@@ -101,7 +120,12 @@ export default function AnnouncementsPage() {
     },
     {
       key: 'audience', header: 'Audience',
-      render: campaign => <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full whitespace-nowrap">{campaign.targetAudience}</span>,
+      render: campaign => (
+        <div className="space-y-0.5 whitespace-nowrap">
+          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{campaign.targetAudience}</span>
+          <p className="text-[10px] text-gray-400">{AUDIENCE_SCOPE_LABELS[campaign.audienceScope]}</p>
+        </div>
+      ),
     },
     {
       key: 'channel', header: 'Channel',
@@ -193,6 +217,7 @@ export default function AnnouncementsPage() {
           lockedAudience={lockedAudience}
           audienceOptions={audienceOptions}
           regions={regions}
+          canSelectRegion={canSelectRegion}
           onPublished={() => {
             setComposeOpen(false)
             loadHistory()
@@ -204,17 +229,23 @@ export default function AnnouncementsPage() {
 }
 
 function ComposeDialog({
-  open, onClose, lockedAudience, audienceOptions, regions, onPublished,
+  open, onClose, lockedAudience, audienceOptions, regions, canSelectRegion, onPublished,
 }: {
   open: boolean
   onClose: () => void
   lockedAudience: AnnouncementAudience | null
   audienceOptions: typeof AUDIENCE
   regions: Region[]
+  canSelectRegion: boolean
   onPublished: () => void
 }) {
   const [regionId, setRegionId] = useState('')
   const [targetAudience, setTargetAudience] = useState<AnnouncementAudience>(lockedAudience ?? 'all')
+  const [audienceScope, setAudienceScope] = useState<AnnouncementAudienceScope>('home_region')
+  const [specificSearch, setSpecificSearch] = useState('')
+  const [specificResults, setSpecificResults] = useState<PlatformUser[]>([])
+  const [selectedRecipients, setSelectedRecipients] = useState<PlatformUser[]>([])
+  const [searchingRecipients, setSearchingRecipients] = useState(false)
   const [classification, setClassification] = useState<AnnouncementClassification>('service')
   const [channel, setChannel] = useState<AnnouncementChannel>('push')
   const [destination, setDestination] = useState<AnnouncementDestination>('notifications')
@@ -228,6 +259,10 @@ function ComposeDialog({
   useEffect(() => {
     if (!open) return
     setTargetAudience(lockedAudience ?? 'all')
+    setAudienceScope('home_region')
+    setSpecificSearch('')
+    setSpecificResults([])
+    setSelectedRecipients([])
     setRegionId(regions.length === 1 ? regions[0].id : '')
     setClassification('service')
     setChannel('push')
@@ -238,6 +273,44 @@ function ComposeDialog({
     setPreview(null)
     setError('')
   }, [open, lockedAudience, regions])
+
+  useEffect(() => {
+    if (!open || audienceScope !== 'specific_users' || targetAudience === 'all') {
+      setSpecificResults([])
+      setSearchingRecipients(false)
+      return
+    }
+    const query = specificSearch.trim()
+    if (query.length < 2) {
+      setSpecificResults([])
+      setSearchingRecipients(false)
+      return
+    }
+    const role = targetAudience === 'clients' ? 'client' : targetAudience === 'drivers' ? 'driver' : 'artisan'
+    let cancelled = false
+    setSearchingRecipients(true)
+    const timer = window.setTimeout(() => {
+      listUsers({
+        role,
+        search: query,
+        page: 1,
+        limit: 10,
+        ...(role === 'client' && canSelectRegion ? { clientRegionScope: 'all' as const } : {}),
+      })
+        .then(result => {
+          if (!cancelled) {
+            const chosen = new Set(selectedRecipients.map(item => item.roleAccountId))
+            setSpecificResults(result.items.filter(item => !chosen.has(item.roleAccountId)))
+          }
+        })
+        .catch(() => { if (!cancelled) setSpecificResults([]) })
+        .finally(() => { if (!cancelled) setSearchingRecipients(false) })
+    }, 350)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [audienceScope, canSelectRegion, open, selectedRecipients, specificSearch, targetAudience])
 
   function invalidatePreview() {
     setPreview(null)
@@ -250,6 +323,8 @@ function ComposeDialog({
       title: title.trim(),
       body: body.trim(),
       targetAudience,
+      audienceScope,
+      specificRecipientRoleAccountIds: selectedRecipients.map(item => item.roleAccountId),
       classification,
       channel,
       destination,
@@ -296,6 +371,12 @@ function ComposeDialog({
   }
 
   const selectedAudience = AUDIENCE.find(a => a.value === targetAudience) ?? AUDIENCE[0]
+  const audienceScopeOptions = AUDIENCE_SCOPE.filter(option => {
+    if ((option.value === 'all_regions' || option.value === 'unassigned') && !canSelectRegion) return false
+    if (option.value === 'unassigned' && targetAudience !== 'clients') return false
+    if (option.value === 'specific_users' && targetAudience === 'all') return false
+    return true
+  })
   const SelectedAudienceIcon = selectedAudience.icon
   const isSmsChannel = announcementIncludesSms(channel)
   const smsLength = announcementSmsLength(body)
@@ -307,6 +388,7 @@ function ComposeDialog({
     !title.trim() ||
     !body.trim() ||
     reasonLength < ANNOUNCEMENT_REASON_MIN_CHARS ||
+    (audienceScope === 'specific_users' && selectedRecipients.length === 0) ||
     (isSmsChannel && smsLength.tooLong)
   const publishLabel = preview == null
     ? 'Generate server preview'
@@ -342,7 +424,9 @@ function ComposeDialog({
             ))}
           </SelectContent>
         </Select>
-        <p className="text-[10px] text-gray-400">Only users currently operating in this region are included.</p>
+        <p className="text-[10px] text-gray-400">
+          Region-sensitive audiences use this region. Company-wide and unassigned audiences remain explicit in the preview.
+        </p>
       </div>
 
       <div>
@@ -355,7 +439,15 @@ function ComposeDialog({
               <button
                 key={a.value}
                 type="button"
-                onClick={() => { setTargetAudience(a.value); invalidatePreview() }}
+                onClick={() => {
+                  setTargetAudience(a.value)
+                  setSelectedRecipients([])
+                  setSpecificResults([])
+                  setSpecificSearch('')
+                  if (a.value === 'all' && audienceScope === 'specific_users') setAudienceScope('home_region')
+                  if (a.value !== 'clients' && audienceScope === 'unassigned') setAudienceScope('home_region')
+                  invalidatePreview()
+                }}
                 className={`flex items-center gap-2.5 rounded-lg p-2.5 text-left transition-all ${isActive ? a.active : a.colors}`}
               >
                 <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${isActive ? 'bg-white/60' : 'bg-gray-100'}`}>
@@ -370,6 +462,90 @@ function ComposeDialog({
           })}
         </div>
       </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Audience location</Label>
+        <Select
+          value={audienceScope}
+          onValueChange={(value: AnnouncementAudienceScope) => {
+            setAudienceScope(value)
+            setSpecificSearch('')
+            setSpecificResults([])
+            setSelectedRecipients([])
+            invalidatePreview()
+          }}
+        >
+          <SelectTrigger className="bg-gray-50"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {audienceScopeOptions.map(option => (
+              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-gray-400">
+          {AUDIENCE_SCOPE.find(option => option.value === audienceScope)?.sub}
+        </p>
+      </div>
+
+      {audienceScope === 'specific_users' && (
+        <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Specific recipients</Label>
+          <Input
+            value={specificSearch}
+            onChange={event => setSpecificSearch(event.target.value)}
+            placeholder="Search by name, phone, or email"
+          />
+          {selectedRecipients.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {selectedRecipients.map(recipient => (
+                <span key={recipient.roleAccountId} className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-1 text-[11px] text-blue-800">
+                  {recipient.fullName}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${recipient.fullName}`}
+                    onClick={() => {
+                      setSelectedRecipients(current => current.filter(item => item.roleAccountId !== recipient.roleAccountId))
+                      invalidatePreview()
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {specificSearch.trim().length >= 2 && (
+            <div className="max-h-40 overflow-y-auto rounded-md border border-gray-200 bg-white">
+              {searchingRecipients ? (
+                <p className="px-3 py-2 text-xs text-gray-500">Searching...</p>
+              ) : specificResults.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-gray-500">No matching accounts.</p>
+              ) : specificResults.map(result => (
+                <button
+                  key={result.roleAccountId}
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2 text-left last:border-0 hover:bg-gray-50"
+                  onClick={() => {
+                    setSelectedRecipients(current => [...current, result])
+                    setSpecificSearch('')
+                    setSpecificResults([])
+                    invalidatePreview()
+                  }}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-medium text-gray-800">{result.fullName}</span>
+                    <span className="block truncate text-[10px] text-gray-500">{result.phone}{result.email ? ` - ${result.email}` : ''}</span>
+                  </span>
+                  <span className="text-[10px] uppercase text-gray-400">Add</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="text-[10px] text-gray-400">
+            Search runs only while this audience is selected. The server preview freezes the final list.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
@@ -504,6 +680,8 @@ function ComposeDialog({
           <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
             <SelectedAudienceIcon className="h-3 w-3" />
             <span>{selectedAudience.label}</span>
+            <span>-</span>
+            <span>{AUDIENCE_SCOPE_LABELS[preview.rendered.audienceScope]}</span>
             <span>-</span>
             <span>{CHANNEL_LABELS[preview.rendered.channel]}</span>
             {announcementIncludesPush(preview.rendered.channel) && (
