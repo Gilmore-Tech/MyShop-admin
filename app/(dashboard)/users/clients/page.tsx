@@ -23,6 +23,8 @@ import { paymentMethodLabel } from '@/lib/payment-labels'
 import { listUsers, suspendUser, banUser, reinstateUser, type PlatformUser } from '@/lib/api'
 import { ApiError } from '@/lib/api-client'
 import { UserProfileSheet } from '@/components/users/user-profile-sheet'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
 
 type ActionType = 'suspend' | 'ban' | 'reinstate'
 
@@ -56,6 +58,7 @@ function actionCopy(type: ActionType, name: string) {
 
 export default function ClientsPage() {
   const router = useRouter()
+  const { activeRegion, canSelectRegion } = useAdminRegionScope()
   // Clients are an exact role-account surface. Category-scoped coordinators are
   // redirected to their own provider vertical.
   const { category, permissions } = useRole()
@@ -71,6 +74,7 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [clientRegionScope, setClientRegionScope] = useState<'region' | 'all' | 'unassigned'>('region')
   const [actionDialog, setActionDialog] = useState<{ user: PlatformUser; type: ActionType } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -85,6 +89,7 @@ export default function ClientsPage() {
         search: search || undefined,
         page: pg,
         limit: PAGE_SIZE,
+        clientRegionScope,
       })
       setUsers(res.items)
       setTotal(res.total)
@@ -94,12 +99,12 @@ export default function ClientsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search])
+  }, [clientRegionScope, page, search])
 
   useEffect(() => {
     const t = setTimeout(() => load(1), 400)
     return () => clearTimeout(t)
-  }, [search]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clientRegionScope, search]) // eslint-disable-line react-hooks/exhaustive-deps
   useAutoRefresh(load)
 
   async function handleAction(reason: string) {
@@ -146,6 +151,21 @@ export default function ClientsPage() {
 
         <FilterBar onRefresh={() => load(1)} refreshing={loading} meta={`${total.toLocaleString()} clients`}>
           <FilterSearch value={search} onChange={setSearch} placeholder="Search by name, phone, email" />
+          {canSelectRegion && (
+            <Select
+              value={clientRegionScope}
+              onValueChange={(value: 'region' | 'all' | 'unassigned') => setClientRegionScope(value)}
+            >
+              <SelectTrigger className="h-9 w-48 bg-white" aria-label="Client account region scope">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="region">{activeRegion?.name ?? 'Selected region'}</SelectItem>
+                <SelectItem value="all">All client accounts</SelectItem>
+                <SelectItem value="unassigned">Unassigned clients</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
         </FilterBar>
 
         <DataTable<PlatformUser>

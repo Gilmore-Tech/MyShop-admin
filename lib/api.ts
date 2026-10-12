@@ -31,6 +31,7 @@ import {
 } from './announcement-campaign-contract'
 export {
   type AnnouncementAudience,
+  type AnnouncementAudienceScope,
   type AnnouncementChannel,
   type AnnouncementClassification,
   type AnnouncementDestination,
@@ -1479,6 +1480,9 @@ export async function listUsers(params: {
   search?: string
   page?: number
   limit?: number
+  // Client role only. Super Admin/Product Owner may inspect every account or
+  // the explicit unassigned queue without changing operational region scope.
+  clientRegionScope?: 'region' | 'all' | 'unassigned'
   // Driver role only: keep just drivers missing at least one vehicle field.
   // Enforced server-side (added in the API's region-scoped listUsers). Older API
   // builds ignore the unknown param and return all drivers.

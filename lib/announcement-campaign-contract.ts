@@ -1,4 +1,10 @@
 export type AnnouncementAudience = 'all' | 'clients' | 'drivers' | 'artisans'
+export type AnnouncementAudienceScope =
+  | 'home_region'
+  | 'current_region'
+  | 'all_regions'
+  | 'unassigned'
+  | 'specific_users'
 export type AnnouncementClassification = 'service' | 'critical'
 export type AnnouncementChannel = 'push' | 'sms' | 'sms_push'
 export type AnnouncementSmsEncoding = 'gsm7' | 'ucs2'
@@ -14,6 +20,8 @@ export interface AnnouncementDraft {
   title: string
   body: string
   targetAudience: AnnouncementAudience
+  audienceScope: AnnouncementAudienceScope
+  specificRecipientRoleAccountIds: string[]
   classification: AnnouncementClassification
   channel: AnnouncementChannel
   destination: AnnouncementDestination
@@ -35,6 +43,7 @@ interface AnnouncementRenderedBase {
   body: string
   classification: AnnouncementClassification
   targetAudience: AnnouncementAudience
+  audienceScope: AnnouncementAudienceScope
   destination: AnnouncementDestination
 }
 
@@ -78,6 +87,7 @@ export interface AnnouncementHistoryItem {
   title: string
   body: string
   targetAudience: AnnouncementAudience
+  audienceScope: AnnouncementAudienceScope
   classification: AnnouncementClassification
   channel: AnnouncementChannel
   destination: AnnouncementDestination
@@ -177,6 +187,13 @@ const GSM7_BASIC = new Set<string>([
 const GSM7_EXTENSION = new Set<string>(['\f', '^', '{', '}', '\\', '[', '~', ']', '|', '€'])
 
 const AUDIENCES: readonly AnnouncementAudience[] = ['all', 'clients', 'drivers', 'artisans']
+const AUDIENCE_SCOPES: readonly AnnouncementAudienceScope[] = [
+  'home_region',
+  'current_region',
+  'all_regions',
+  'unassigned',
+  'specific_users',
+]
 const CLASSIFICATIONS: readonly AnnouncementClassification[] = ['service', 'critical']
 const CHANNELS: readonly AnnouncementChannel[] = ['push', 'sms', 'sms_push']
 const DESTINATIONS: readonly AnnouncementDestination[] = [
@@ -339,6 +356,14 @@ export function normaliseAnnouncementPreview(
   if (targetAudience !== expected.targetAudience) {
     return unsafeContract('preview.rendered.targetAudience does not match the request.')
   }
+  const audienceScope = enumAt(
+    renderedSource.audienceScope,
+    AUDIENCE_SCOPES,
+    'preview.rendered.audienceScope',
+  )
+  if (audienceScope !== expected.audienceScope) {
+    return unsafeContract('preview.rendered.audienceScope does not match the request.')
+  }
   const classification = enumAt(
     renderedSource.classification,
     CLASSIFICATIONS,
@@ -385,6 +410,7 @@ export function normaliseAnnouncementPreview(
       body: expectedBody,
       classification,
       targetAudience,
+      audienceScope,
       channel: renderedChannel,
       destination,
       smsBody,
@@ -398,6 +424,7 @@ export function normaliseAnnouncementPreview(
       body: expectedBody,
       classification,
       targetAudience,
+      audienceScope,
       channel: 'push',
       destination,
       smsBody: null,
@@ -439,6 +466,7 @@ function normaliseAnnouncementHistoryItem(raw: unknown): AnnouncementHistoryItem
     title: stringAt(source.title, 'history.title'),
     body: stringAt(source.body, 'history.body'),
     targetAudience: enumAt(source.targetAudience, AUDIENCES, 'history.targetAudience'),
+    audienceScope: enumAt(source.audienceScope, AUDIENCE_SCOPES, 'history.audienceScope'),
     classification: enumAt(source.classification, CLASSIFICATIONS, 'history.classification'),
     channel: enumAt(source.channel, CHANNELS, 'history.channel'),
     destination: enumAt(source.destination, DESTINATIONS, 'history.destination'),
