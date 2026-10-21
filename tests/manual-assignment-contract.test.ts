@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
+import { ApiError } from '../lib/api-client.ts'
 import {
   formatManualAssignmentWindow,
   isManualAssignmentLockActive,
@@ -34,4 +36,20 @@ test('converts canonical job_bid_window_secs without treating seconds as minutes
   ], 300), 300)
   assert.equal(formatManualAssignmentWindow(120), '2 minutes')
   assert.equal(formatManualAssignmentWindow(45), '45 seconds')
+})
+
+test('manual assignment failures use actionable dashboard copy', () => {
+  assert.match(new ApiError(409, 'ARTISAN_NO_LONGER_AVAILABLE').message, /choose another artisan/i)
+  assert.match(new ApiError(409, 'AT_CAPACITY').message, /active-job limit/i)
+  assert.match(new ApiError(409, 'MANUAL_ASSIGNMENT_WINDOW_EXPIRED').message, /Escalate this job/i)
+})
+
+test('manual assignment displays safe server-owned errors instead of a generic failure', () => {
+  const page = readFileSync(
+    new URL('../app/(dashboard)/artisan-jobs/manual-assignment/page.tsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(page, /userSafeAdminError\(e, 'Assignment failed\. Please try again\.'\)/)
+  assert.match(page, /userSafeAdminError\(err, 'Could not load eligible artisans\./)
 })

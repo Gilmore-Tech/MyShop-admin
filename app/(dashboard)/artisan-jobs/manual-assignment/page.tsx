@@ -24,7 +24,7 @@ import {
   getUnassignedJobs, lockJob, assignJob, deleteJob, searchArtisans, getAllConfig,
   type UnassignedJob, type ArtisanSearchResult,
 } from '@/lib/api'
-import { ApiError, FEATURES, safeAdminErrorDiagnostic } from '@/lib/api-client'
+import { ApiError, FEATURES, safeAdminErrorDiagnostic, userSafeAdminError } from '@/lib/api-client'
 import { annotateDistancesFromLiveMap } from '@/lib/distance'
 import {
   formatManualAssignmentWindow,
@@ -358,7 +358,9 @@ export default function ManualAssignmentPage() {
           safeAdminErrorDiagnostic(err),
         )
         setArtisans([])
-        setArtisanSearchError('Could not load eligible artisans. Retry or adjust the search.')
+        setArtisanSearchError(
+          userSafeAdminError(err, 'Could not load eligible artisans. Retry or adjust the search.'),
+        )
       } finally {
         if (searchRequestSequence.current === requestSequence) {
           setLoadingArtisans(false)
@@ -396,7 +398,11 @@ export default function ManualAssignmentPage() {
       await lockJob(selectedJob.id)
     } catch (e: unknown) {
       const code = e instanceof ApiError ? e.code : ''
-      setError(code === 'JOB_LOCKED_BY_ANOTHER_ADMIN' ? 'Another admin locked this job. Try again.' : 'Could not lock job. Please try again.')
+      setError(
+        code === 'JOB_LOCKED_BY_ANOTHER_ADMIN'
+          ? 'Another admin locked this job. Try again.'
+          : userSafeAdminError(e, 'Could not lock job. Please try again.'),
+      )
       setAssigning(null)
       return
     }
@@ -414,7 +420,7 @@ export default function ManualAssignmentPage() {
       const code = e instanceof ApiError ? e.code : ''
       if (code === 'LOCK_NOT_HELD') setError('Lock expired - please try again.')
       else if (code === 'ARTISAN_NOT_FOUND') setError('Artisan is no longer eligible. Refresh and try another.')
-      else setError('Assignment failed. Please try again.')
+      else setError(userSafeAdminError(e, 'Assignment failed. Please try again.'))
     } finally {
       setAssigning(null)
     }
