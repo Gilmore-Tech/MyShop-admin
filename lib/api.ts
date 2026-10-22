@@ -1443,6 +1443,7 @@ export interface ArtisanRoleProfile {
   businessAddress: string | null
   businessPhone: string | null
   categories: string[]
+  serviceCategories: { id: string; name: string }[]
   serviceLatitude: number | null
   serviceLongitude: number | null
   serviceRadius: number | null
@@ -1526,11 +1527,30 @@ function normalisePlatformUser(
     (Array.isArray(raw.vehicles)
       ? (raw.vehicles.find((v: any) => v?.isActive) ?? raw.vehicles[0])
       : null)
-  const categories = Array.isArray(raw.serviceCategories)
+  const serviceCategories: Array<{ id: string; name: string }> = Array.isArray(
+    raw.serviceCategories
+  )
     ? raw.serviceCategories
-        .map((entry: any) => entry?.category?.name)
-        .filter((name: unknown): name is string => typeof name === 'string')
+        .map((entry: unknown) =>
+          typeof entry === 'object' && entry !== null && 'category' in entry
+            ? (entry as { category?: unknown }).category
+            : undefined
+        )
+        .filter(
+          (category: unknown): category is { id: string; name: string } =>
+            typeof category === 'object' &&
+            category !== null &&
+            'id' in category &&
+            typeof category.id === 'string' &&
+            'name' in category &&
+            typeof category.name === 'string'
+        )
+        .map((category: { id: string; name: string }) => ({
+          id: category.id,
+          name: category.name,
+        }))
     : []
+  const categories = serviceCategories.map(category => category.name)
   const common: PlatformUserBase = {
     roleAccountId,
     id: roleAccountId,
@@ -1612,6 +1632,7 @@ function normalisePlatformUser(
       businessAddress: raw.businessAddress ?? raw.business_address ?? null,
       businessPhone: raw.businessPhone ?? raw.business_phone ?? null,
       categories,
+      serviceCategories,
       serviceLatitude: raw.serviceLatitude != null ? Number(raw.serviceLatitude) : null,
       serviceLongitude: raw.serviceLongitude != null ? Number(raw.serviceLongitude) : null,
       serviceRadius: raw.serviceRadiusKm != null ? Number(raw.serviceRadiusKm) : null,
@@ -1726,7 +1747,23 @@ export interface EditArtisanProfileInput {
   serviceLatitude?: number // −90…90
   serviceLongitude?: number // −180…180
   serviceRadiusKm?: number // 1–100
+  categoryIds?: string[] // 1–3 specific service specialties
   reason?: string // ≤1000 chars
+}
+
+export interface ArtisanServiceCategoryOption {
+  id: string
+  parentId: string | null
+  name: string
+  isActive: boolean
+  isAssigned: boolean
+  hasActiveChildren: boolean
+}
+
+export function getArtisanServiceCategoryOptions(roleAccountId: string) {
+  return api.get<ArtisanServiceCategoryOption[]>(
+    roleAccountPath('artisan', roleAccountId, 'service-category-options')
+  )
 }
 
 // Default-off BR-61 route. When explicitly enabled, uploads one profile image
