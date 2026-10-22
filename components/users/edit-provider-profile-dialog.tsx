@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Pencil, Camera } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,8 @@ import {
   editArtisanProfile,
   uploadProviderPhoto,
   getUser,
+  getArtisanServiceCategoryOptions,
+  type ArtisanServiceCategoryOption,
   type PlatformUser,
   type EditDriverProfileInput,
   type EditArtisanProfileInput,
@@ -154,10 +156,47 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
   const initialPhotoUrl =
     user.role === providerType ? (user.profile?.profilePhotoUrl ?? '') : ''
   const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl)
+  const initialCategoryIds = useMemo(
+    () =>
+      user.role === 'artisan'
+        ? user.profile.serviceCategories.map(category => category.id)
+        : [],
+    [user]
+  )
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>(initialCategoryIds)
+  const [categoryCatalog, setCategoryCatalog] = useState<ArtisanServiceCategoryOption[]>([])
+  const [categoryError, setCategoryError] = useState('')
+  const [loadingCategories, setLoadingCategories] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoError, setPhotoError] = useState('')
+
+  useEffect(() => {
+    if (!open || providerType !== 'artisan') return
+    let cancelled = false
+    setLoadingCategories(true)
+    getArtisanServiceCategoryOptions(user.roleAccountId)
+      .then(categories => {
+        if (!cancelled) setCategoryCatalog(categories)
+      })
+      .catch(() => {
+        if (!cancelled) setCategoryError('Could not load service specialties. Try reopening this editor.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCategories(false)
+      })
+    return () => { cancelled = true }
+  }, [open, providerType, user.roleAccountId])
+
+  const categoryOptions = useMemo(() => {
+    const initialIds = new Set(initialCategoryIds)
+    return categoryCatalog.filter(category => {
+      return (
+        (category.isActive && !category.hasActiveChildren) || initialIds.has(category.id)
+      )
+    })
+  }, [categoryCatalog, initialCategoryIds])
 
   // Reset local state whenever the dialog (re)opens for a provider.
   function syncOnOpen(isOpen: boolean) {
@@ -168,6 +207,8 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
       setEmailError('')
       setPhotoError('')
       setPhotoUrl(initialPhotoUrl)
+      setSelectedCategoryIds(initialCategoryIds)
+      setCategoryError('')
     } else {
       onClose()
     }
@@ -220,7 +261,26 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
   const changedKeys = useMemo(() => {
     return fields.filter(f => (form[f.key] ?? '') !== (initial[f.key] ?? '')).map(f => f.key)
   }, [fields, form, initial])
-  const hasChanges = changedKeys.length > 0
+  const categoryChanged =
+    providerType === 'artisan' &&
+    [...selectedCategoryIds].sort().join(',') !== [...initialCategoryIds].sort().join(',')
+  const hasChanges = changedKeys.length > 0 || categoryChanged
+
+  function toggleCategory(category: ArtisanServiceCategoryOption) {
+    setCategoryError('')
+    setSelectedCategoryIds(current => {
+      if (current.includes(category.id)) return current.filter(id => id !== category.id)
+      if (category.hasActiveChildren) {
+        setCategoryError('Choose a specific specialty rather than a category group.')
+        return current
+      }
+      if (current.length >= 3) {
+        setCategoryError('An artisan can have up to three service specialties.')
+        return current
+      }
+      return [...current, category.id]
+    })
+  }
 
   function buildPayload(): { payload: Record<string, unknown> } | { error: string } {
     const payload: Record<string, unknown> = {}
@@ -249,6 +309,13 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
       return
     }
     const { payload } = built
+    if (categoryChanged) {
+      if (selectedCategoryIds.length === 0) {
+        setCategoryError('Select at least one service specialty.')
+        return
+      }
+      payload.categoryIds = selectedCategoryIds
+    }
     if (Object.keys(payload).length === 0) {
       setGeneralError('No changes to save.')
       return
@@ -388,6 +455,44 @@ export function EditProviderProfileDialog({ open, providerType, user, onClose, o
               )
             })}
           </div>
+
+          {providerType === 'artisan' && (
+            <div className="mt-4">
+              <Label className="text-xs text-gray-500">Service specialties (up to 3)</Label>
+              <p className="mt-1 text-[11px] text-gray-400">
+                These specialties determine which jobs this artisan can receive or be assigned.
+              </p>
+              {loadingCategories ? (
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-400">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading specialties...
+                </p>
+              ) : (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {categoryOptions.map(category => {
+                    const selected = selectedCategoryIds.includes(category.id)
+                    const groupingCategory = category.hasActiveChildren
+                    return (
+                      <button
+                        key={category.id}
+                        type="button"
+                        onClick={() => toggleCategory(category)}
+                        className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                          selected
+                            ? groupingCategory
+                              ? 'border-amber-300 bg-amber-50 text-amber-800'
+                              : 'border-orange-300 bg-orange-50 text-orange-700'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-orange-200'
+                        }`}
+                      >
+                        {category.name}{groupingCategory ? ' (legacy group)' : ''}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {categoryError && <p className="mt-2 text-[11px] text-red-600">{categoryError}</p>}
+            </div>
+          )}
 
           <div className="mt-4">
             <Label className="text-xs text-gray-500">Reason <span className="text-gray-400">(optional - recorded in the audit log)</span></Label>
