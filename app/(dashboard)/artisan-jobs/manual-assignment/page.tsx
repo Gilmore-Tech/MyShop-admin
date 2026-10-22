@@ -147,6 +147,18 @@ function ArtisanCard({
             </span>
           )}
         </div>
+        {artisan.categories.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {artisan.categories.map(category => (
+              <span
+                key={category.id}
+                className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] text-gray-600"
+              >
+                {category.name}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {canAssign && (
