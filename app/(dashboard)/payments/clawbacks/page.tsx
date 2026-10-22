@@ -8,6 +8,14 @@ import { RoleGate } from '@/components/common/role-gate'
 import { PageHeader } from '@/components/common/page-header'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { PaymentsTabs } from '@/components/payments/payments-tabs'
@@ -24,10 +32,11 @@ import { useDateRange } from '@/components/common/date-range-filter'
 import { PageSizeSelect } from '@/components/common/table-controls'
 import { ghanaDateKey, dateBasisCaption } from '@/lib/date-range'
 import { groupClawbacksByProvider, type ProviderClawbackGroup } from '@/lib/clawback-groups'
+import { canShowClearAmount, isCollectibleDebt } from '@/lib/clawback-writeoff-policy'
 import { paymentStatusLabel } from '@/lib/payment-labels'
+import { useRole } from '@/hooks/use-role'
 
-const WRITEOFF_THRESHOLD = 10000
-const WRITEOFF_INACTIVE_DAYS = 90
+const FOLLOW_UP_THRESHOLD_PESEWAS = 10_000
 
 function formatGhs(pesewas: number) {
   return `GHS ${(pesewas / 100).toFixed(2)}`
@@ -60,13 +69,6 @@ function statusBadgeClass(status: string) {
   return base + 'bg-gray-100 text-gray-600'
 }
 
-function isWriteOffEligible(debt: AdminClawback) {
-  return debt.status !== 'reconciliation_required'
-    && debt.outstandingPesewas > 0
-    && debt.outstandingPesewas < WRITEOFF_THRESHOLD
-    && debt.daysOutstanding >= WRITEOFF_INACTIVE_DAYS
-}
-
 /** Ghana calendar date of a record, or null when the backend sent no usable date. */
 function recordDateKey(iso: string): string | null {
   if (!iso) return null
@@ -83,12 +85,14 @@ function isWithinRange(debt: AdminClawback, from?: string, to?: string) {
 }
 
 export default function ClawbacksPage() {
+  const { isSuperAdmin, can } = useRole()
   const [clawbacks, setClawbacks] = useState<AdminClawback[]>([])
   const [totalOutstanding, setTotalOutstanding] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actionId, setActionId] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
+  const [writeOffTarget, setWriteOffTarget] = useState<AdminClawback | null>(null)
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
   const [truncated, setTruncated] = useState(false)
   const [page, setPage] = useState(1)
@@ -106,7 +110,7 @@ export default function ClawbacksPage() {
 
   const groups = useMemo(() => groupClawbacksByProvider(dateFiltered), [dateFiltered])
   const selected = groups.find(group => (group.providerId || group.clawbacks[0].id) === selectedGroupKey) ?? null
-  const eligibleCount = dateFiltered.filter(isWriteOffEligible).length
+  const eligibleCount = dateFiltered.filter(debt => canShowClearAmount(debt, isSuperAdmin)).length
   const visibleOutstanding = groups.reduce((sum, group) => sum + group.outstandingPesewas, 0)
 
   // Everything is already in memory, so paging is a slice - the totals below the
@@ -141,18 +145,24 @@ export default function ClawbacksPage() {
 
   useEffect(() => { load() }, [load])
 
-  async function handleWriteOff(debt: AdminClawback) {
+  async function handleWriteOff(debt: AdminClawback, reason: string) {
     setActionId(debt.id)
     setActionError('')
     try {
-      await writeOffClawback(debt.id, 'Approved for clearing: under GHS 100 and unpaid for at least 90 days')
+      await writeOffClawback(debt.id, reason)
       setClawbacks(previous => previous.filter(item => item.id !== debt.id))
       setTotalOutstanding(previous => Math.max(0, previous - debt.outstandingPesewas))
+      setWriteOffTarget(null)
     } catch (err) {
       setActionError(err instanceof ApiError ? `Could not clear this amount: ${err.message}` : 'Could not clear this amount. Try again.')
     } finally {
       setActionId(null)
     }
+  }
+
+  function requestWriteOff(debt: AdminClawback) {
+    setActionError('')
+    setWriteOffTarget(debt)
   }
 
   async function handleEscalate(debt: AdminClawback) {
@@ -224,8 +234,8 @@ export default function ClawbacksPage() {
               <TableRow className="bg-gray-50">
                 <TableHead>Person</TableHead>
                 <TableHead className="text-right">Number of records</TableHead>
-                <TableHead className="text-right">Total owed</TableHead>
-                <TableHead className="text-right">Already paid</TableHead>
+                <TableHead className="text-right">Total recorded</TableHead>
+                <TableHead className="text-right">Recovered</TableHead>
                 <TableHead className="text-right">Still to pay</TableHead>
                 <TableHead>Latest record</TableHead>
                 <TableHead>Oldest record</TableHead>
@@ -310,9 +320,23 @@ export default function ClawbacksPage() {
         <DebtDetailsSheet
           group={selected}
           actionId={actionId}
+          isSuperAdmin={isSuperAdmin}
+          canWriteOff={isSuperAdmin || can('write_off_clawback')}
           onClose={() => setSelectedGroupKey(null)}
-          onWriteOff={handleWriteOff}
+          onWriteOff={requestWriteOff}
           onEscalate={handleEscalate}
+        />
+        <WriteOffDialog
+          debt={writeOffTarget}
+          busy={writeOffTarget !== null && actionId === writeOffTarget.id}
+          error={writeOffTarget ? actionError : ''}
+          onClose={() => {
+            if (actionId === null) setWriteOffTarget(null)
+          }}
+          onConfirm={reason => {
+            if (writeOffTarget) return handleWriteOff(writeOffTarget, reason)
+            return Promise.resolve()
+          }}
         />
       </div>
     </PageGuard>
@@ -322,12 +346,16 @@ export default function ClawbacksPage() {
 function DebtDetailsSheet({
   group,
   actionId,
+  isSuperAdmin,
+  canWriteOff,
   onClose,
   onWriteOff,
   onEscalate,
 }: {
   group: ProviderClawbackGroup | null
   actionId: string | null
+  isSuperAdmin: boolean
+  canWriteOff: boolean
   onClose: () => void
   onWriteOff: (debt: AdminClawback) => void
   onEscalate: (debt: AdminClawback) => void
@@ -336,14 +364,8 @@ function DebtDetailsSheet({
   const [sending, setSending] = useState(false)
   const [smsResult, setSmsResult] = useState('')
   const hasCollectibleDebt = Boolean(
-    group?.clawbacks.some(debt =>
-      debt.status !== 'reconciliation_required' && debt.outstandingPesewas > 0
-    )
+    group?.clawbacks.some(isCollectibleDebt)
   )
-  const hasReconciliation = Boolean(
-    group?.clawbacks.some(debt => debt.status === 'reconciliation_required')
-  )
-
   useEffect(() => {
     if (!group) return
     setMessage(hasCollectibleDebt
@@ -396,8 +418,8 @@ function DebtDetailsSheet({
               </section>
 
               <section className="grid grid-cols-3 gap-3">
-                <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">{hasReconciliation ? 'Original recorded amount' : 'Total owed'}</p><p className="mt-1 font-semibold">{formatGhs(group.amountPesewas)}</p></div>
-                <div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs text-emerald-700">Already paid</p><p className="mt-1 font-semibold text-emerald-700">{formatGhs(group.paidAmountPesewas)}</p></div>
+                <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">Total recorded</p><p className="mt-1 font-semibold">{formatGhs(group.amountPesewas)}</p></div>
+                <div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs text-emerald-700">Recovered</p><p className="mt-1 font-semibold text-emerald-700">{formatGhs(group.paidAmountPesewas)}</p></div>
                 <div className="rounded-lg bg-red-50 p-3"><p className="text-xs text-red-700">Still to pay</p><p className="mt-1 font-semibold text-red-700">{formatGhs(group.outstandingPesewas)}</p></div>
               </section>
 
@@ -436,14 +458,12 @@ function DebtDetailsSheet({
                             </Link>
                           ) : <span />}
                           <div className="flex gap-2">
-                            {isWriteOffEligible(debt) && (
-                              <RoleGate permission="write_off_clawback">
-                                <Button size="sm" variant="outline" disabled={acting} onClick={() => onWriteOff(debt)}>
-                                  {acting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Clear amount'}
-                                </Button>
-                              </RoleGate>
+                            {canWriteOff && canShowClearAmount(debt, isSuperAdmin) && (
+                              <Button size="sm" variant="outline" disabled={acting} onClick={() => onWriteOff(debt)}>
+                                {acting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Clear amount'}
+                              </Button>
                             )}
-                            {debt.outstandingPesewas >= WRITEOFF_THRESHOLD && debt.status !== 'escalated' && (
+                            {debt.outstandingPesewas >= FOLLOW_UP_THRESHOLD_PESEWAS && debt.status !== 'escalated' && (
                               <RoleGate permission="escalate_clawback">
                                 <Button size="sm" variant="outline" className="text-red-600" disabled={acting} onClick={() => onEscalate(debt)}>
                                   {acting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><ArrowUpRight className="mr-1 h-3.5 w-3.5" />Send for follow-up</>}
@@ -484,5 +504,89 @@ function DebtDetailsSheet({
         )}
       </SheetContent>
     </Sheet>
+  )
+}
+
+function WriteOffDialog({
+  debt,
+  busy,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  debt: AdminClawback | null
+  busy: boolean
+  error: string
+  onClose: () => void
+  onConfirm: (reason: string) => Promise<void>
+}) {
+  const [reason, setReason] = useState('')
+
+  useEffect(() => {
+    if (debt) setReason('')
+  }, [debt])
+
+  const normalizedReason = reason.trim()
+  const reasonValid = normalizedReason.length >= 10 && normalizedReason.length <= 500
+
+  return (
+    <Dialog open={Boolean(debt)} onOpenChange={open => { if (!open && !busy) onClose() }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Clear outstanding amount</DialogTitle>
+          <DialogDescription>
+            This permanently forgives the open balance and records your reason in the financial audit trail.
+          </DialogDescription>
+        </DialogHeader>
+
+        {debt && (
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-gray-50 p-3 text-sm">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-gray-500">Provider</span>
+                <span className="text-right font-medium">{debt.providerName ?? debt.providerId}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-4">
+                <span className="text-gray-500">Role</span>
+                <span className="font-medium">{providerRoleLabel(debt.providerType)}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-4">
+                <span className="text-gray-500">Open amount</span>
+                <span className="font-semibold text-red-600">{formatGhs(debt.outstandingPesewas)}</span>
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="write-off-reason" className="text-sm font-medium">Reason for clearing</label>
+              <Textarea
+                id="write-off-reason"
+                className="mt-2 min-h-24"
+                value={reason}
+                onChange={event => setReason(event.target.value)}
+                maxLength={500}
+                placeholder="Explain why this amount should be forgiven, including the production-test reference where applicable."
+                disabled={busy}
+              />
+              <p className="mt-1 text-xs text-gray-500">10-500 characters. This cannot be left blank.</p>
+            </div>
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={!debt || !reasonValid || busy}
+            onClick={() => onConfirm(normalizedReason)}
+          >
+            {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Clear amount
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -3871,26 +3871,33 @@ export async function listClawbacks(params?: ClawbackQuery): Promise<ClawbackLis
   const qs = entries.length ? '?' + new URLSearchParams(entries).toString() : ''
   const raw = await api.get<any>(`/admin/clawbacks${qs}`)
   const items: AdminClawback[] = (raw?.items ?? []).map(
-    (c: any): AdminClawback => ({
-      id: c.id,
-      providerName: c.providerName ?? c.provider_name ?? null,
-      providerId: c.providerId ?? c.provider_id ?? '',
-      providerType: c.providerType ?? c.provider_type ?? null,
-      providerPhone: c.providerPhone ?? c.provider_phone ?? null,
-      source: c.source ?? null,
-      amountPesewas: c.amountPesewas ?? c.amount_pesewas ?? 0,
-      paidAmountPesewas: c.paidAmountPesewas ?? c.paid_amount_pesewas ?? 0,
-      outstandingPesewas: c.outstandingPesewas ?? c.outstanding_pesewas ?? 0,
-      // Two backend docs name this field differently — accept either shape.
-      originalDisputeId:
-        c.originalDisputeId ?? c.original_dispute_id ?? c.linkedDisputeId ?? c.linked_dispute_id ?? null,
-      linkedPaymentId: c.linkedPaymentId ?? c.linked_payment_id ?? null,
-      reason: c.reason ?? c.writeOffReason ?? c.write_off_reason ?? null,
-      initiatedAt: c.initiatedAt ?? c.initiated_at ?? c.createdAt ?? c.created_at ?? '',
-      settledAt: c.settledAt ?? c.settled_at ?? c.writtenOffAt ?? c.written_off_at ?? null,
-      daysOutstanding: c.daysOutstanding ?? c.days_outstanding ?? 0,
-      status: c.status ?? 'outstanding',
-    })
+    (c: any): AdminClawback => {
+      const status = c.status ?? 'outstanding'
+      const collectible = status === 'outstanding' || status === 'partial' || status === 'escalated'
+      const outstanding = c.outstandingPesewas ?? c.outstanding_pesewas ?? 0
+      return {
+        id: c.id,
+        providerName: c.providerName ?? c.provider_name ?? null,
+        providerId: c.providerId ?? c.provider_id ?? '',
+        providerType: c.providerType ?? c.provider_type ?? null,
+        providerPhone: c.providerPhone ?? c.provider_phone ?? null,
+        source: c.source ?? null,
+        amountPesewas: c.amountPesewas ?? c.amount_pesewas ?? 0,
+        paidAmountPesewas: c.paidAmountPesewas ?? c.paid_amount_pesewas ?? 0,
+        // Fail closed against older API versions: closed or reconciliation-held
+        // rows remain audit history and must never inflate "Still to pay".
+        outstandingPesewas: collectible ? Math.max(0, outstanding) : 0,
+        // Two backend docs name this field differently — accept either shape.
+        originalDisputeId:
+          c.originalDisputeId ?? c.original_dispute_id ?? c.linkedDisputeId ?? c.linked_dispute_id ?? null,
+        linkedPaymentId: c.linkedPaymentId ?? c.linked_payment_id ?? null,
+        reason: c.reason ?? c.writeOffReason ?? c.write_off_reason ?? null,
+        initiatedAt: c.initiatedAt ?? c.initiated_at ?? c.createdAt ?? c.created_at ?? '',
+        settledAt: c.settledAt ?? c.settled_at ?? c.writtenOffAt ?? c.written_off_at ?? null,
+        daysOutstanding: c.daysOutstanding ?? c.days_outstanding ?? 0,
+        status,
+      }
+    }
   )
   const summary = raw?.summary ?? raw
   return {
@@ -3934,7 +3941,7 @@ export async function listAllClawbacks(range?: { from?: string; to?: string }): 
   const collect = async (query: ClawbackQuery) => {
     for (let page = 1; page <= CLAWBACK_MAX_PAGES; page++) {
       const response = await listClawbacks({ ...query, page, limit: CLAWBACK_PAGE_LIMIT })
-      if (page === 1 && response.totalOutstandingPesewas) {
+      if (page === 1 && Number.isFinite(response.totalOutstandingPesewas)) {
         reportedOutstanding = response.totalOutstandingPesewas
       }
       const before = byId.size
