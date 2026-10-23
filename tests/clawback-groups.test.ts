@@ -52,3 +52,13 @@ test('lists the most recently recorded debts first, inside groups and across the
   assert.deepEqual(groups[1].clawbacks.map(item => item.id), ['middle', 'old'])
   assert.equal(groups[0].providerType, 'artisan')
 })
+
+test('closed audit rows do not inflate the provider still-to-pay balance', () => {
+  const [group] = groupClawbacksByProvider([
+    debt({ id: 'open', outstandingPesewas: 3000, status: 'outstanding' }),
+    debt({ id: 'written-off', outstandingPesewas: 0, status: 'written_off' }),
+    debt({ id: 'settled', outstandingPesewas: 0, status: 'settled' }),
+  ])
+
+  assert.equal(group.outstandingPesewas, 3000)
+})
