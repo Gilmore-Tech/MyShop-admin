@@ -5074,3 +5074,23 @@ export async function deactivatePlatformReferralCode(
   )
   return normalisePlatformReferralCodeItem(raw)
 }
+
+// Manual surges share the automatic regional fare pipeline.
+export interface ManualSurge {
+  centerLat: number
+  centerLng: number
+  radiusMeters: number
+  id: string
+  regionId: string
+  name: string
+  multiplier: string | number
+  isActive: boolean
+  region: { id: string; name: string; code: string }
+}
+export function listManualSurges() { return api.get<ManualSurge[]>('/surge/manual') }
+export function createManualSurge(data: { regionId: string; name: string; multiplier: number; reason: string; centerLat: number; centerLng: number; radiusMeters: number }) {
+  return api.post<ManualSurge>('/surge/manual', data)
+}
+export function toggleManualSurge(id: string, isActive: boolean) {
+  return api.patch<ManualSurge>(`/surge/manual/${id}`, { isActive })
+}

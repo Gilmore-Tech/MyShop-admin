@@ -43,6 +43,7 @@ export type Permission =
   | 'view_revenue_report'
   | 'view_pilot_report'
   | 'view_config'
+  | 'manage_surge'
   | 'manage_driver_priority_enrollment'
   | 'view_ussd'
   | 'send_announcement'
@@ -181,6 +182,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     group: 'Config & USSD',
     permissions: [
       { key: 'manage_driver_priority_enrollment', label: 'Manage manual driver priority', description: 'Enroll, change, or revoke reviewed manual priority floors; does not publish priority policy' },
+      { key: 'manage_surge', label: 'Manage manual surge', description: 'Enable and disable manual surge in assigned ride regions' },
       { key: 'view_config', label: 'View configuration', description: 'Platform marketplace config' },
       { key: 'view_ussd', label: 'View USSD & SMS logs', description: 'USSD sessions and SMS logs' },
     ],
@@ -346,7 +348,7 @@ const REGIONAL_MANAGER_PERMS = dedupe([
 ])
 
 const DIRECTOR_PERMS = dedupe(ALL_PERMISSIONS.filter(
-  p => p !== 'manage_admins' && p !== 'view_config' && p !== 'intake_role_account_recovery'
+  p => p !== 'manage_admins' && p !== 'manage_surge' && p !== 'view_config' && p !== 'intake_role_account_recovery'
 ))
 
 const PRODUCT_OWNER_PERMS = dedupe(ALL_PERMISSIONS.filter(p => p !== 'manage_admins'))
