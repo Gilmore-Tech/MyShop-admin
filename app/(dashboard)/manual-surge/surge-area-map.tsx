@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 type Point = { lat: number; lng: number }
-type Props = { center: Point | null; radiusMeters: number; onChange: (point: Point) => void; disabled: boolean; regionName: string }
+type Props = { center: Point | null; radiusMeters: number; onChange: (point: Point) => void; disabled: boolean; regionName: string; readOnly?: boolean }
 
 function AreaOverlay({ center, radiusMeters }: Pick<Props, 'center' | 'radiusMeters'>) {
   const map = useMap()
@@ -15,6 +15,8 @@ function AreaOverlay({ center, radiusMeters }: Pick<Props, 'center' | 'radiusMet
     map.panTo(center)
     const circle = new google.maps.Circle({ map, center, radius: radiusMeters,
       clickable: false, strokeColor: '#d97706', fillColor: '#f59e0b', fillOpacity: 0.2, strokeWeight: 2 })
+    const bounds = circle.getBounds()
+    if (bounds) map.fitBounds(bounds, 32)
     const marker = new google.maps.Marker({ map, position: center })
     return () => { circle.setMap(null); marker.setMap(null) }
   }, [map, center, radiusMeters])
@@ -48,9 +50,9 @@ function SearchArea({ onChange, disabled, regionName }: Pick<Props, 'onChange' |
 
 export function SurgeAreaMap(props: Props) {
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-  if (!key) return <p role="alert">Area selection needs the Google Maps API key. Configure it to enable map pinning and area search.</p>
+  if (!key) return <p role="status">{props.readOnly ? 'Map preview is unavailable. Coverage coordinates and radius are shown above.' : 'Area selection needs the Google Maps API key. Configure it to enable map pinning and area search.'}</p>
   return <APIProvider apiKey={key}>
-    <SearchArea {...props} />
+    {!props.readOnly && <SearchArea {...props} />}
     <div className="h-80 overflow-hidden rounded-md border">
       <Map defaultCenter={{ lat: 6.6885, lng: -1.6244 }} defaultZoom={12} gestureHandling="greedy" onClick={event => { if (!props.disabled && event.detail.latLng) props.onChange(event.detail.latLng) }}>
         <AreaOverlay {...props} />
