@@ -5085,9 +5085,25 @@ export interface ManualSurge {
   name: string
   multiplier: string | number
   isActive: boolean
+  createdAt: string
+  updatedAt: string
   region: { id: string; name: string; code: string }
 }
-export function listManualSurges() { return api.get<ManualSurge[]>('/surge/manual') }
+export interface ManualSurgeDetail extends ManualSurge {
+  activity: {
+    id: string
+    action: 'manual_surge_enabled' | 'manual_surge_disabled'
+    createdAt: string
+    details: { reason?: string } | null
+    admin: { fullName: string }
+  }[]
+}
+export function listManualSurges(regionId?: string | null) {
+  return api.get<ManualSurge[]>(`/surge/manual${regionId ? `?regionId=${encodeURIComponent(regionId)}` : ''}`)
+}
+export function getManualSurge(id: string) {
+  return api.get<ManualSurgeDetail>(`/surge/manual/${encodeURIComponent(id)}`)
+}
 export function createManualSurge(data: { regionId: string; name: string; multiplier: number; reason: string; centerLat: number; centerLng: number; radiusMeters: number }) {
   return api.post<ManualSurge>('/surge/manual', data)
 }
