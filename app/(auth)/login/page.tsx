@@ -24,7 +24,9 @@ export default function LoginPage() {
       router.push('/dashboard')
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.status === 401) {
+        if (err.code === 'PLATFORM_SHUTDOWN') {
+          setError(err.message)
+        } else if (err.status === 401) {
           setError('Incorrect email or password. Please try again.')
         } else if (err.status === 504) {
           setError('Server is warming up - please wait 30 seconds and try again.')
