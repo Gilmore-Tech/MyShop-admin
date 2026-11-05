@@ -217,7 +217,7 @@ const SAFE_ERROR_CODE_RX = /^[A-Z][A-Z0-9_]{0,79}$/
 const SUPPORT_REFERENCE_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
-  PLATFORM_SHUTDOWN: 'The platform is temporarily closed. Only Super Admins can sign in.',
+  PLATFORM_SHUTDOWN: 'service interrupted, contact IT for support',
   ADMIN_SESSION_REVOKED: 'Your dashboard session was ended. Please sign in again.',
   INVALID_CREDENTIALS: 'Incorrect email or password. Please try again.',
   INVALID_CURRENT_PASSWORD: 'The current password is incorrect.',
