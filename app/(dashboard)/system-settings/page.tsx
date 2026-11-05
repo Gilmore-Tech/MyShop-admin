@@ -1,5 +1,7 @@
 'use client'
 
+import { useAuth } from '@/hooks/use-auth'
+import { hasRole } from '@/lib/roles'
 import { PageGuard } from '@/components/common/page-guard'
 import { useState, useEffect, useCallback } from 'react'
 import {
@@ -123,9 +125,9 @@ function Section({ title, description, icon, children }: {
 
 // ─── Toggle row ───────────────────────────────────────────────────────────────
 
-function ToggleRow({ label, description, checked, onChange, danger, dirty }: {
+function ToggleRow({ label, description, checked, onChange, danger, dirty, disabled }: {
   label: string; description?: string; checked: boolean
-  onChange: (v: boolean) => void; danger?: boolean; dirty?: boolean
+  onChange: (v: boolean) => void; danger?: boolean; dirty?: boolean; disabled?: boolean
 }) {
   return (
     <div className="flex items-center justify-between gap-6">
@@ -136,7 +138,7 @@ function ToggleRow({ label, description, checked, onChange, danger, dirty }: {
         </div>
         {description && <p className="text-xs text-gray-400 mt-0.5 leading-snug">{description}</p>}
       </div>
-      <Toggle checked={checked} onChange={onChange} danger={danger} />
+      <Toggle checked={checked} onChange={onChange} danger={danger} disabled={disabled} />
     </div>
   )
 }
@@ -173,6 +175,8 @@ function IntegCard({ name, description, status }: { name: string; description: s
 const SUBTITLE = 'Platform-wide toggles, security policies, and integration status.'
 
 export default function SystemSettingsPage() {
+  const { admin } = useAuth()
+  const canControlShutdown = hasRole(admin?.roles, admin?.role, 'super_admin')
   const [settings, setSettings] = useState<SettingsState>({ ...FULL_DEFAULTS })
   const [saved, setSaved]       = useState<SettingsState>({ ...FULL_DEFAULTS })
   const [loading, setLoading]   = useState(true)
@@ -208,6 +212,7 @@ export default function SystemSettingsPage() {
   useEffect(() => { load() }, [load])
 
   function setBool(key: BoolKey, value: boolean) {
+    if (key === 'maintenance_mode' && !canControlShutdown) return
     setSettings(p => ({ ...p, [key]: value }))
     setSaveSuccess(false); setSaveError(null)
   }
@@ -304,12 +309,13 @@ export default function SystemSettingsPage() {
             icon={<Zap className="h-4 w-4" />}
           >
             <ToggleRow
-              label="Maintenance mode"
-              description="Blocks all client and provider app access. Show a maintenance screen to all users."
+              label="Platform shutdown (Super Admin only)"
+              description="Only Super Admins can sign in and use the platform. Other dashboard admins are signed out and must sign in again after reopening. Mobile sessions are preserved, but platform actions are blocked while shutdown is on."
               checked={settings.maintenance_mode}
               onChange={v => setBool('maintenance_mode', v)}
               danger
               dirty={isDirty('maintenance_mode')}
+              disabled={!canControlShutdown || saving}
             />
             <ToggleRow
               label="Ride hailing"
@@ -506,7 +512,11 @@ export default function SystemSettingsPage() {
           open={confirmOpen}
           onClose={() => setConfirmOpen(false)}
           title={`Save ${changedKeys.length} system setting${changedKeys.length !== 1 ? 's' : ''}?`}
-          description="Some changes (maintenance mode, feature toggles) take effect immediately for all users."
+          description={isDirty('maintenance_mode')
+            ? settings.maintenance_mode
+              ? 'Shut down the platform? Only Super Admins will retain access. All other dashboard sessions will be revoked. Mobile sessions will be preserved.'
+              : 'Reopen the platform? Mobile users can resume activity. Other admins must sign in again.'
+            : 'These changes take effect immediately for all users.'}
           confirmLabel="Save changes"
           onConfirm={() => handleSave()}
         >
