@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ADMIN_ACTIVITY_KEY, getToken, clearTokens } from '@/lib/api-client'
+import { ADMIN_ACTIVITY_KEY, getToken, clearTokens, api } from '@/lib/api-client'
 
 const ADMIN_IDLE_TIMEOUT_MS = 15 * 60 * 1000
 const IDLE_CHECK_INTERVAL_MS = 5_000
@@ -11,6 +11,7 @@ const ACTIVITY_WRITE_THROTTLE_MS = 2_000
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const [checked, setChecked] = useState(false)
+  const [sessionError, setSessionError] = useState(false)
 
   useEffect(() => {
     // Initial token check
@@ -18,7 +19,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       router.replace('/login')
       return
     }
-    setChecked(true)
 
     let expired = false
     let lastActivity = Number(localStorage.getItem(ADMIN_ACTIVITY_KEY))
@@ -31,6 +31,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     function endSession() {
       if (expired) return
       expired = true
+      setChecked(false)
       clearTokens()
       router.replace('/login')
     }
@@ -52,6 +53,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     function handleVisibilityChange() {
       if (document.hidden) return
       checkIdle()
+      void validateSession()
       if (!expired) recordActivity()
     }
 
@@ -61,6 +63,28 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         if (Number.isFinite(sharedActivity)) lastActivity = sharedActivity
       }
       if (event.key === 'myshop_admin_token' && event.newValue === null) endSession()
+    }
+
+    let validating = false
+    async function validateSession() {
+      if (expired || validating) return
+      validating = true
+      try {
+        await api.get('/auth/admin/session', {
+          skipRegionScope: true,
+          signal: AbortSignal.timeout(10_000),
+        })
+        if (!expired) {
+          setSessionError(false)
+          setChecked(true)
+        }
+      } catch {
+        // Authentication failures trigger the central unauthorized listener.
+        // A temporary network failure does not revoke a valid local session.
+        if (!expired) setSessionError(true)
+      } finally {
+        validating = false
+      }
     }
 
     const activityEvents: Array<keyof WindowEventMap> = [
@@ -84,7 +108,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     window.addEventListener('auth:unauthorized', handleUnauthorized)
+    void validateSession()
+    const sessionCheck = window.setInterval(() => void validateSession(), 5_000)
     return () => {
+      expired = true
+      window.clearInterval(sessionCheck)
       window.clearInterval(idleCheck)
       for (const event of activityEvents) window.removeEventListener(event, recordActivity)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -93,7 +121,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [router])
 
-  if (!checked) return null
+  if (!checked) return (
+    <div className="flex h-full items-center justify-center text-sm text-gray-500" role="status">
+      {sessionError ? 'Unable to verify dashboard access. Retrying...' : 'Checking dashboard access...'}
+    </div>
+  )
 
   return <>{children}</>
 }
