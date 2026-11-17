@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Car, CheckCircle2, ExternalLink, Loader2, Pencil, Trash2, XCircle } from 'lucide-react'
 
+import { ManageVehicleCategoriesDialog } from '@/components/users/manage-vehicle-categories-dialog'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataTable, AvatarCell } from '@/components/common/data-table'
 import { DetailSheet } from '@/components/common/detail-sheet'
@@ -90,6 +91,8 @@ function legacyMigrationDraft(candidate: LegacyVehicleBackfillCandidate, targetV
 export default function VehicleVerificationPage() {
   const { permissions, category } = useRole()
   const granted = permissions ?? []
+  const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false)
+  const [pendingCategories, setPendingCategories] = useState(false)
   const [status, setStatus] = useState<'all' | VehicleApprovalStatus>('all')
   const [vehicles, setVehicles] = useState<AdminVehicle[]>([])
   const [legacyCandidates, setLegacyCandidates] = useState<LegacyVehicleBackfillCandidate[]>([])
@@ -121,7 +124,7 @@ export default function VehicleVerificationPage() {
     setError('')
     try {
       const [vehicleRows, legacyRows] = await Promise.all([
-        listAdminVehicles(status !== 'all' ? { status } : {}),
+        listAdminVehicles({ ...(status !== 'all' ? { status } : {}), pendingCategories }),
         listLegacyVehicleBackfill(),
       ])
       setVehicles(vehicleRows)
@@ -131,7 +134,7 @@ export default function VehicleVerificationPage() {
     } finally {
       setLoading(false)
     }
-  }, [status])
+  }, [status, pendingCategories])
 
   useEffect(() => { void load() }, [load])
 
@@ -148,6 +151,7 @@ export default function VehicleVerificationPage() {
 
   async function openDetail(vehicleId: string) {
     setDetailOpen(true)
+    setManageCategoriesOpen(false)
     setSelected(null)
     setActionError('')
     await refreshDetail(vehicleId)
@@ -392,12 +396,17 @@ export default function VehicleVerificationPage() {
       )}
 
       <FilterBar onRefresh={() => void load()} refreshing={loading}>
-        <Select value={status} onValueChange={value => setStatus(value as 'all' | VehicleApprovalStatus)}>
+        <Select value={status} onValueChange={value => { setStatus(value as 'all' | VehicleApprovalStatus); setPendingCategories(false) }}>
           <SelectTrigger className="h-9 w-56 bg-white"><SelectValue /></SelectTrigger>
           <SelectContent>
             {FILTERS.map(filter => <SelectItem key={filter.value} value={filter.value}>{filter.label}</SelectItem>)}
           </SelectContent>
         </Select>
+      <label className="mb-4 flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={pendingCategories} onChange={event => { setPendingCategories(event.target.checked); setStatus('all') }} />
+        Pending category requests
+      </label>
+
       </FilterBar>
 
       <DataTable
@@ -608,6 +617,7 @@ export default function VehicleVerificationPage() {
             </Panel>
 
             <Panel title="Per-vehicle ride categories">
+              {canEditVehicle(granted, selected) && <Button variant="outline" className="mb-3" disabled={!!actionBusy} onClick={() => setManageCategoriesOpen(true)}>Manage categories</Button>}
               {selected.rideCategories.map(row => {
                 const busy = actionBusy === `category-${row.rideCategory.id}`
                 return <div key={row.id} className="py-3 border-b last:border-0 space-y-1">
@@ -651,6 +661,13 @@ export default function VehicleVerificationPage() {
         onConfirm={reason => void submitReasonAction(reason)}
       />
 
+      {manageCategoriesOpen && selected && <ManageVehicleCategoriesDialog
+        key={`${selected.id}-${selected.version}`}
+        vehicle={selected}
+        onClose={() => setManageCategoriesOpen(false)}
+        onSaved={async () => { await Promise.all([refreshDetail(selected.id), load()]) }}
+      />}
+
       <FormDialog
         open={editOpen}
         onClose={() => setEditOpen(false)}
@@ -671,7 +688,7 @@ export default function VehicleVerificationPage() {
           <div className="col-span-2">
             <Label>Ride categories</Label>
             <div className="mt-2 grid sm:grid-cols-2 gap-2">
-              {editCategories.map(cat => <label key={cat.id} className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" checked={editDraft.rideCategoryIds.includes(cat.id)} onChange={event => setEditDraft({ ...editDraft, rideCategoryIds: event.target.checked ? [...editDraft.rideCategoryIds, cat.id] : editDraft.rideCategoryIds.filter(id => id !== cat.id) })} />{cat.name}</label>)}
+              {editCategories.map(cat => <label key={cat.id} className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" disabled={cat.slug === 'regular'} checked={cat.slug === 'regular' || editDraft.rideCategoryIds.includes(cat.id)} onChange={event => setEditDraft({ ...editDraft, rideCategoryIds: event.target.checked ? [...editDraft.rideCategoryIds, cat.id] : editDraft.rideCategoryIds.filter(id => id !== cat.id) })} />{cat.name}</label>)}
             </div>
           </div>
         </div>}

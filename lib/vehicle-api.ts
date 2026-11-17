@@ -79,10 +79,12 @@ export type LegacyVehicleMigrationInput =
 export async function listAdminVehicles(filters: {
   status?: VehicleApprovalStatus
   driverId?: string
+  pendingCategories?: boolean
 } = {}): Promise<AdminVehicle[]> {
   const query = new URLSearchParams()
   if (filters.status) query.set('status', filters.status)
   if (filters.driverId) query.set('driverId', filters.driverId)
+  if (filters.pendingCategories) query.set('pendingCategories', 'true')
   const raw = await api.get<unknown>(`/admin/vehicles${query.size ? `?${query}` : ''}`)
   return parseAdminVehicleList(raw)
 }
@@ -211,6 +213,25 @@ export async function editAdminVehicle(
   input: VehicleInput,
 ): Promise<void> {
   await api.patch(`/admin/vehicles/${vehicleId}`, { expectedVersion, ...input })
+}
+
+export interface VehicleCategoryOption {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+}
+
+export async function getAdminVehicleCategoryOptions(vehicleId: string): Promise<VehicleCategoryOption[]> {
+  return api.get<VehicleCategoryOption[]>(`/admin/vehicles/${vehicleId}/ride-category-options`)
+}
+
+export async function updateAdminVehicleCategories(
+  vehicleId: string,
+  expectedVersion: number,
+  rideCategoryIds: string[],
+): Promise<void> {
+  await api.patch(`/admin/vehicles/${vehicleId}`, { expectedVersion, rideCategoryIds })
 }
 
 export async function retireAdminVehicle(
