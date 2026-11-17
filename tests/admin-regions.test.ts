@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import test from 'node:test'
 import { runInNewContext } from 'node:vm'
-import { applyAdminRegionScopeHeader, ADMIN_REGION_KEY } from '../lib/api-client.ts'
+import { applyAdminRegionScopeHeader, canSelectAdminRegion, canUseCompanyWideViews, ADMIN_REGION_KEY } from '../lib/api-client.ts'
 
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
@@ -46,7 +46,7 @@ test('an inactive assignment remains visible and removable', () => {
   assert.deepEqual(Array.from(value), [])
 })
 
-test('regional staff attach the selected region while global read-only roles keep nationwide scope', () => {
+test('all named roles attach the selected operational region', () => {
   const values = new Map<string, string>()
   const storage = { getItem: (key: string) => values.get(key) ?? null }
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
@@ -57,12 +57,45 @@ test('regional staff attach the selected region while global read-only roles kee
     values.set(ADMIN_REGION_KEY, 'bono')
     values.set('myshop_admin_user', JSON.stringify({ role: 'regional_manager', roles: ['regional_manager'], regionId: 'ashanti', permissions: [] }))
     assert.equal(applyAdminRegionScopeHeader(new Headers()).get('X-MyShop-Region-Id'), 'bono')
-    values.set('myshop_admin_user', JSON.stringify({ role: 'director', roles: ['director'], regionId: null, permissions: [] }))
-    assert.equal(applyAdminRegionScopeHeader(new Headers()).get('X-MyShop-Region-Id'), null)
+    const director = { role: 'director', roles: ['director'], regionId: null, permissions: [] }
+    values.set('myshop_admin_user', JSON.stringify(director))
+    assert.equal(canSelectAdminRegion(director as never), true)
+    assert.equal(canUseCompanyWideViews(director as never), false)
+    assert.equal(applyAdminRegionScopeHeader(new Headers()).get('X-MyShop-Region-Id'), 'bono')
+    values.set(ADMIN_REGION_KEY, 'ashanti')
+    assert.equal(applyAdminRegionScopeHeader(new Headers()).get('X-MyShop-Region-Id'), 'ashanti')
+    values.set('myshop_admin_user', JSON.stringify({ role: 'accountant', roles: ['accountant'], regionId: null, permissions: [] }))
+    assert.equal(applyAdminRegionScopeHeader(new Headers()).get('X-MyShop-Region-Id'), 'ashanti')
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
     else Reflect.deleteProperty(globalThis, 'window')
     if (originalStorage) Object.defineProperty(globalThis, 'localStorage', originalStorage)
     else Reflect.deleteProperty(globalThis, 'localStorage')
   }
+})
+
+
+test('region switching does not grant company-wide modes to directors or regional staff', () => {
+  for (const role of ['director', 'regional_manager']) {
+    const admin = { role, roles: [role], regionId: 'ashanti' } as never
+    assert.equal(canSelectAdminRegion(admin), true)
+    assert.equal(canUseCompanyWideViews(admin), false)
+  }
+  for (const role of ['super_admin', 'product_owner']) {
+    assert.equal(canUseCompanyWideViews({ role, roles: [role] } as never), true)
+  }
+  assert.equal(canSelectAdminRegion({ role: 'accountant', roles: ['accountant', 'director'] } as never), true)
+  assert.equal(canSelectAdminRegion({ role: 'director', roles: [] } as never), true)
+})
+
+
+test('every account role gets region switching without extra company-wide authority', () => {
+  const roles = ['super_admin', 'product_owner', 'director', 'accountant', 'regional_manager', 'coordinator_rides', 'coordinator_artisan', 'back_officer', 'admin']
+  for (const role of roles) {
+    const admin = { role, roles: [role] } as never
+    assert.equal(canSelectAdminRegion(admin), true, role)
+    assert.equal(canUseCompanyWideViews(admin), ['super_admin', 'product_owner'].includes(role), role)
+  }
+  assert.equal(canSelectAdminRegion({ role: null, roles: [] } as never), true)
+  assert.equal(canSelectAdminRegion(null), false)
 })

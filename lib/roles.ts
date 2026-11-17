@@ -374,13 +374,13 @@ export const ROLE_DEFINITIONS: Record<Role, RoleDef> = {
   },
   director: {
     role: 'director', level: 2, label: 'Director of Business Operations',
-    description: 'Views everything nationwide + operational actions. No account or config management.',
+    description: 'Views operations across the country, one selected region at a time. No account or config management.',
     requiresRegion: false, requiresCategory: false, category: null, global: true,
     permissions: DIRECTOR_PERMS,
   },
   accountant: {
     role: 'accountant', level: null, label: 'Accountant',
-    description: 'Global read-only finance plus all reports and analytics. No money-moving actions.',
+    description: 'Read-only finance, reports and analytics within the selected region. No money-moving actions.',
     requiresRegion: false, requiresCategory: false, category: null, global: true,
     permissions: ACCOUNTANT_PERMS,
   },
