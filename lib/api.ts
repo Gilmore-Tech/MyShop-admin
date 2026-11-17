@@ -2326,6 +2326,8 @@ export interface AdminAccount {
   roles: Role[]
   permissions: Permission[]
   regionId: string | null
+  regionIds?: string[]
+  regions?: Pick<Region, 'id' | 'name' | 'code'>[]
   categoryScope: CategoryScope | null
   region: Region | null
   regionScope: string | null
@@ -2368,7 +2370,7 @@ export function createAdmin(data: {
   fullName: string
   password: string
   roles: Exclude<Role, 'super_admin'>[]
-  regionId?: string
+  regionIds?: string[]
 }) {
   return api.post<AdminAccount>('/admin/admins', data)
 }
@@ -2378,7 +2380,7 @@ export function createAdmin(data: {
 // manage_admins from the last holder.
 export function updateAdminPermissions(
   adminId: string,
-  data: { roles: Exclude<Role, 'super_admin'>[]; regionId?: string }
+  data: { roles: Exclude<Role, 'super_admin'>[]; regionIds?: string[] }
 ) {
   return api.patch<AdminAccount>(`/admin/admins/${adminId}/permissions`, data)
 }

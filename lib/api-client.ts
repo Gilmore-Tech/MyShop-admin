@@ -4,6 +4,7 @@
  * Auth: Bearer JWT (admin-jwt strategy)
  */
 import {
+  ROLE_DEFINITIONS,
   effectiveAdminPermissions,
   hasGlobalRole,
   hasRole,
@@ -97,9 +98,20 @@ export interface AdminUser {
   roles: Role[]
   regionId: string | null
   regionName: string | null
+  regionIds?: string[]
   categoryScope: CategoryScope | null
   // Legacy free-text region marker, superseded by regionId.
   regionScope: string | null
+}
+
+/** Regional staff switch only among the assignments returned by the backend. */
+export function canSelectAdminRegion(admin: AdminUser | null): boolean {
+  if (!admin) return false
+  if (hasRole(admin.roles, admin.role, 'super_admin') || hasRole(admin.roles, admin.role, 'product_owner')) return true
+  return !hasGlobalRole(admin.roles, admin.role) && Boolean(
+    admin.regionId || admin.regionIds?.length ||
+    [...(admin.roles ?? []), ...(admin.role ? [admin.role] : [])].some(role => ROLE_DEFINITIONS[role]?.requiresRegion),
+  )
 }
 
 /** Attach the dashboard's selected operational region to a browser request. */
@@ -107,11 +119,7 @@ export function applyAdminRegionScopeHeader(headers: Headers): Headers {
   if (typeof window === 'undefined') return headers
   const admin = getAdminUser()
   const activeRegionId = localStorage.getItem(ADMIN_REGION_KEY)?.trim()
-  if (
-    activeRegionId &&
-    (hasRole(admin?.roles, admin?.role, 'super_admin') ||
-      hasRole(admin?.roles, admin?.role, 'product_owner'))
-  ) {
+  if (activeRegionId && canSelectAdminRegion(admin)) {
     headers.set('X-MyShop-Region-Id', activeRegionId)
   }
   return headers
@@ -218,6 +226,9 @@ const SUPPORT_REFERENCE_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0
 
 const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   PLATFORM_SHUTDOWN: 'service interrupted, contact IT for support',
+  ADMIN_REGION_FORBIDDEN: 'Your access to this region was removed. Reload to select an assigned region.',
+  REGION_REQUIRED: 'Select at least one assigned region.',
+  REGION_NOT_FOUND: 'One of the selected regions is unavailable. Update your selection.',
   ADMIN_SESSION_REVOKED: 'Your dashboard session was ended. Please sign in again.',
   INVALID_CREDENTIALS: 'Incorrect email or password. Please try again.',
   INVALID_CURRENT_PASSWORD: 'The current password is incorrect.',

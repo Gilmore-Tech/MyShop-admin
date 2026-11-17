@@ -1,5 +1,7 @@
 'use client'
 
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
+
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -133,6 +135,7 @@ function NavLink({ item, can, userCategory, isSuperAdmin }: { item: NavItem; can
 
 export default function AppSidebar() {
   const { can, isSuperAdmin, role, region, category, permissions } = useRole()
+  const { activeRegion } = useAdminRegionScope()
   const hasGlobalRecoveryRole =
     ['product_owner', 'director', 'super_admin', 'ops_admin'].includes(String(role)) &&
     region.id === null &&
@@ -372,7 +375,7 @@ export default function AppSidebar() {
           <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{roleLabel(role)}</p>
             <p className="text-[11px] text-gray-600 mt-0.5">
-              {region.name ?? 'All regions'}
+              {activeRegion?.name ?? region.name ?? 'All regions'}
               {category ? ` - ${category === 'rides' ? 'Rides' : 'Artisan'}` : ''}
             </p>
           </div>

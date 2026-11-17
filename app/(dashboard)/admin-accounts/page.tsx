@@ -10,7 +10,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/common/page-header'
 import { FilterBar, FilterSearch } from '@/components/common/filter-bar'
 import { DataTable, AvatarCell, type DataTableColumn } from '@/components/common/data-table'
@@ -18,6 +17,7 @@ import { EmptyState } from '@/components/common/empty-state'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { FormDialog } from '@/components/common/form-dialog'
 import { StatusBadge } from '@/components/common/status-badge'
+import { RegionAssignments } from '@/components/admin/region-assignments'
 import { PermissionPicker, GrantedPermissions } from '@/components/admin/permission-picker'
 import {
  listAdmins, createAdmin, updateAdminPermissions, deactivateAdmin,
@@ -67,11 +67,11 @@ export default function AdminAccountsPage() {
  const [newFullName, setNewFullName] = useState('')
  const [newPassword, setNewPassword] = useState('')
  const [newRoles, setNewRoles] = useState<Role[]>(['admin'])
- const [newRegionId, setNewRegionId] = useState('')
+ const [newRegionIds, setNewRegionIds] = useState<string[]>([])
 
  // ── Role assignment state
  const [editRoles, setEditRoles] = useState<Role[]>([])
- const [editRegionId, setEditRegionId] = useState('')
+ const [editRegionIds, setEditRegionIds] = useState<string[]>([])
  const [rolePolicies, setRolePolicies] = useState<AdminRolePolicy[]>([])
  const [policyPermissions, setPolicyPermissions] = useState<Permission[]>([])
  const [policyReason, setPolicyReason] = useState('')
@@ -111,11 +111,11 @@ export default function AdminAccountsPage() {
  }
  if (mode.type ==='permissions') {
  setEditRoles(mode.admin.roles?.length ? mode.admin.roles : mode.admin.role ? [mode.admin.role] : [])
- setEditRegionId(mode.admin.regionId ?? '')
+ setEditRegionIds(mode.admin.regionIds?.length ? mode.admin.regionIds : mode.admin.regionId ? [mode.admin.regionId] : [])
  }
  if (mode.type ==='create') {
  setNewEmail(''); setNewFullName('')
- setNewPassword(''); setNewRoles(['admin']); setNewRegionId('')
+ setNewPassword(''); setNewRoles(['admin']); setNewRegionIds([])
  }
  if (mode.type ==='reset-password') {
  setNewPw(''); setConfirmPw('')
@@ -138,22 +138,22 @@ export default function AdminAccountsPage() {
  if (newRoles.length === 0)
  { setSubmitError('Select at least one role.'); setSubmitting(false); return }
  const needsRegion = newRoles.every(role => ROLE_DEFINITIONS[role].requiresRegion)
- if (needsRegion && !newRegionId)
- { setSubmitError('Select the region shared by these roles.'); setSubmitting(false); return }
+ if (needsRegion && newRegionIds.length === 0)
+ { setSubmitError('Select at least one assigned region.'); setSubmitting(false); return }
  await createAdmin({
  email: newEmail.trim(), fullName: newFullName.trim(), password: newPassword,
  roles: newRoles as Exclude<Role, 'super_admin'>[],
- regionId: needsRegion ? newRegionId : undefined,
+ regionIds: needsRegion ? newRegionIds : [],
  })
  } else if (dialog.type ==='permissions') {
  if (editRoles.length === 0)
  { setSubmitError('Select at least one role.'); setSubmitting(false); return }
  const needsRegion = editRoles.every(role => ROLE_DEFINITIONS[role].requiresRegion)
- if (needsRegion && !editRegionId)
- { setSubmitError('Select the region shared by these roles.'); setSubmitting(false); return }
+ if (needsRegion && editRegionIds.length === 0)
+ { setSubmitError('Select at least one assigned region.'); setSubmitting(false); return }
  await updateAdminPermissions(dialog.admin.id, {
  roles: editRoles as Exclude<Role, 'super_admin'>[],
- regionId: needsRegion ? editRegionId : undefined,
+ regionIds: needsRegion ? editRegionIds : [],
  })
  } else if (dialog.type ==='reset-password') {
  if (newPw.length < 8) { setSubmitError('Password must be at least 8 characters.'); setSubmitting(false); return }
@@ -181,8 +181,8 @@ export default function AdminAccountsPage() {
  const next = roles.includes(role) ? roles.filter(item => item !== role) : [...roles, role]
  apply(next)
  if (next.some(item => !ROLE_DEFINITIONS[item].requiresRegion)) {
- if (apply === setNewRoles) setNewRegionId('')
- if (apply === setEditRoles) setEditRegionId('')
+ if (apply === setNewRoles) setNewRegionIds([])
+ if (apply === setEditRoles) setEditRegionIds([])
  }
  }
 
@@ -223,7 +223,7 @@ export default function AdminAccountsPage() {
  key: 'scope', header: 'Scope', className: 'whitespace-normal',
  render: admin => (
  <span className="text-sm text-gray-500">
- {admin.region?.name ?? admin.regionScope ?? 'All regions'}
+ {admin.regionIds?.length ? admin.regionIds.map(id => admin.regions?.find(region => region.id === id)?.name ?? regions.find(region => region.id === id)?.name ?? admin.region?.name ?? 'Unavailable region').join(', ') : admin.region?.name ?? admin.regionScope ?? 'All regions'}
  {admin.categoryScope ? ` - ${admin.categoryScope === 'rides' ? 'Rides' : 'Artisan'}` : ''}
  </span>
  ),
@@ -302,7 +302,7 @@ export default function AdminAccountsPage() {
  </DropdownMenuItem>
  {!admin.roles?.includes('super_admin') && admin.id !== currentAdminId && (
  <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'permissions', admin })}>
- <Shield className="h-4 w-4" /> Edit role tags
+ <Shield className="h-4 w-4" /> Edit roles and regions
  </DropdownMenuItem>
  )}
  <DropdownMenuItem className="gap-2" onClick={() => openDialog({ type:'reset-password', admin })}>
@@ -384,15 +384,7 @@ export default function AdminAccountsPage() {
  <p className="text-xs text-gray-400">Access is the union of every selected role.</p>
  </div>
  {newRoles.length > 0 && newRoles.every(role => ROLE_DEFINITIONS[role].requiresRegion) && (
- <div className="space-y-1.5">
- <Label>Region</Label>
- <Select value={newRegionId} onValueChange={setNewRegionId}>
- <SelectTrigger><SelectValue placeholder="Select a region" /></SelectTrigger>
- <SelectContent>
- {regions.map(rg => <SelectItem key={rg.id} value={rg.id}>{rg.name}</SelectItem>)}
- </SelectContent>
- </Select>
- </div>
+ <RegionAssignments regions={regions} value={newRegionIds} onChange={setNewRegionIds} />
  )}
  </FormDialog>
 
@@ -423,7 +415,7 @@ export default function AdminAccountsPage() {
  variant="brand"
  className="gap-2"
  >
- <Pencil className="h-4 w-4" /> Edit role tags
+ <Pencil className="h-4 w-4" /> Edit roles and regions
  </Button>
  )}
  </DialogFooter>
@@ -434,7 +426,7 @@ export default function AdminAccountsPage() {
  <FormDialog
  open={dialog?.type === 'permissions'}
  onClose={() => setDialog(null)}
- title={`Edit role tags - ${dialog?.type === 'permissions' ? dialog.admin.fullName : ''}`}
+ title={`Edit roles and regions - ${dialog?.type === 'permissions' ? dialog.admin.fullName : ''}`}
  submitLabel="Save changes"
  onSubmit={handleSubmit}
  loading={submitting}
@@ -453,15 +445,7 @@ export default function AdminAccountsPage() {
  </div>
  </div>
  {editRoles.length > 0 && editRoles.every(role => ROLE_DEFINITIONS[role].requiresRegion) && (
- <div className="space-y-1.5">
- <Label>Region</Label>
- <Select value={editRegionId} onValueChange={setEditRegionId}>
- <SelectTrigger><SelectValue placeholder="Select a region" /></SelectTrigger>
- <SelectContent>
- {regions.map(rg => <SelectItem key={rg.id} value={rg.id}>{rg.name}</SelectItem>)}
- </SelectContent>
- </Select>
- </div>
+ <RegionAssignments regions={regions} assignedRegions={dialog?.type === 'permissions' ? dialog.admin.regions : undefined} value={editRegionIds} onChange={setEditRegionIds} />
  )}
  </FormDialog>
 
