@@ -58,7 +58,7 @@ function actionCopy(type: ActionType, name: string) {
 
 export default function ClientsPage() {
   const router = useRouter()
-  const { activeRegion, canSelectRegion } = useAdminRegionScope()
+  const { activeRegion, canUseCompanyWideViews } = useAdminRegionScope()
   // Clients are an exact role-account surface. Category-scoped coordinators are
   // redirected to their own provider vertical.
   const { category, permissions } = useRole()
@@ -151,7 +151,7 @@ export default function ClientsPage() {
 
         <FilterBar onRefresh={() => load(1)} refreshing={loading} meta={`${total.toLocaleString()} clients`}>
           <FilterSearch value={search} onChange={setSearch} placeholder="Search by name, phone, email" />
-          {canSelectRegion && (
+          {canUseCompanyWideViews && (
             <Select
               value={clientRegionScope}
               onValueChange={(value: 'region' | 'all' | 'unassigned') => setClientRegionScope(value)}
