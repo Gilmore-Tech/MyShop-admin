@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { listRegions, type Region } from '@/lib/api'
-import { ADMIN_REGION_KEY, getAdminUser } from '@/lib/api-client'
+import { ADMIN_REGION_KEY, canSelectAdminRegion, getAdminUser } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 
 type AdminRegionScopeValue = {
@@ -21,19 +21,13 @@ export function AdminRegionScopeProvider({ children }: { children: React.ReactNo
   const [ready, setReady] = useState(false)
   const [error, setError] = useState(false)
   const admin = getAdminUser()
-  const canSelectRegion = Boolean(
-    admin?.role === 'super_admin' ||
-    admin?.role === 'product_owner' ||
-    admin?.roles?.includes('super_admin') ||
-    admin?.roles?.includes('product_owner'),
-  )
+  const canSelectRegion = canSelectAdminRegion(admin)
 
   const load = useCallback(() => {
     setReady(false)
     setError(false)
     if (!canSelectRegion) {
-      // Regional staff are permanently pinned by the backend account scope.
-      // Other global read-only roles retain their existing nationwide scope.
+      // Global read-only roles retain their nationwide scope.
       setActiveRegionIdState(admin?.regionId ?? null)
       setRegions(admin?.regionId && admin.regionName
         ? [{
@@ -69,6 +63,26 @@ export function AdminRegionScopeProvider({ children }: { children: React.ReactNo
   }, [admin?.regionId, admin?.regionName, canSelectRegion])
 
   useEffect(() => { load() }, [load])
+
+  // Keep assignments current for already signed-in accounts. HTTP requests
+  // independently recheck access, including between these refreshes.
+  useEffect(() => {
+    if (!canSelectRegion || !ready || error) return
+    const refresh = () => {
+      listRegions().then(items => {
+        if (!items.length) { setError(true); return }
+        if (!items.some(region => region.id === activeRegionId)) {
+          window.localStorage.setItem(ADMIN_REGION_KEY, items[0].id)
+          window.location.reload()
+          return
+        }
+        setRegions(items)
+      }).catch(() => { /* The backend still enforces the current assignments. */ })
+    }
+    const timer = window.setInterval(refresh, 30_000)
+    window.addEventListener('focus', refresh)
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh) }
+  }, [canSelectRegion, ready, error, activeRegionId])
 
   const setActiveRegionId = useCallback((regionId: string) => {
     if (!canSelectRegion || !regions.some(region => region.id === regionId)) return
