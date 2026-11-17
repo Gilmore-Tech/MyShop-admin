@@ -4,7 +4,6 @@
  * Auth: Bearer JWT (admin-jwt strategy)
  */
 import {
-  ROLE_DEFINITIONS,
   effectiveAdminPermissions,
   hasGlobalRole,
   hasRole,
@@ -104,14 +103,14 @@ export interface AdminUser {
   regionScope: string | null
 }
 
+/** Region switching does not grant company-wide directory or audience modes. */
+export function canUseCompanyWideViews(admin: AdminUser | null): boolean {
+  return hasRole(admin?.roles, admin?.role, 'super_admin') || hasRole(admin?.roles, admin?.role, 'product_owner')
+}
+
 /** Regional staff switch only among the assignments returned by the backend. */
 export function canSelectAdminRegion(admin: AdminUser | null): boolean {
-  if (!admin) return false
-  if (hasRole(admin.roles, admin.role, 'super_admin') || hasRole(admin.roles, admin.role, 'product_owner')) return true
-  return !hasGlobalRole(admin.roles, admin.role) && Boolean(
-    admin.regionId || admin.regionIds?.length ||
-    [...(admin.roles ?? []), ...(admin.role ? [admin.role] : [])].some(role => ROLE_DEFINITIONS[role]?.requiresRegion),
-  )
+  return admin !== null
 }
 
 /** Attach the dashboard's selected operational region to a browser request. */

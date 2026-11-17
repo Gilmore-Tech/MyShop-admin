@@ -88,7 +88,7 @@ const AUDIENCE_SCOPE_LABELS = Object.fromEntries(
 ) as Record<AnnouncementAudienceScope, string>
 
 export default function AnnouncementsPage() {
-  const { activeRegion, canSelectRegion } = useAdminRegionScope()
+  const { activeRegion, canUseCompanyWideViews } = useAdminRegionScope()
   const { category } = useRole()
   const lockedAudience: AnnouncementAudience | null =
     category === 'rides' ? 'drivers' : category === 'artisan' ? 'artisans' : null
@@ -217,7 +217,7 @@ export default function AnnouncementsPage() {
           lockedAudience={lockedAudience}
           audienceOptions={audienceOptions}
           regions={regions}
-          canSelectRegion={canSelectRegion}
+          canUseCompanyWideViews={canUseCompanyWideViews}
           onPublished={() => {
             setComposeOpen(false)
             loadHistory()
@@ -229,14 +229,14 @@ export default function AnnouncementsPage() {
 }
 
 function ComposeDialog({
-  open, onClose, lockedAudience, audienceOptions, regions, canSelectRegion, onPublished,
+  open, onClose, lockedAudience, audienceOptions, regions, canUseCompanyWideViews, onPublished,
 }: {
   open: boolean
   onClose: () => void
   lockedAudience: AnnouncementAudience | null
   audienceOptions: typeof AUDIENCE
   regions: Region[]
-  canSelectRegion: boolean
+  canUseCompanyWideViews: boolean
   onPublished: () => void
 }) {
   const [regionId, setRegionId] = useState('')
@@ -295,7 +295,7 @@ function ComposeDialog({
         search: query,
         page: 1,
         limit: 10,
-        ...(role === 'client' && canSelectRegion ? { clientRegionScope: 'all' as const } : {}),
+        ...(role === 'client' && canUseCompanyWideViews ? { clientRegionScope: 'all' as const } : {}),
       })
         .then(result => {
           if (!cancelled) {
@@ -310,7 +310,7 @@ function ComposeDialog({
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [audienceScope, canSelectRegion, open, selectedRecipients, specificSearch, targetAudience])
+  }, [audienceScope, canUseCompanyWideViews, open, selectedRecipients, specificSearch, targetAudience])
 
   function invalidatePreview() {
     setPreview(null)
@@ -372,7 +372,7 @@ function ComposeDialog({
 
   const selectedAudience = AUDIENCE.find(a => a.value === targetAudience) ?? AUDIENCE[0]
   const audienceScopeOptions = AUDIENCE_SCOPE.filter(option => {
-    if ((option.value === 'all_regions' || option.value === 'unassigned') && !canSelectRegion) return false
+    if ((option.value === 'all_regions' || option.value === 'unassigned') && !canUseCompanyWideViews) return false
     if (option.value === 'unassigned' && targetAudience !== 'clients') return false
     if (option.value === 'specific_users' && targetAudience === 'all') return false
     return true

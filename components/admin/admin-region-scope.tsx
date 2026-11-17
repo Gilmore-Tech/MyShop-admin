@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { listRegions, type Region } from '@/lib/api'
-import { ADMIN_REGION_KEY, canSelectAdminRegion, getAdminUser } from '@/lib/api-client'
+import { ADMIN_REGION_KEY, canSelectAdminRegion, canUseCompanyWideViews, getAdminUser } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 
 type AdminRegionScopeValue = {
@@ -10,6 +10,7 @@ type AdminRegionScopeValue = {
   activeRegionId: string | null
   activeRegion: Region | null
   canSelectRegion: boolean
+  canUseCompanyWideViews: boolean
   setActiveRegionId: (regionId: string) => void
 }
 
@@ -22,12 +23,13 @@ export function AdminRegionScopeProvider({ children }: { children: React.ReactNo
   const [error, setError] = useState(false)
   const admin = getAdminUser()
   const canSelectRegion = canSelectAdminRegion(admin)
+  const companyWideViews = canUseCompanyWideViews(admin)
 
   const load = useCallback(() => {
     setReady(false)
     setError(false)
     if (!canSelectRegion) {
-      // Global read-only roles retain their nationwide scope.
+      // No authenticated account is available yet.
       setActiveRegionIdState(admin?.regionId ?? null)
       setRegions(admin?.regionId && admin.regionName
         ? [{
@@ -99,8 +101,9 @@ export function AdminRegionScopeProvider({ children }: { children: React.ReactNo
     activeRegionId,
     activeRegion: regions.find(region => region.id === activeRegionId) ?? null,
     canSelectRegion,
+    canUseCompanyWideViews: companyWideViews,
     setActiveRegionId,
-  }), [activeRegionId, canSelectRegion, regions, setActiveRegionId])
+  }), [activeRegionId, canSelectRegion, companyWideViews, regions, setActiveRegionId])
 
   if (!ready) {
     return <div className="flex h-full items-center justify-center text-sm text-gray-500">Loading operational region...</div>
