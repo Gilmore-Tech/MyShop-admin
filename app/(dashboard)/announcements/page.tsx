@@ -256,6 +256,10 @@ function ComposeDialog({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
+  // Permission polling replaces region objects without changing the scope.
+  // Reset drafts only when opening or when the actual region/audience changes.
+  const defaultRegionId = regions.length === 1 ? regions[0].id : ''
+
   useEffect(() => {
     if (!open) return
     setTargetAudience(lockedAudience ?? 'all')
@@ -263,7 +267,7 @@ function ComposeDialog({
     setSpecificSearch('')
     setSpecificResults([])
     setSelectedRecipients([])
-    setRegionId(regions.length === 1 ? regions[0].id : '')
+    setRegionId(defaultRegionId)
     setClassification('service')
     setChannel('push')
     setDestination('notifications')
@@ -272,7 +276,7 @@ function ComposeDialog({
     setReason('')
     setPreview(null)
     setError('')
-  }, [open, lockedAudience, regions])
+  }, [open, lockedAudience, defaultRegionId])
 
   useEffect(() => {
     if (!open || audienceScope !== 'specific_users' || targetAudience === 'all') {

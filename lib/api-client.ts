@@ -226,6 +226,12 @@ const SUPPORT_REFERENCE_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0
 const SAFE_ERROR_COPY: Readonly<Record<string, string>> = {
   PLATFORM_SHUTDOWN: 'service interrupted, contact IT for support',
   ADMIN_REGION_FORBIDDEN: 'Your access to this region was removed. Reload to select an assigned region.',
+  CONFIG_VALUE_OUT_OF_RANGE: 'Enter a value within the permitted range.',
+  CONFIG_TIMER_ORDER_INVALID: 'Offer windows must fit inside the bid window, and reminders must come before their deadlines.',
+  CONFIG_THRESHOLD_ORDER_INVALID: 'Check the order of the related thresholds or matching radii.',
+  COMMISSION_RATE_INVALID: 'Enter a commission rate from 0 to 100 with at most two decimal places.',
+  CONFIG_REGIONAL_OVERRIDE_NOT_ALLOWED: 'This setting is platform-wide or has a dedicated policy editor.',
+  CONFIG_GLOBAL_SCOPE_REQUIRED: 'Use the selected region settings to change this value.',
   REGION_REQUIRED: 'Select at least one assigned region.',
   REGION_NOT_FOUND: 'One of the selected regions is unavailable. Update your selection.',
   ADMIN_SESSION_REVOKED: 'Your dashboard session was ended. Please sign in again.',

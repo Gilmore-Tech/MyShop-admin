@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { PageGuard } from '@/components/common/page-guard'
 import { useRole } from '@/hooks/use-role'
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
 import { RoleGate } from '@/components/common/role-gate'
 import Link from 'next/link'
 import {
@@ -179,6 +180,7 @@ function ArtisanCard({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ManualAssignmentPage() {
+  const { activeRegionId } = useAdminRegionScope()
   // Anyone with view_jobs can browse the queue (e.g. the artisan coordinator);
   // only assign_job holders see the Assign button and can act.
   const canAssign = useRole().can('assign_job')
@@ -257,11 +259,11 @@ export default function ManualAssignmentPage() {
   useEffect(() => { loadJobs() }, [loadJobs])
 
   // Pull the bid window + default search radius from platform config so they
-  // stay in sync with the values ops sets in System Settings. Falls back to
+  // stay in sync with the selected region's Marketplace settings. Falls back to
   // defaults on any failure.
   useEffect(() => {
     let cancelled = false
-    getAllConfig()
+    getAllConfig(activeRegionId ?? undefined)
       .then(rows => {
         if (cancelled) return
         setBidWindowSeconds(
@@ -278,7 +280,7 @@ export default function ManualAssignmentPage() {
         safeAdminErrorDiagnostic(err),
       ))
     return () => { cancelled = true }
-  }, [])
+  }, [activeRegionId])
 
   // Re-render every 30s so jobs become visible when their bid window elapses,
   // without burning an API call.

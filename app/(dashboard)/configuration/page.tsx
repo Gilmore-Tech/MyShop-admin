@@ -18,16 +18,19 @@ import { PageHeader } from '@/components/common/page-header'
 import { PageSkeleton } from '@/components/common/load-state'
 import { ErrorState } from '@/components/common/error-state'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
-import { getAllConfig, updateConfig } from '@/lib/api'
+import { getAllConfig, updateConfig, removeRegionConfigOverride, type PlatformConfig } from '@/lib/api'
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
 import { formatGhs } from '@/lib/money'
 
 // ─── Key conversion ───────────────────────────────────────────────────────────
 
 function toSnake(key: string): string {
+  if (key === 'rideCancellationWindowSecs') return 'ride_cancellation_free_window_secs'
   return key.replace(/([A-Z])/g, '_$1').toLowerCase()
 }
 
 function toCamel(key: string): string {
+  if (key === 'ride_cancellation_free_window_secs') return 'rideCancellationWindowSecs'
   return key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
 }
 
@@ -82,6 +85,8 @@ const DEFAULTS = {
   jobStalenessEscalationHours:     24,
   jobStalenessPayoutFreezeHours:   48,
   artisanMinServiceRadiusKm:       3,
+  artisanInitialMatchRadiusKm: 5,
+  artisanMaxMatchRadiusKm: 15,
   cancellationSuspensionCount:     3,
   cancellationRollingPeriodDays:   30,
   ratingWarningThreshold:          3.5,
@@ -151,6 +156,8 @@ const FIELD_LABELS: Record<ConfigKey, string> = {
   jobStalenessEscalationHours: 'Escalation Threshold',
   jobStalenessPayoutFreezeHours: 'Payout Freeze Threshold',
   artisanMinServiceRadiusKm: 'Min Artisan Service Radius (km)',
+  artisanInitialMatchRadiusKm: 'Initial Artisan Match Radius (km)',
+  artisanMaxMatchRadiusKm: 'Maximum Artisan Match Radius (km)',
   cancellationSuspensionCount: 'Cancellation Suspension Count',
   cancellationRollingPeriodDays: 'Cancellation Rolling Period (days)',
   ratingWarningThreshold: 'Rating Warning Threshold (stars)',
@@ -249,6 +256,8 @@ const RULES: Partial<Record<ConfigKey, ValidationRule>> = {
   jobStalenessCheckinHours:        { min: 1, message: 'Must be at least 1 hour' },
   jobStalenessEscalationHours:     { min: 1, message: 'Must be at least 1 hour' },
   jobStalenessPayoutFreezeHours:   { min: 1, message: 'Must be at least 1 hour' },
+  artisanInitialMatchRadiusKm: { min: 0.1, max: 50, message: 'Must be 0.1-50 km' },
+  artisanMaxMatchRadiusKm: { min: 0.1, max: 100, message: 'Must be 0.1-100 km' },
   artisanMinServiceRadiusKm:       { min: 0.1, max: 50, message: 'Must be 0.1-50 km' },
   cancellationSuspensionCount:     { min: 1, max: 50, message: 'Must be 1-50' },
   cancellationRollingPeriodDays:   { min: 1, max: 365, message: 'Must be 1-365 days' },
@@ -293,6 +302,7 @@ function hasErrors(state: ConfigState): boolean {
       Number(state.providerOfferResponseThresholdPoints) ||
     Number(state.jobOfferDeliveryWindowSecs) > Number(state.jobBidWindowSecs) ||
     Number(state.jobOfferResponseWindowSecs) > Number(state.jobBidWindowSecs) ||
+    Number(state.artisanInitialMatchRadiusKm) > Number(state.artisanMaxMatchRadiusKm) ||
     Number(state.jobDirectedAcceptReminderSecs) >=
       Number(state.jobDirectedAcceptWindowSecs)
   )
@@ -329,7 +339,7 @@ function unitHint(key: string, value: string | number): string | null {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function ConfigField({
-  label, configKey, value, original, systemDefault, onChange, type = 'number', description, disabled = false,
+  label, configKey, value, original, systemDefault, onChange, type = 'number', description, disabled = false, regional = false, hasOverride = false, onInherit, disabledReason,
 }: {
   label: string
   configKey: ConfigKey
@@ -340,6 +350,10 @@ function ConfigField({
   type?: string
   description?: string
   disabled?: boolean
+  regional?: boolean
+  hasOverride?: boolean
+  onInherit?: () => void
+  disabledReason?: string
 }) {
   const isDirty = String(value) !== String(original)
   const hasSystemDefault = typeof systemDefault !== 'number' || Number.isFinite(systemDefault)
@@ -352,14 +366,16 @@ function ConfigField({
       <div className="flex items-start justify-between gap-1 min-h-[22px]">
         <div className="flex items-center gap-1.5 flex-wrap">
           <Label className="text-sm font-medium text-gray-800 leading-tight">{label}</Label>
+          {regional && !disabled && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700">{hasOverride ? 'Region override' : 'Inherited'}</span>}
           {isDirty && (
             <span className="inline-flex items-center text-[10px] font-medium px-1 py-0.5 rounded bg-amber-100 text-amber-700">unsaved</span>
           )}
           {disabled && (
-            <span className="inline-flex items-center text-[10px] font-medium px-1 py-0.5 rounded bg-gray-100 text-gray-500">paused</span>
+            <span className="inline-flex items-center text-[10px] font-medium px-1 py-0.5 rounded bg-gray-100 text-gray-500">{disabledReason ?? 'paused'}</span>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {regional && hasOverride && !disabled && <button type="button" onClick={onInherit} className="text-[10px] text-orange-600 hover:underline">Use platform default</button>}
           {isDirty && !disabled && (
             <button
               onClick={() => onChange(configKey, String(original))}
@@ -370,7 +386,7 @@ function ConfigField({
               Undo
             </button>
           )}
-          {isNonDefault && !isDirty && !disabled && (
+          {!regional && isNonDefault && !isDirty && !disabled && (
             <button
               onClick={() => onChange(configKey, String(systemDefault))}
               className="flex items-center gap-0.5 text-[10px] text-gray-400 hover:text-orange-600 transition-colors"
@@ -485,6 +501,12 @@ function DiffRow({ configKey, oldVal, newVal }: { configKey: ConfigKey; oldVal: 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ConfigurationPage() {
+  const { activeRegionId, activeRegion, canUseCompanyWideViews } = useAdminRegionScope()
+  const [scope, setScope] = useState<'region' | 'global'>('region')
+  const regionId = scope === 'region' ? activeRegionId ?? undefined : undefined
+  const [metadata, setMetadata] = useState<Record<string, PlatformConfig>>({})
+  const [inheritKeys, setInheritKeys] = useState<ConfigKey[]>([])
+
   const [config, setConfig] = useState<ConfigState>({ ...DEFAULTS })
   const [saved, setSaved] = useState<ConfigState>({ ...DEFAULTS })
   const [loading, setLoading] = useState(true)
@@ -495,12 +517,12 @@ export default function ConfigurationPage() {
   const [saveSuccess, setSaveSuccess] = useState(false)
 
   const dirty = (Object.keys(config) as ConfigKey[]).some(
-    k => String(config[k]) !== String(saved[k])
+    k => String(config[k]) !== String(saved[k]) || inheritKeys.includes(k)
   )
   const errors = hasErrors(config)
 
   const changedKeys = (Object.keys(config) as ConfigKey[]).filter(
-    k => String(config[k]) !== String(saved[k])
+    k => String(config[k]) !== String(saved[k]) || inheritKeys.includes(k)
   )
 
   // Warn on browser/tab close when there are unsaved changes
@@ -515,8 +537,15 @@ export default function ConfigurationPage() {
   const load = useCallback(() => {
     setLoading(true)
     setLoadError(false)
-    getAllConfig()
+    if (scope === 'region' && !regionId) {
+      setLoadError(true)
+      setLoading(false)
+      return Promise.resolve()
+    }
+    return getAllConfig(regionId)
       .then(items => {
+        setMetadata(Object.fromEntries(items.map(item => [item.key, item])))
+        setInheritKeys([])
         const fromServer = serverToState(items)
         if (
           typeof fromServer.commissionRatePercent !== 'number'
@@ -530,11 +559,12 @@ export default function ConfigurationPage() {
       })
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false))
-  }, [])
+  }, [regionId, scope])
 
   useEffect(() => { load() }, [load])
 
   function handleChange(key: ConfigKey, value: string) {
+    setInheritKeys(prev => prev.filter(item => item !== key))
     const def = DEFAULTS[key]
     setConfig(prev => ({ ...prev, [key]: typeof def === 'number' ? (value === '' ? value : Number(value)) : value }))
     setSaveSuccess(false)
@@ -542,12 +572,14 @@ export default function ConfigurationPage() {
   }
 
   function handleResetAll() {
+    setInheritKeys([])
     setConfig({ ...saved })
     setSaveError(null)
     setSaveSuccess(false)
   }
 
   async function handleSave() {
+    if (scope === 'region' && !regionId) { setSaveError('Select an operational region before saving.'); return }
     setConfirmDialog(false)
     setSaving(true)
     setSaveError(null)
@@ -556,11 +588,15 @@ export default function ConfigurationPage() {
       // Apply safe boundary expansions/decreases first so a valid multi-field
       // edit cannot fail merely because concurrent PATCH requests race.
       const upperBounds = new Set<ConfigKey>([
+        'artisanMaxMatchRadiusKm',
+        'jobDirectedAcceptWindowSecs',
         'jobBidWindowSecs',
         'providerCancellationBlockThreshold',
         'providerOfferResponseThresholdPoints',
       ])
       const lowerValues = new Set<ConfigKey>([
+        'artisanInitialMatchRadiusKm',
+        'jobDirectedAcceptReminderSecs',
         'jobOfferDeliveryWindowSecs',
         'jobOfferResponseWindowSecs',
         'providerCancellationBlockWarnCount',
@@ -577,9 +613,10 @@ export default function ConfigurationPage() {
         (left, right) => savePriority(left) - savePriority(right),
       )
       for (const key of orderedKeys) {
-        await updateConfig(toSnake(key), String(config[key]))
+        if (regionId && inheritKeys.includes(key)) await removeRegionConfigOverride(regionId, toSnake(key))
+        else await updateConfig(toSnake(key), String(config[key]), regionId)
       }
-      setSaved({ ...config })
+      await load()
       setSaveSuccess(true)
     } catch {
       setSaveError('Some settings could not be saved. Please try again.')
@@ -600,11 +637,21 @@ export default function ConfigurationPage() {
         configKey={configKey}
         value={config[configKey]}
         original={saved[configKey]}
-        systemDefault={DEFAULTS[configKey]}
+        systemDefault={regionId ? (metadata[toSnake(configKey)]?.platformValue ?? DEFAULTS[configKey]) : DEFAULTS[configKey]}
+        regional={!!regionId}
+        hasOverride={!!metadata[toSnake(configKey)]?.hasOverride && !inheritKeys.includes(configKey)}
+        onInherit={() => {
+          const inherited = metadata[toSnake(configKey)]?.platformValue
+          if (inherited === undefined) return
+          setConfig(prev => ({ ...prev, [configKey]: typeof DEFAULTS[configKey] === 'number' ? Number(inherited) : inherited }))
+          setInheritKeys(prev => [...new Set([...prev, configKey])])
+          setSaveSuccess(false)
+        }}
+        disabledReason={regionId && !metadata[toSnake(configKey)]?.regionalEditable ? 'Platform-wide' : undefined}
         onChange={handleChange}
         type={opts?.type ?? (typeof DEFAULTS[configKey] === 'number' ? 'number' : 'text')}
         description={opts?.description}
-        disabled={opts?.disabled}
+        disabled={opts?.disabled || saving || (!!regionId && !metadata[toSnake(configKey)]?.regionalEditable)}
       />
     )
   }
@@ -661,6 +708,25 @@ export default function ConfigurationPage() {
             </div>
           }
         />
+
+        <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 p-4 space-y-2">
+          <Label>Apply settings to</Label>
+          <Select value={scope} disabled={saving} onValueChange={(next: 'region' | 'global') => {
+            if (dirty && !window.confirm('Discard unsaved settings changes before switching scope?')) return
+            setScope(next)
+            setSaveSuccess(false)
+          }}>
+            <SelectTrigger className="w-72 bg-white"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="region">{activeRegion?.name ?? 'Selected region'} only</SelectItem>
+              {canUseCompanyWideViews && <SelectItem value="global">Platform defaults</SelectItem>}
+            </SelectContent>
+          </Select>
+          <p className="text-sm text-blue-900">{regionId
+            ? `Changes apply only to ${activeRegion?.name ?? 'this region'}. Inherited settings follow platform defaults until you override them.`
+            : 'Changes update platform defaults for every region without an override.'}</p>
+          <p className="text-xs text-blue-800">Provider-wide policies, shared schedules and safety controls remain platform-wide. Ride prices are managed by region in <a className="underline" href="/ride-categories">Ride categories</a>; ride matching follows its dedicated dispatch policy.</p>
+        </div>
 
         {/* Unsaved changes banner */}
         {dirty && (
@@ -789,6 +855,8 @@ export default function ConfigurationPage() {
           </Section>
 
           <Section title="Artisan Job Settings" description="Bidding window, job limits, and cancellation policy">
+            {field('Initial Artisan Match Radius (km)', 'artisanInitialMatchRadiusKm')}
+            {field('Maximum Artisan Match Radius (km)', 'artisanMaxMatchRadiusKm')}
             {field('Bid Collection Window', 'jobBidWindowSecs', { description: 'How long the job stays open for bids' })}
             {field('Offer Delivery Window', 'jobOfferDeliveryWindowSecs', {
               description: 'Time an exact job offer has to reach the artisan; undelivered offers are excluded from response points',
@@ -885,13 +953,13 @@ export default function ConfigurationPage() {
           open={confirmDialog}
           onClose={() => setConfirmDialog(false)}
           title={`Save ${changedKeys.length} configuration change${changedKeys.length !== 1 ? 's' : ''}?`}
-          description="These settings take effect according to each control. Runtime switches may affect eligible in-progress bookings. This action will be recorded in the audit trail."
+          description={regionId ? `Apply these changes to ${activeRegion?.name ?? 'this region'} only. Existing booking snapshots remain unchanged.` : 'Update platform defaults for regions without an override. Existing booking snapshots remain unchanged.'}
           confirmLabel="Save changes"
           onConfirm={() => handleSave()}
         >
           <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-1">
             {changedKeys.map(k => (
-              <DiffRow key={k} configKey={k} oldVal={saved[k]} newVal={config[k]} />
+              <div key={k}><DiffRow configKey={k} oldVal={saved[k]} newVal={config[k]} />{inheritKeys.includes(k) && <p className="pb-2 text-xs text-blue-700">Use platform default</p>}</div>
             ))}
           </div>
         </ConfirmDialog>
