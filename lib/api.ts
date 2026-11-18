@@ -3109,14 +3109,22 @@ export async function reviewDriverRideCategory(
 export interface PlatformConfig {
   key: string
   value: string
+  platformValue?: string
+  hasOverride?: boolean
+  regionalEditable?: boolean
 }
 
-export function getAllConfig() {
-  return api.get<PlatformConfig[]>('/config')
+export function getAllConfig(regionId?: string) {
+  return api.get<PlatformConfig[]>(regionId ? `/config/regions/${encodeURIComponent(regionId)}` : '/config')
 }
 
-export function updateConfig(key: string, value: string) {
-  return api.patch(`/config/${key}`, { value })
+export function updateConfig(key: string, value: string, regionId?: string) {
+  const path = regionId ? `/config/regions/${encodeURIComponent(regionId)}/${encodeURIComponent(key)}` : `/config/${encodeURIComponent(key)}`
+  return api.patch(path, { value })
+}
+
+export function removeRegionConfigOverride(regionId: string, key: string) {
+  return api.delete(`/config/regions/${encodeURIComponent(regionId)}/${encodeURIComponent(key)}`)
 }
 
 // ── Artisan Jobs (manual assignment) ─────────────────────────────────────────
