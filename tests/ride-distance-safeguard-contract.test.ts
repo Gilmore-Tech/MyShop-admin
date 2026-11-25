@@ -390,7 +390,7 @@ test('ride-tier UI is exact-root gated and follows the token-bound workflow', ()
   )
   const api = readFileSync(new URL('../lib/api.ts', import.meta.url), 'utf8')
 
-  assert.match(page, /<DistanceFareSafeguardCard \/>/)
+  assert.match(page, /<DistanceFareSafeguardCard key=\{activeRegionId\} \/>/)
   assert.doesNotMatch(page, /sampleFare|Math\.max\(base/)
   assert.match(card, /const \{ permissions, isSuperAdmin \} = useRole\(\)/)
   assert.match(card, /if \(permissions === null \|\| !isSuperAdmin\) return null/)

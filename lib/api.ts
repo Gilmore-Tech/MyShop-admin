@@ -2836,6 +2836,10 @@ export async function updateRegionRideCategory(
   id: string,
   data: Partial<{
     isEnabled: boolean
+    name: string
+    description: string
+    capacityPersons: number
+    iconUrl: string
     baseFarePesewas: number
     perKmPesewas: number
     perMinPesewas: number

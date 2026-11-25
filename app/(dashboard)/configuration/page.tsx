@@ -375,7 +375,7 @@ function ConfigField({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {regional && hasOverride && !disabled && <button type="button" onClick={onInherit} className="text-[10px] text-orange-600 hover:underline">Use platform default</button>}
+          {regional && hasOverride && !disabled && <button type="button" onClick={onInherit} className="text-[10px] text-orange-600 hover:underline">Reset to platform value</button>}
           {isDirty && !disabled && (
             <button
               onClick={() => onChange(configKey, String(original))}
@@ -959,7 +959,7 @@ export default function ConfigurationPage() {
         >
           <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-1">
             {changedKeys.map(k => (
-              <div key={k}><DiffRow configKey={k} oldVal={saved[k]} newVal={config[k]} />{inheritKeys.includes(k) && <p className="pb-2 text-xs text-blue-700">Use platform default</p>}</div>
+              <div key={k}><DiffRow configKey={k} oldVal={saved[k]} newVal={config[k]} />{inheritKeys.includes(k) && <p className="pb-2 text-xs text-blue-700">Reset to platform value</p>}</div>
             ))}
           </div>
         </ConfirmDialog>
