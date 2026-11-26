@@ -1,5 +1,7 @@
 'use client'
 
+import { useAdminRegionScope } from '@/components/admin/admin-region-scope'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
@@ -941,9 +943,10 @@ function RideTollZonesContent() {
 }
 
 export default function RideTollZonesPage() {
+  const { activeRegionId } = useAdminRegionScope()
   return (
     <SuperAdminPageGuard>
-      <RideTollZonesContent />
+      {activeRegionId && <RideTollZonesContent key={activeRegionId} />}
     </SuperAdminPageGuard>
   )
 }

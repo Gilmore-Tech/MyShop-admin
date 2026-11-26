@@ -161,7 +161,7 @@ function TierDialog({
       const description = form.description.trim()
       const saved = isEdit && regionId
         ? await updateRegionRideCategory(regionId, tier!.id, {
-            baseFarePesewas, perKmPesewas, perMinPesewas, minimumFarePesewas,
+            name, description, capacityPersons, baseFarePesewas, perKmPesewas, perMinPesewas, minimumFarePesewas,
           })
         : isEdit
         ? await updateRideCategory(tier!.id, {
@@ -192,7 +192,7 @@ function TierDialog({
       onClose={onClose}
       title={isEdit ? 'Edit ride tier' : 'New ride tier'}
       description={regionId
-        ? "Update this tier's rates for the selected region only."
+        ? "Update this tier for the selected township."
         : isEdit ? 'Update this tier and its fare rates.' : 'Add a new ride tier with its own fare rates.'}
       submitLabel={isEdit ? 'Save changes' : 'Create tier'}
       onSubmit={handleSubmit}
@@ -210,7 +210,6 @@ function TierDialog({
               value={form.name}
               onChange={e => handleNameChange(e.target.value)}
               maxLength={60}
-              disabled={isEdit && regionId != null}
             />
           </div>
           <div className="space-y-1.5">
@@ -241,7 +240,6 @@ function TierDialog({
             value={form.description}
             onChange={e => set('description', e.target.value)}
             maxLength={140}
-            disabled={isEdit && regionId != null}
           />
         </div>
       </div>
@@ -472,7 +470,7 @@ export default function RideCategoriesPage() {
           </div>
         </div>
 
-        <DistanceFareSafeguardCard />
+        {activeRegionId && <DistanceFareSafeguardCard key={activeRegionId} />}
         {activeRegionId && <RemoteAreaZonesCard regionId={activeRegionId} />}
 
         <FilterBar onRefresh={load} refreshing={loading} meta={`${activeCount} active - ${tiers.length - activeCount} inactive`}>

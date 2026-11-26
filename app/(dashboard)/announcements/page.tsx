@@ -299,7 +299,7 @@ function ComposeDialog({
         search: query,
         page: 1,
         limit: 10,
-        ...(role === 'client' && canUseCompanyWideViews ? { clientRegionScope: 'all' as const } : {}),
+        ...(role === 'client' ? { clientRegionScope: 'region' as const } : {}),
       })
         .then(result => {
           if (!cancelled) {
@@ -314,7 +314,7 @@ function ComposeDialog({
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [audienceScope, canUseCompanyWideViews, open, selectedRecipients, specificSearch, targetAudience])
+  }, [audienceScope, defaultRegionId, open, selectedRecipients, specificSearch, targetAudience])
 
   function invalidatePreview() {
     setPreview(null)
